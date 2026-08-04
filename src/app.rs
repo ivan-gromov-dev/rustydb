@@ -40,6 +40,13 @@ pub fn run() -> io::Result<()> {
                 println!("OK");
             }
 
+            Command::Mset { entries } => {
+                for entry in entries {
+                    database.set(entry.0, entry.1);
+                }
+                println!("OK")
+            }
+
             Command::Get { key } => match database.get(&key) {
                 Some(value) => println!("{value}"),
                 None => println!("(nil)"),
@@ -51,6 +58,22 @@ pub fn run() -> io::Result<()> {
                         Some(value) => println!("{value}"),
                         None => println!("(nil)"),
                     }
+                }
+            }
+
+            Command::Append { key, append_value } => {
+                println!("{}", database.append(&key, append_value));
+            }
+
+            Command::Increment { key } => match database.increment(key) {
+                Ok(value) => println!("{value}"),
+                Err(err) => println!("ERR {err}"),
+            },
+
+            Command::IncrementBy { key, inc_value } => {
+                match database.increment_by(key, inc_value) {
+                    Ok(result) => println!("{result}"),
+                    Err(err) => println!("ERR {err}"),
                 }
             }
 
@@ -111,7 +134,10 @@ pub fn run() -> io::Result<()> {
 fn print_help() {
     println!("Available commands:");
     println!("  SET key value");
+    println!("  MSET key value [key value ...]");
     println!("  GET key");
+    println!("  MGET key [key ...]");
+    println!("  APPEND key value");
     println!("  EXISTS key");
     println!("  DEL key");
     println!("  RENAME old_key new_key");

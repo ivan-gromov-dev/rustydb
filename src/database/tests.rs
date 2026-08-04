@@ -67,3 +67,72 @@ fn rename_key() {
 
     assert!(database.rename_key("name", "surname".to_owned()))
 }
+
+#[test]
+fn append() {
+    let mut database = Database::new();
+
+    database.set("message".to_owned(), "Hello".to_owned());
+
+    let length = database.append("message", ", world".to_owned());
+
+    assert_eq!(length, 12);
+    assert_eq!(database.get("message"), Some("Hello, world"));
+}
+
+#[test]
+fn increment_missing_key_creates_value_one() {
+    let mut database = Database::new();
+
+    let result = database.increment("counter".to_owned());
+
+    assert_eq!(result, Ok(1));
+    assert_eq!(database.get("counter"), Some("1"));
+}
+
+#[test]
+fn increment_existing_integer() {
+    let mut database = Database::new();
+
+    database.set("counter".to_owned(), "10".to_owned());
+
+    let result = database.increment("counter".to_owned());
+
+    assert_eq!(result, Ok(11));
+    assert_eq!(database.get("counter"), Some("11"));
+}
+
+#[test]
+fn increment_multiple_times() {
+    let mut database = Database::new();
+
+    assert_eq!(database.increment("counter".to_owned()), Ok(1));
+    assert_eq!(database.increment("counter".to_owned()), Ok(2));
+    assert_eq!(database.increment("counter".to_owned()), Ok(3));
+
+    assert_eq!(database.get("counter"), Some("3"));
+}
+
+#[test]
+fn increment_negative_integer() {
+    let mut database = Database::new();
+
+    database.set("counter".to_owned(), "-2".to_owned());
+
+    let result = database.increment("counter".to_owned());
+
+    assert_eq!(result, Ok(-1));
+    assert_eq!(database.get("counter"), Some("-1"));
+}
+
+#[test]
+fn increment_non_integer_returns_error() {
+    let mut database = Database::new();
+
+    database.set("counter".to_owned(), "hello".to_owned());
+
+    let result = database.increment("counter".to_owned());
+
+    assert_eq!(result, Err(DatabaseError::ValueIsNotInteger));
+    assert_eq!(database.get("counter"), Some("hello"));
+}

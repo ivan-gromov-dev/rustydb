@@ -1,7 +1,23 @@
 use std::collections::HashMap;
+use std::fmt;
 
 pub(crate) struct Database {
     storage: HashMap<String, String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DatabaseError {
+    ValueIsNotInteger,
+    IntegerOverflow,
+}
+
+impl fmt::Display for DatabaseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ValueIsNotInteger => write!(formatter, "value is not integer"),
+            Self::IntegerOverflow => write!(formatter, "integer overflow"),
+        }
+    }
 }
 
 impl Database {
@@ -49,5 +65,36 @@ impl Database {
             }
             None => false,
         }
+    }
+
+    pub(crate) fn append(&mut self, key: &str, append_value: String) -> usize {
+        let stored_value = self.storage.entry(key.to_owned()).or_default();
+        stored_value.push_str(&append_value);
+        stored_value.len()
+    }
+
+    pub(crate) fn increment(&mut self, key: String) -> Result<i64, DatabaseError> {
+        self.increment_by(key, 1)
+    }
+
+    pub(crate) fn increment_by(
+        &mut self,
+        key: String,
+        incr_amount: i64,
+    ) -> Result<i64, DatabaseError> {
+        let number = match self.storage.get(&key) {
+            Some(value) => value
+                .parse::<i64>()
+                .map_err(|_| DatabaseError::ValueIsNotInteger)?,
+            None => 0,
+        };
+
+        let incremented = number
+            .checked_add(incr_amount)
+            .ok_or(DatabaseError::IntegerOverflow)?;
+
+        self.storage.insert(key, incremented.to_string());
+
+        Ok(incremented)
     }
 }
