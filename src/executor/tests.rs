@@ -190,3 +190,35 @@ fn execute_increment_by_returns_overflow_error() {
 
     assert_eq!(database.get("counter"), Some(max.as_str()));
 }
+
+#[test]
+fn execute_expire_returns_one_for_existing_key() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    let response = execute(
+        Command::Expire {
+            key: "key".to_owned(),
+            seconds: 60,
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Integer(1));
+}
+
+#[test]
+fn execute_expire_returns_zero_for_missing_key() {
+    let mut database = Database::new();
+
+    let response = execute(
+        Command::Expire {
+            key: "missing".to_owned(),
+            seconds: 60,
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Integer(0));
+}

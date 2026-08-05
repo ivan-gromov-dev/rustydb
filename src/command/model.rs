@@ -17,6 +17,7 @@ pub(crate) enum Command {
     Exists { key: String },
     Delete { key: String },
     Rename { old_key: String, new_key: String },
+    Expire { key: String, seconds: u64 },
     Keys,
     Len,
     Clear,

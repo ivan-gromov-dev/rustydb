@@ -77,6 +77,7 @@ fn print_help() {
     println!("  EXISTS key");
     println!("  DEL key");
     println!("  RENAME old_key new_key");
+    println!("  EXPIRE key seconds");
     println!("  KEYS");
     println!("  LEN");
     println!("  CLEAR");

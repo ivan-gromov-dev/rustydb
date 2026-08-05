@@ -1,3 +1,4 @@
+mod entry;
 mod memory;
 
 pub(crate) use memory::Database;

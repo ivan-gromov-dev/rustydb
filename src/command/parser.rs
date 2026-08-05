@@ -49,6 +49,8 @@ impl Command {
 
             "RENAME" => parse_rename(input),
 
+            "EXPIRE" => parse_expire(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -250,6 +252,27 @@ fn parse_rename(input: &str) -> Result<Command, CommandError> {
     Ok(Command::Rename {
         old_key: old_key.to_owned(),
         new_key: new_key.to_owned(),
+    })
+}
+
+fn parse_expire(input: &str) -> Result<Command, CommandError> {
+    let usage = "EXPIRE key seconds";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    let seconds = required_argument(&mut parts, usage)?;
+
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    let seconds = seconds
+        .parse::<u64>()
+        .map_err(|_| CommandError::InvalidInteger(seconds.to_owned()))?;
+
+    Ok(Command::Expire {
+        key: key.to_owned(),
+        seconds,
     })
 }
 

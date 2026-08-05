@@ -56,7 +56,10 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Err(error) => Response::Error(error.to_string()),
         },
 
-        Command::IncrementBy { key, amount: inc_value } => match database.increment_by(key, inc_value) {
+        Command::IncrementBy {
+            key,
+            amount: inc_value,
+        } => match database.increment_by(key, inc_value) {
             Ok(value) => Response::Integer(value),
             Err(error) => Response::Error(error.to_string()),
         },
@@ -66,7 +69,10 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Err(error) => Response::Error(error.to_string()),
         },
 
-        Command::DecrementBy { key, amount: decr_value } => match database.decrement_by(key, decr_value) {
+        Command::DecrementBy {
+            key,
+            amount: decr_value,
+        } => match database.decrement_by(key, decr_value) {
             Ok(value) => Response::Integer(value),
             Err(error) => Response::Error(error.to_string()),
         },
@@ -75,11 +81,7 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
 
         Command::Delete { key } => Response::Integer(if database.delete(&key) { 1 } else { 0 }),
 
-        Command::Keys => {
-            let keys = database.keys().into_iter().map(str::to_owned).collect();
-
-            Response::Lines(keys)
-        }
+        Command::Keys => Response::Lines(database.keys()),
 
         Command::Rename { old_key, new_key } => {
             Response::Integer(if database.rename_key(&old_key, new_key) {
@@ -87,6 +89,12 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             } else {
                 0
             })
+        }
+
+        Command::Expire { key, seconds } => {
+            let result = database.expire(&key, seconds);
+
+            Response::Integer(if result { 1 } else { 0 })
         }
 
         Command::Len => Response::Integer(database.len() as i64),
