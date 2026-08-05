@@ -1,4 +1,7 @@
-use super::helper::{ensure_no_extra_arguments, required_argument};
+use super::helper::{
+    ensure_no_extra_arguments, parse_integer_argument_command, parse_key_value_command,
+    required_argument,
+};
 use super::model::{Command, CommandError};
 
 impl Command {
@@ -62,23 +65,7 @@ impl Command {
 }
 
 fn parse_set(input: &str) -> Result<Command, CommandError> {
-    let usage = "SET key value";
-
-    let mut parts = input.splitn(3, char::is_whitespace);
-
-    parts.next();
-
-    let key = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    let value = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
+    let (key, value) = parse_key_value_command(input, "SET key value")?;
 
     Ok(Command::Set {
         key: key.to_owned(),
@@ -106,29 +93,12 @@ fn parse_mset(input: &str) -> Result<Command, CommandError> {
         return Err(CommandError::InvalidArguments(usage));
     }
 
-    Ok(Command::Mset { entries })
+    Ok(Command::MSet { entries })
 }
 
 fn parse_setnx(input: &str) -> Result<Command, CommandError> {
-    let usage = "SETNX key value";
-
-    let mut parts = input.splitn(3, char::is_whitespace);
-
-    parts.next();
-
-    let key = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    let value = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    Ok(Command::SetNX {
+    let (key, value) = parse_key_value_command(input, "SETNX key value")?;
+    Ok(Command::SetNx {
         key: key.to_owned(),
         value: value.to_owned(),
     })
@@ -165,23 +135,7 @@ fn parse_mget(input: &str) -> Result<Command, CommandError> {
 }
 
 fn parse_getset(input: &str) -> Result<Command, CommandError> {
-    let usage = "GETSET key value";
-
-    let mut parts = input.splitn(3, char::is_whitespace);
-
-    parts.next();
-
-    let key = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    let value = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
+    let (key, value) = parse_key_value_command(input, "GETSET key value")?;
 
     Ok(Command::GetSet {
         key: key.to_owned(),
@@ -204,23 +158,7 @@ fn parse_getdel(input: &str) -> Result<Command, CommandError> {
 }
 
 fn parse_append(input: &str) -> Result<Command, CommandError> {
-    let usage = "APPEND key value";
-
-    let mut parts = input.splitn(3, char::is_whitespace);
-
-    parts.next();
-
-    let key = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    let value = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
+    let (key, value) = parse_key_value_command(input, "APPEND key value")?;
 
     Ok(Command::Append {
         key: key.to_owned(),
@@ -244,23 +182,9 @@ fn parse_increment(input: &str) -> Result<Command, CommandError> {
 }
 
 fn parse_incrby(input: &str) -> Result<Command, CommandError> {
-    let usage = "INCRBY key inc_value";
-    let mut parts = input.split_whitespace();
+    let (key, amount) = parse_integer_argument_command(input, "INCRBY key inc_value")?;
 
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let inc_value = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    match inc_value.parse::<i64>() {
-        Ok(value) => Ok(Command::IncrementBy {
-            key: key.to_owned(),
-            inc_value: value,
-        }),
-        Err(_) => Err(CommandError::InvalidInteger(inc_value.to_owned())),
-    }
+    Ok(Command::IncrementBy { key, amount })
 }
 
 fn parse_decrement(input: &str) -> Result<Command, CommandError> {
@@ -279,23 +203,9 @@ fn parse_decrement(input: &str) -> Result<Command, CommandError> {
 }
 
 fn parse_decrby(input: &str) -> Result<Command, CommandError> {
-    let usage = "DECRBY key decr_value";
-    let mut parts = input.split_whitespace();
+    let (key, amount) = parse_integer_argument_command(input, "DECRBY key decr_value")?;
 
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let decr_value = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    match decr_value.parse::<i64>() {
-        Ok(value) => Ok(Command::DecrementBy {
-            key: key.to_owned(),
-            decr_value: value,
-        }),
-        Err(_) => Err(CommandError::InvalidInteger(decr_value.to_owned())),
-    }
+    Ok(Command::DecrementBy { key, amount })
 }
 
 fn parse_exists(input: &str) -> Result<Command, CommandError> {

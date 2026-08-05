@@ -9,7 +9,7 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Response::Ok
         }
 
-        Command::Mset { entries } => {
+        Command::MSet { entries } => {
             for (key, value) in entries {
                 database.set(key, value);
             }
@@ -17,7 +17,7 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Response::Ok
         }
 
-        Command::SetNX { key, value } => Response::Integer(if database.set_if_absent(key, value) {
+        Command::SetNx { key, value } => Response::Integer(if database.set_if_absent(key, value) {
             1
         } else {
             0
@@ -56,7 +56,7 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Err(error) => Response::Error(error.to_string()),
         },
 
-        Command::IncrementBy { key, inc_value } => match database.increment_by(key, inc_value) {
+        Command::IncrementBy { key, amount: inc_value } => match database.increment_by(key, inc_value) {
             Ok(value) => Response::Integer(value),
             Err(error) => Response::Error(error.to_string()),
         },
@@ -66,7 +66,7 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Err(error) => Response::Error(error.to_string()),
         },
 
-        Command::DecrementBy { key, decr_value } => match database.decrement_by(key, decr_value) {
+        Command::DecrementBy { key, amount: decr_value } => match database.decrement_by(key, decr_value) {
             Ok(value) => Response::Integer(value),
             Err(error) => Response::Error(error.to_string()),
         },

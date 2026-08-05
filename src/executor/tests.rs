@@ -107,7 +107,7 @@ fn execute_setnx_inserts_missing_key() {
     let mut database = Database::new();
 
     let response = execute(
-        Command::SetNX {
+        Command::SetNx {
             key: "name".to_owned(),
             value: "Ivan".to_owned(),
         },
@@ -125,7 +125,7 @@ fn execute_setnx_does_not_overwrite_existing_key() {
     database.set("name".to_owned(), "Ivan".to_owned());
 
     let response = execute(
-        Command::SetNX {
+        Command::SetNx {
             key: "name".to_owned(),
             value: "Alex".to_owned(),
         },
@@ -181,7 +181,7 @@ fn execute_increment_by_returns_overflow_error() {
     let response = execute(
         Command::IncrementBy {
             key: "counter".to_owned(),
-            inc_value: 1,
+            amount: 1,
         },
         &mut database,
     );
