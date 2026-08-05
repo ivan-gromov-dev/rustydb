@@ -1,7 +1,23 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
+use std::fmt;
 
 pub(crate) struct Database {
     storage: HashMap<String, String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DatabaseError {
+    ValueIsNotInteger,
+    IntegerOverflow,
+}
+
+impl fmt::Display for DatabaseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ValueIsNotInteger => write!(formatter, "value is not integer"),
+            Self::IntegerOverflow => write!(formatter, "integer overflow"),
+        }
+    }
 }
 
 impl Database {
@@ -49,5 +65,79 @@ impl Database {
             }
             None => false,
         }
+    }
+
+    pub(crate) fn append(&mut self, key: &str, append_value: String) -> usize {
+        let stored_value = self.storage.entry(key.to_owned()).or_default();
+        stored_value.push_str(&append_value);
+        stored_value.len()
+    }
+
+    pub(crate) fn increment(&mut self, key: String) -> Result<i64, DatabaseError> {
+        self.increment_by(key, 1)
+    }
+
+    pub(crate) fn increment_by(
+        &mut self,
+        key: String,
+        incr_amount: i64,
+    ) -> Result<i64, DatabaseError> {
+        let number = match self.storage.get(&key) {
+            Some(value) => value
+                .parse::<i64>()
+                .map_err(|_| DatabaseError::ValueIsNotInteger)?,
+            None => 0,
+        };
+
+        let incremented = number
+            .checked_add(incr_amount)
+            .ok_or(DatabaseError::IntegerOverflow)?;
+
+        self.storage.insert(key, incremented.to_string());
+
+        Ok(incremented)
+    }
+
+    pub(crate) fn decrement(&mut self, key: String) -> Result<i64, DatabaseError> {
+        self.decrement_by(key, 1)
+    }
+
+    pub(crate) fn decrement_by(
+        &mut self,
+        key: String,
+        decr_amount: i64,
+    ) -> Result<i64, DatabaseError> {
+        let number = match self.storage.get(&key) {
+            Some(value) => value
+                .parse::<i64>()
+                .map_err(|_| DatabaseError::ValueIsNotInteger)?,
+            None => 0,
+        };
+
+        let decremented = number
+            .checked_sub(decr_amount)
+            .ok_or(DatabaseError::IntegerOverflow)?;
+
+        self.storage.insert(key, decremented.to_string());
+
+        Ok(decremented)
+    }
+
+    pub(crate) fn set_if_absent(&mut self, key: String, value: String) -> bool {
+        match self.storage.entry(key) {
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+                true
+            }
+            Entry::Occupied(_) => false,
+        }
+    }
+
+    pub(crate) fn get_and_set(&mut self, key: String, value: String) -> Option<String> {
+        self.storage.insert(key, value)
+    }
+
+    pub(crate) fn get_and_delete(&mut self, key: String) -> Option<String> {
+        self.storage.remove(&key)
     }
 }

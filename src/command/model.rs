@@ -3,8 +3,17 @@ use std::fmt;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Set { key: String, value: String },
+    MSet { entries: Vec<(String, String)> },
+    SetNx { key: String, value: String },
     Get { key: String },
     MGet { keys: Vec<String> },
+    GetSet { key: String, value: String },
+    GetDel { key: String },
+    Append { key: String, append_value: String },
+    Increment { key: String },
+    IncrementBy { key: String, amount: i64 },
+    Decrement { key: String },
+    DecrementBy { key: String, amount: i64 },
     Exists { key: String },
     Delete { key: String },
     Rename { old_key: String, new_key: String },
@@ -20,6 +29,7 @@ pub(crate) enum CommandError {
     EmptyInput,
     InvalidArguments(&'static str),
     UnknownCommand(String),
+    InvalidInteger(String),
 }
 
 impl fmt::Display for CommandError {
@@ -31,6 +41,9 @@ impl fmt::Display for CommandError {
             }
             Self::UnknownCommand(command) => {
                 write!(formatter, "unknown command: {command}")
+            }
+            Self::InvalidInteger(usage) => {
+                write!(formatter, "invalid integer: {usage}")
             }
         }
     }
