@@ -28,6 +28,8 @@ impl Command {
 
             "GETSET" => parse_getset(input),
 
+            "GETDEL" => parse_getdel(input),
+
             "APPEND" => parse_append(input),
 
             "INCR" => parse_increment(input),
@@ -100,11 +102,15 @@ fn parse_mset(input: &str) -> Result<Command, CommandError> {
         entries.push((key.to_owned(), value.to_owned()));
     }
 
+    if entries.is_empty() {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+
     Ok(Command::Mset { entries })
 }
 
 fn parse_setnx(input: &str) -> Result<Command, CommandError> {
-    let usage = "SET key value";
+    let usage = "SETNX key value";
 
     let mut parts = input.splitn(3, char::is_whitespace);
 
@@ -159,7 +165,7 @@ fn parse_mget(input: &str) -> Result<Command, CommandError> {
 }
 
 fn parse_getset(input: &str) -> Result<Command, CommandError> {
-    let usage = "SET key value";
+    let usage = "GETSET key value";
 
     let mut parts = input.splitn(3, char::is_whitespace);
 
@@ -180,6 +186,20 @@ fn parse_getset(input: &str) -> Result<Command, CommandError> {
     Ok(Command::GetSet {
         key: key.to_owned(),
         value: value.to_owned(),
+    })
+}
+
+fn parse_getdel(input: &str) -> Result<Command, CommandError> {
+    let usage = "GETDEL key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::GetDel {
+        key: key.to_owned(),
     })
 }
 

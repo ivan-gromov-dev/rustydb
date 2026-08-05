@@ -8,6 +8,7 @@ pub(crate) enum Command {
     Get { key: String },
     MGet { keys: Vec<String> },
     GetSet { key: String, value: String },
+    GetDel { key: String },
     Append { key: String, append_value: String },
     Increment { key: String },
     IncrementBy { key: String, inc_value: i64 },

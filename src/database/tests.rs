@@ -1,4 +1,4 @@
-use super::*;
+use super::memory::{Database, DatabaseError};
 
 #[test]
 fn set_and_get_value() {
@@ -295,4 +295,49 @@ fn set_if_absent_increases_length_only_once() {
     assert!(!database.set_if_absent("name".to_owned(), "Alex".to_owned(),));
 
     assert_eq!(database.len(), 1);
+}
+#[test]
+fn get_and_delete_returns_existing_value() {
+    let mut database = Database::new();
+
+    database.set("name".to_owned(), "Ivan".to_owned());
+
+    let result = database.get_and_delete("name".to_owned());
+
+    assert_eq!(result, Some("Ivan".to_owned()));
+}
+
+#[test]
+fn get_and_delete_removes_existing_key() {
+    let mut database = Database::new();
+
+    database.set("name".to_owned(), "Ivan".to_owned());
+
+    database.get_and_delete("name".to_owned());
+
+    assert_eq!(database.get("name"), None);
+    assert!(!database.exists("name"));
+}
+
+#[test]
+fn get_and_delete_missing_key_returns_none() {
+    let mut database = Database::new();
+
+    let result = database.get_and_delete("missing".to_owned());
+
+    assert_eq!(result, None);
+}
+
+#[test]
+fn get_and_delete_decreases_database_length() {
+    let mut database = Database::new();
+
+    database.set("name".to_owned(), "Ivan".to_owned());
+    database.set("city".to_owned(), "Berlin".to_owned());
+
+    let result = database.get_and_delete("name".to_owned());
+
+    assert_eq!(result, Some("Ivan".to_owned()));
+    assert_eq!(database.len(), 1);
+    assert_eq!(database.get("city"), Some("Berlin"));
 }

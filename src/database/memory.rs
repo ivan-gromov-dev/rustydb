@@ -132,7 +132,12 @@ impl Database {
             Entry::Occupied(_) => false,
         }
     }
+
     pub(crate) fn get_and_set(&mut self, key: String, value: String) -> Option<String> {
         self.storage.insert(key, value)
+    }
+
+    pub(crate) fn get_and_delete(&mut self, key: String) -> Option<String> {
+        self.storage.remove(&key)
     }
 }
