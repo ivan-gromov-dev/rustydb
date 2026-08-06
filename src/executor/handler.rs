@@ -109,6 +109,16 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
 
         Command::Persist { key } => Response::Integer(if database.persist(&key) { 1 } else { 0 }),
 
+        Command::StrLen { key } => Response::Integer(database.string_length(&key) as i64),
+
+        Command::GetRange { key, start, end } => {
+            Response::Value(database.get_range(&key, start, end))
+        }
+
+        Command::SetRange { key, offset, value } => {
+            Response::Integer(database.set_range(key, offset, value) as i64)
+        }
+
         Command::Len => Response::Integer(database.len() as i64),
 
         Command::Clear => {

@@ -1,4 +1,5 @@
 use super::entry::Entry;
+use super::helper::normalize_index;
 use std::collections::{HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -290,6 +291,66 @@ impl Database {
             .as_millis();
 
         i64::try_from(milliseconds).unwrap_or(i64::MAX)
+    }
+
+    pub(crate) fn string_length(&mut self, key: &str) -> usize {
+        self.get(key).map_or(0, str::len)
+    }
+
+    pub(crate) fn get_range(&mut self, key: &str, start: i64, end: i64) -> String {
+        let Some(value) = self.get(key) else {
+            return String::new();
+        };
+
+        let characters: Vec<char> = value.chars().collect();
+        let length = characters.len() as i64;
+
+        if length == 0 {
+            return String::new();
+        }
+
+        let mut start = normalize_index(start, length);
+        let mut end = normalize_index(end, length);
+
+        start = start.max(0);
+        end = end.min(length - 1);
+
+        if start >= length || end < 0 || start > end {
+            return String::new();
+        }
+
+        characters[start as usize..=end as usize].iter().collect()
+    }
+
+    pub(crate) fn set_range(&mut self, key: String, offset: usize, value: String) -> usize {
+        self.remove_if_expired(&key);
+
+        let entry = self
+            .storage
+            .entry(key)
+            .or_insert_with(|| Entry::new(String::new()));
+
+        let mut characters: Vec<char> = entry.value().chars().collect();
+
+        if characters.len() < offset {
+            characters.resize(offset, '\0');
+        }
+
+        for (index, character) in value.chars().enumerate() {
+            let position = offset + index;
+
+            if position < characters.len() {
+                characters[position] = character;
+            } else {
+                characters.push(character);
+            }
+        }
+
+        let length = characters.len();
+
+        entry.set_value(characters.into_iter().collect());
+
+        length
     }
 
     #[cfg(test)]

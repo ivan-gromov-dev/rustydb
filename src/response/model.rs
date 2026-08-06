@@ -82,6 +82,9 @@ fn print_help() {
     println!("  TTL key");
     println!("  PTTL key");
     println!("  PERSIST key");
+    println!("  STRLEN key");
+    println!("  GETRANGE key start end");
+    println!("  SETRANGE key offset value");
     println!("  KEYS");
     println!("  LEN");
     println!("  CLEAR");

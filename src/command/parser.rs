@@ -59,6 +59,12 @@ impl Command {
 
             "PERSIST" => parse_persist(input),
 
+            "STRLEN" => parse_strlen(input),
+
+            "GETRANGE" => parse_getrange(input),
+
+            "SETRANGE" => parse_setrange(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -342,6 +348,82 @@ fn parse_persist(input: &str) -> Result<Command, CommandError> {
     ensure_no_extra_arguments(&mut parts, usage)?;
     Ok(Command::Persist {
         key: key.to_owned(),
+    })
+}
+
+fn parse_strlen(input: &str) -> Result<Command, CommandError> {
+    let usage = "STRLEN key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::StrLen {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_getrange(input: &str) -> Result<Command, CommandError> {
+    let usage = "GETRANGE key start end";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    let start = required_argument(&mut parts, usage)?;
+    let end = required_argument(&mut parts, usage)?;
+
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    let start = start
+        .parse::<i64>()
+        .map_err(|_| CommandError::InvalidInteger(start.to_owned()))?;
+
+    let end = end
+        .parse::<i64>()
+        .map_err(|_| CommandError::InvalidInteger(end.to_owned()))?;
+
+    Ok(Command::GetRange {
+        key: key.to_owned(),
+        start,
+        end,
+    })
+}
+
+fn parse_setrange(input: &str) -> Result<Command, CommandError> {
+    let usage = "SETRANGE key offset value";
+    let mut parts = input.splitn(4, char::is_whitespace);
+
+    parts.next();
+
+    let key = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(CommandError::InvalidArguments(usage))?;
+
+    let offset = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(CommandError::InvalidArguments(usage))?;
+
+    let value = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(CommandError::InvalidArguments(usage))?;
+
+    let offset = offset
+        .parse::<usize>()
+        .map_err(|_| CommandError::InvalidInteger(offset.to_owned()))?;
+
+    Ok(Command::SetRange {
+        key: key.to_owned(),
+        offset,
+        value: value.to_owned(),
     })
 }
 
