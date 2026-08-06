@@ -97,6 +97,18 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Response::Integer(if result { 1 } else { 0 })
         }
 
+        Command::PExpire { key, milliseconds } => {
+            let result = database.pexpire(&key, milliseconds);
+
+            Response::Integer(if result { 1 } else { 0 })
+        }
+
+        Command::Ttl { key } => Response::Integer(database.ttl(&key)),
+
+        Command::PTtl { key } => Response::Integer(database.pttl(&key)),
+
+        Command::Persist { key } => Response::Integer(if database.persist(&key) { 1 } else { 0 }),
+
         Command::Len => Response::Integer(database.len() as i64),
 
         Command::Clear => {

@@ -22,6 +22,10 @@ impl Entry {
         &mut self.value
     }
 
+    pub(crate) fn set_value(&mut self, value: String) {
+        self.value = value;
+    }
+
     pub(crate) fn into_value(self) -> String {
         self.value
     }
@@ -31,6 +35,10 @@ impl Entry {
 
     pub(crate) fn set_expires_at(&mut self, expires_at: Instant) {
         self.expires_at = Some(expires_at);
+    }
+
+    pub(crate) fn has_expiration(&self) -> bool {
+        self.expires_at.is_some()
     }
 
     pub(crate) fn clear_expiration(&mut self) {

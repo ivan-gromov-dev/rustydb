@@ -122,8 +122,16 @@ impl Database {
             .checked_add(amount)
             .ok_or(DatabaseError::IntegerOverflow)?;
 
-        self.storage
-            .insert(key, Entry::new(incremented.to_string()));
+        match self.storage.get_mut(&key) {
+            Some(entry) => {
+                entry.set_value(incremented.to_string());
+            }
+
+            None => {
+                self.storage
+                    .insert(key, Entry::new(incremented.to_string()));
+            }
+        }
 
         Ok(incremented)
     }
@@ -148,8 +156,16 @@ impl Database {
             .checked_sub(amount)
             .ok_or(DatabaseError::IntegerOverflow)?;
 
-        self.storage
-            .insert(key, Entry::new(decremented.to_string()));
+        match self.storage.get_mut(&key) {
+            Some(entry) => {
+                entry.set_value(decremented.to_string());
+            }
+
+            None => {
+                self.storage
+                    .insert(key, Entry::new(decremented.to_string()));
+            }
+        }
 
         Ok(decremented)
     }
@@ -219,6 +235,61 @@ impl Database {
         let expires_at = Instant::now() + Duration::from_secs(seconds);
 
         self.expire_at(key, expires_at)
+    }
+
+    pub(crate) fn ttl(&mut self, key: &str) -> i64 {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get(key) else {
+            return -2;
+        };
+
+        let Some(expires_at) = entry.expires_at() else {
+            return -1;
+        };
+
+        let now = Instant::now();
+
+        expires_at.saturating_duration_since(now).as_secs() as i64
+    }
+
+    pub(crate) fn persist(&mut self, key: &str) -> bool {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get_mut(key) else {
+            return false;
+        };
+
+        if !entry.has_expiration() {
+            return false;
+        };
+
+        entry.clear_expiration();
+        true
+    }
+
+    pub(crate) fn pexpire(&mut self, key: &str, milliseconds: u64) -> bool {
+        let expires_at = Instant::now() + Duration::from_millis(milliseconds);
+
+        self.expire_at(key, expires_at)
+    }
+
+    pub(crate) fn pttl(&mut self, key: &str) -> i64 {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get(key) else {
+            return -2;
+        };
+
+        let Some(expires_at) = entry.expires_at() else {
+            return -1;
+        };
+
+        let milliseconds = expires_at
+            .saturating_duration_since(Instant::now())
+            .as_millis();
+
+        i64::try_from(milliseconds).unwrap_or(i64::MAX)
     }
 
     #[cfg(test)]

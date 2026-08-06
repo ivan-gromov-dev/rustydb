@@ -51,6 +51,14 @@ impl Command {
 
             "EXPIRE" => parse_expire(input),
 
+            "PEXPIRE" => parse_pexpire(input),
+
+            "TTL" => parse_ttl(input),
+
+            "PTTL" => parse_pttl(input),
+
+            "PERSIST" => parse_persist(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -273,6 +281,67 @@ fn parse_expire(input: &str) -> Result<Command, CommandError> {
     Ok(Command::Expire {
         key: key.to_owned(),
         seconds,
+    })
+}
+
+fn parse_pexpire(input: &str) -> Result<Command, CommandError> {
+    let usage = "PEXPIRE key milliseconds";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    let milliseconds = required_argument(&mut parts, usage)?;
+
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    let milliseconds = milliseconds
+        .parse::<u64>()
+        .map_err(|_| CommandError::InvalidInteger(milliseconds.to_owned()))?;
+
+    Ok(Command::PExpire {
+        key: key.to_owned(),
+        milliseconds,
+    })
+}
+
+fn parse_ttl(input: &str) -> Result<Command, CommandError> {
+    let usage = "TTL key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+    Ok(Command::Ttl {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_pttl(input: &str) -> Result<Command, CommandError> {
+    let usage = "PTTL key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::PTtl {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_persist(input: &str) -> Result<Command, CommandError> {
+    let usage = "TTL key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+    Ok(Command::Persist {
+        key: key.to_owned(),
     })
 }
 

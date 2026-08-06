@@ -78,6 +78,10 @@ fn print_help() {
     println!("  DEL key");
     println!("  RENAME old_key new_key");
     println!("  EXPIRE key seconds");
+    println!("  PEXPIRE key milliseconds");
+    println!("  TTL key");
+    println!("  PTTL key");
+    println!("  PERSIST key");
     println!("  KEYS");
     println!("  LEN");
     println!("  CLEAR");

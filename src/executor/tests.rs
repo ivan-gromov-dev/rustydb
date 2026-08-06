@@ -222,3 +222,19 @@ fn execute_expire_returns_zero_for_missing_key() {
 
     assert_eq!(response, Response::Integer(0));
 }
+
+#[test]
+fn execute_ttl_returns_database_ttl() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    let response = execute(
+        Command::Ttl {
+            key: "key".to_owned(),
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Integer(-1));
+}

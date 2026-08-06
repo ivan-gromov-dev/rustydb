@@ -610,3 +610,198 @@ fn expire_with_zero_seconds_expires_key_immediately() {
     assert!(result);
     assert_eq!(database.get("key"), None);
 }
+
+#[test]
+fn ttl_returns_minus_two_for_missing_key() {
+    let mut database = Database::new();
+
+    assert_eq!(database.ttl("missing"), -2);
+}
+
+#[test]
+fn ttl_returns_minus_one_for_key_without_expiration() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    assert_eq!(database.ttl("key"), -1);
+}
+
+#[test]
+fn ttl_returns_remaining_seconds() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+    database.expire("key", 60);
+
+    let ttl = database.ttl("key");
+
+    assert!((59..=60).contains(&ttl));
+}
+
+#[test]
+fn ttl_returns_minus_two_for_expired_key() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+    database.expire("key", 0);
+
+    assert_eq!(database.ttl("key"), -2);
+}
+
+#[test]
+fn persist_removes_expiration() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+    database.expire("key", 60);
+
+    let result = database.persist("key");
+
+    assert!(result);
+    assert_eq!(database.ttl("key"), -1);
+    assert_eq!(database.get("key"), Some("value"));
+}
+
+#[test]
+fn persist_returns_false_for_key_without_expiration() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    let result = database.persist("key");
+
+    assert!(!result);
+    assert_eq!(database.ttl("key"), -1);
+}
+
+#[test]
+fn persist_returns_false_for_missing_key() {
+    let mut database = Database::new();
+
+    assert!(!database.persist("missing"));
+}
+
+#[test]
+fn persist_returns_false_for_expired_key() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+    database.expire("key", 0);
+
+    assert!(!database.persist("key"));
+    assert_eq!(database.ttl("key"), -2);
+}
+
+#[test]
+fn increment_preserves_expiration() {
+    let mut database = Database::new();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+
+    database.set("counter".to_owned(), "10".to_owned());
+    database.expire_at("counter", expires_at);
+
+    let result = database.increment("counter".to_owned());
+
+    assert_eq!(result, Ok(11));
+    assert_eq!(database.expiration("counter"), Some(expires_at));
+}
+
+#[test]
+fn decrement_preserves_expiration() {
+    let mut database = Database::new();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+
+    database.set("counter".to_owned(), "10".to_owned());
+    database.expire_at("counter", expires_at);
+
+    let result = database.decrement("counter".to_owned());
+
+    assert_eq!(result, Ok(9));
+    assert_eq!(database.expiration("counter"), Some(expires_at));
+}
+
+#[test]
+fn append_preserves_expiration() {
+    let mut database = Database::new();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+
+    database.set("key".to_owned(), "hello".to_owned());
+    database.expire_at("key", expires_at);
+
+    database.append("key", " world".to_owned());
+
+    assert_eq!(database.get("key"), Some("hello world"));
+    assert_eq!(database.expiration("key"), Some(expires_at));
+}
+
+#[test]
+fn get_and_set_clears_expiration() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "old".to_owned());
+    database.expire("key", 60);
+
+    database.get_and_set("key".to_owned(), "new".to_owned());
+
+    assert_eq!(database.ttl("key"), -1);
+}
+
+#[test]
+fn pexpire_sets_expiration_for_existing_key() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    let result = database.pexpire("key", 60_000);
+
+    assert!(result);
+
+    let ttl = database.pttl("key");
+    assert!((59_000..=60_000).contains(&ttl));
+}
+
+#[test]
+fn pexpire_returns_false_for_missing_key() {
+    let mut database = Database::new();
+
+    assert!(!database.pexpire("missing", 60_000));
+}
+
+#[test]
+fn pexpire_with_zero_expires_key_immediately() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    assert!(database.pexpire("key", 0));
+    assert_eq!(database.get("key"), None);
+}
+
+#[test]
+fn pttl_returns_minus_two_for_missing_key() {
+    let mut database = Database::new();
+
+    assert_eq!(database.pttl("missing"), -2);
+}
+
+#[test]
+fn pttl_returns_minus_one_without_expiration() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+
+    assert_eq!(database.pttl("key"), -1);
+}
+
+#[test]
+fn pttl_returns_remaining_milliseconds() {
+    let mut database = Database::new();
+
+    database.set("key".to_owned(), "value".to_owned());
+    database.pexpire("key", 10_000);
+
+    let ttl = database.pttl("key");
+
+    assert!((9_000..=10_000).contains(&ttl));
+}
