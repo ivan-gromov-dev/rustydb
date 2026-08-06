@@ -2,21 +2,88 @@ use std::fmt;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
-    Set { key: String, value: String },
-    MSet { entries: Vec<(String, String)> },
-    SetNx { key: String, value: String },
-    Get { key: String },
-    MGet { keys: Vec<String> },
-    GetSet { key: String, value: String },
-    GetDel { key: String },
-    Append { key: String, append_value: String },
-    Increment { key: String },
-    IncrementBy { key: String, amount: i64 },
-    Decrement { key: String },
-    DecrementBy { key: String, amount: i64 },
-    Exists { key: String },
-    Delete { key: String },
-    Rename { old_key: String, new_key: String },
+    Set {
+        key: String,
+        value: String,
+    },
+    MSet {
+        entries: Vec<(String, String)>,
+    },
+    SetNx {
+        key: String,
+        value: String,
+    },
+    Get {
+        key: String,
+    },
+    MGet {
+        keys: Vec<String>,
+    },
+    GetSet {
+        key: String,
+        value: String,
+    },
+    GetDel {
+        key: String,
+    },
+    Append {
+        key: String,
+        append_value: String,
+    },
+    Increment {
+        key: String,
+    },
+    IncrementBy {
+        key: String,
+        amount: i64,
+    },
+    Decrement {
+        key: String,
+    },
+    DecrementBy {
+        key: String,
+        amount: i64,
+    },
+    Exists {
+        key: String,
+    },
+    Delete {
+        key: String,
+    },
+    Rename {
+        old_key: String,
+        new_key: String,
+    },
+    Expire {
+        key: String,
+        seconds: u64,
+    },
+    PExpire {
+        key: String,
+        milliseconds: u64,
+    },
+    Ttl {
+        key: String,
+    },
+    PTtl {
+        key: String,
+    },
+    Persist {
+        key: String,
+    },
+    StrLen {
+        key: String,
+    },
+    GetRange {
+        key: String,
+        start: i64,
+        end: i64,
+    },
+    SetRange {
+        key: String,
+        offset: usize,
+        value: String,
+    },
     Keys,
     Len,
     Clear,
