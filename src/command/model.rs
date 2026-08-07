@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Command {
     Set {
         key: String,
@@ -43,6 +43,10 @@ pub(crate) enum Command {
     DecrementBy {
         key: String,
         amount: i64,
+    },
+    IncrementByFloat {
+        key: String,
+        amount: f64,
     },
     Exists {
         key: String,
@@ -97,6 +101,7 @@ pub(crate) enum CommandError {
     InvalidArguments(&'static str),
     UnknownCommand(String),
     InvalidInteger(String),
+    InvalidFloat(String),
 }
 
 impl fmt::Display for CommandError {
@@ -111,6 +116,9 @@ impl fmt::Display for CommandError {
             }
             Self::InvalidInteger(usage) => {
                 write!(formatter, "invalid integer: {usage}")
+            }
+            Self::InvalidFloat(usage) => {
+                write!(formatter, "invalid float: {usage}")
             }
         }
     }

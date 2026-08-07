@@ -43,6 +43,8 @@ impl Command {
 
             "DECRBY" => parse_decrby(input),
 
+            "INCRBYFLOAT" => parse_increment_by_float(input),
+
             "EXISTS" => parse_exists(input),
 
             "DEL" => parse_del(input),
@@ -222,6 +224,31 @@ fn parse_decrby(input: &str) -> Result<Command, CommandError> {
     let (key, amount) = parse_integer_argument_command(input, "DECRBY key decr_value")?;
 
     Ok(Command::DecrementBy { key, amount })
+}
+
+fn parse_increment_by_float(input: &str) -> Result<Command, CommandError> {
+    let usage = "INCRBYFLOAT key amount";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    let amount = required_argument(&mut parts, usage)?;
+
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    let amount = amount
+        .parse::<f64>()
+        .map_err(|_| CommandError::InvalidFloat(amount.to_owned()))?;
+
+    if !amount.is_finite() {
+        return Err(CommandError::InvalidFloat(amount.to_string()));
+    }
+
+    Ok(Command::IncrementByFloat {
+        key: key.to_owned(),
+        amount,
+    })
 }
 
 fn parse_exists(input: &str) -> Result<Command, CommandError> {

@@ -12,6 +12,8 @@ pub(crate) struct Database {
 pub(crate) enum DatabaseError {
     ValueIsNotInteger,
     IntegerOverflow,
+    ValueIsNotFloat,
+    FloatIsNotFinite,
 }
 
 impl fmt::Display for DatabaseError {
@@ -23,6 +25,14 @@ impl fmt::Display for DatabaseError {
 
             Self::IntegerOverflow => {
                 write!(formatter, "integer overflow")
+            }
+
+            Self::ValueIsNotFloat => {
+                write!(formatter, "value is not float")
+            }
+
+            Self::FloatIsNotFinite => {
+                write!(formatter, "float is not finite")
             }
         }
     }
@@ -169,6 +179,41 @@ impl Database {
         }
 
         Ok(decremented)
+    }
+
+    pub(crate) fn incr_by_float(&mut self, key: String, amount: f64) -> Result<f64, DatabaseError> {
+        self.remove_if_expired(&key);
+
+        let number = match self.storage.get(&key) {
+            Some(entry) => entry
+                .value()
+                .parse::<f64>()
+                .map_err(|_| DatabaseError::ValueIsNotFloat)?,
+
+            None => 0.0,
+        };
+
+        if !number.is_finite() {
+            return Err(DatabaseError::ValueIsNotFloat);
+        }
+
+        let result = number + amount;
+
+        if !result.is_finite() {
+            return Err(DatabaseError::FloatIsNotFinite);
+        }
+
+        match self.storage.get_mut(&key) {
+            Some(entry) => {
+                entry.set_value(result.to_string());
+            }
+
+            None => {
+                self.storage.insert(key, Entry::new(result.to_string()));
+            }
+        }
+
+        Ok(result)
     }
 
     pub(crate) fn set_if_absent(&mut self, key: String, value: String) -> bool {

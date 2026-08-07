@@ -1,7 +1,8 @@
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Response {
     Ok,
     Integer(i64),
+    Float(f64),
     Value(String),
     Values(Vec<Option<String>>),
     Nil,
@@ -17,6 +18,10 @@ impl Response {
             Self::Ok => println!("OK"),
 
             Self::Integer(value) => {
+                println!("{value}");
+            }
+
+            Self::Float(value) => {
                 println!("{value}");
             }
 

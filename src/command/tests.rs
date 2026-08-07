@@ -104,3 +104,93 @@ fn expire_rejects_extra_arguments() {
         Err(CommandError::InvalidArguments("EXPIRE key seconds"))
     );
 }
+
+#[test]
+fn parses_increment_by_float() {
+    let result = Command::parse("INCRBYFLOAT counter 1.5");
+
+    assert_eq!(
+        result,
+        Ok(Command::IncrementByFloat {
+            key: "counter".to_owned(),
+            amount: 1.5,
+        })
+    );
+}
+
+#[test]
+fn parses_increment_by_float_with_negative_amount() {
+    let result = Command::parse("INCRBYFLOAT counter -2.25");
+
+    assert_eq!(
+        result,
+        Ok(Command::IncrementByFloat {
+            key: "counter".to_owned(),
+            amount: -2.25,
+        })
+    );
+}
+
+#[test]
+fn parses_increment_by_float_case_insensitively() {
+    let result = Command::parse("incrbyfloat counter 1.5");
+
+    assert_eq!(
+        result,
+        Ok(Command::IncrementByFloat {
+            key: "counter".to_owned(),
+            amount: 1.5,
+        })
+    );
+}
+
+#[test]
+fn increment_by_float_requires_key() {
+    let result = Command::parse("INCRBYFLOAT");
+
+    assert_eq!(
+        result,
+        Err(CommandError::InvalidArguments("INCRBYFLOAT key amount"))
+    );
+}
+
+#[test]
+fn increment_by_float_requires_amount() {
+    let result = Command::parse("INCRBYFLOAT counter");
+
+    assert_eq!(
+        result,
+        Err(CommandError::InvalidArguments("INCRBYFLOAT key amount"))
+    );
+}
+
+#[test]
+fn increment_by_float_rejects_invalid_float() {
+    let result = Command::parse("INCRBYFLOAT counter abc");
+
+    assert_eq!(result, Err(CommandError::InvalidFloat("abc".to_owned())));
+}
+
+#[test]
+fn increment_by_float_rejects_nan() {
+    let result = Command::parse("INCRBYFLOAT counter NaN");
+
+    assert_eq!(result, Err(CommandError::InvalidFloat("NaN".to_owned())));
+}
+
+#[test]
+fn increment_by_float_rejects_infinity() {
+    let result = Command::parse("INCRBYFLOAT counter inf");
+
+    assert_eq!(result, Err(CommandError::InvalidFloat("inf".to_owned())));
+}
+
+#[test]
+fn increment_by_float_rejects_extra_arguments() {
+    let result = Command::parse("INCRBYFLOAT counter 1.5 extra");
+
+    assert_eq!(
+        result,
+        Err(CommandError::InvalidArguments("INCRBYFLOAT key amount"))
+    );
+}
