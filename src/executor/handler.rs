@@ -77,6 +77,11 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Err(error) => Response::Error(error.to_string()),
         },
 
+        Command::IncrementByFloat { key, amount } => match database.incr_by_float(key, amount) {
+            Ok(value) => Response::Float(value),
+            Err(error) => Response::Error(error.to_string()),
+        },
+
         Command::Exists { key } => Response::Integer(if database.exists(&key) { 1 } else { 0 }),
 
         Command::Delete { key } => Response::Integer(if database.delete(&key) { 1 } else { 0 }),

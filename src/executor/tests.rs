@@ -238,3 +238,37 @@ fn execute_ttl_returns_database_ttl() {
 
     assert_eq!(response, Response::Integer(-1));
 }
+
+#[test]
+fn execute_increment_by_float_returns_float() {
+    let mut database = Database::new();
+
+    database.set("counter".to_owned(), "10.5".to_owned());
+
+    let response = execute(
+        Command::IncrementByFloat {
+            key: "counter".to_owned(),
+            amount: 2.25,
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Float(12.75));
+}
+
+#[test]
+fn execute_increment_by_float_returns_error() {
+    let mut database = Database::new();
+
+    database.set("counter".to_owned(), "hello".to_owned());
+
+    let response = execute(
+        Command::IncrementByFloat {
+            key: "counter".to_owned(),
+            amount: 1.5,
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Error("value is not float".to_owned()));
+}
