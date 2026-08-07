@@ -398,6 +398,14 @@ impl Database {
         length
     }
 
+    pub(crate) fn delete_many(&mut self, keys: &[String]) -> usize {
+        keys.iter().filter(|key| self.delete(key)).count()
+    }
+
+    pub(crate) fn exists_many(&mut self, keys: &[String]) -> usize {
+        keys.iter().filter(|key| self.exists(key)).count()
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
         self.storage.get(key).and_then(Entry::expires_at)

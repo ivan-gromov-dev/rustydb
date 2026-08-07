@@ -1,6 +1,6 @@
 use super::helper::{
     ensure_no_extra_arguments, parse_integer_argument_command, parse_key_value_command,
-    required_argument,
+    parse_keys_argument_command, required_argument,
 };
 use super::model::{Command, CommandError};
 
@@ -251,32 +251,16 @@ fn parse_increment_by_float(input: &str) -> Result<Command, CommandError> {
     })
 }
 
-fn parse_exists(input: &str) -> Result<Command, CommandError> {
-    let usage = "EXISTS key";
-    let mut parts = input.split_whitespace();
+fn parse_del(input: &str) -> Result<Command, CommandError> {
+    let keys = parse_keys_argument_command(input, "DEL key [key ...]")?;
 
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::Exists {
-        key: key.to_owned(),
-    })
+    Ok(Command::Delete { keys })
 }
 
-fn parse_del(input: &str) -> Result<Command, CommandError> {
-    let usage = "DEL key";
-    let mut parts = input.split_whitespace();
+fn parse_exists(input: &str) -> Result<Command, CommandError> {
+    let keys = parse_keys_argument_command(input, "EXISTS key [key ...]")?;
 
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::Delete {
-        key: key.to_owned(),
-    })
+    Ok(Command::Exists { keys })
 }
 
 fn parse_rename(input: &str) -> Result<Command, CommandError> {

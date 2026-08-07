@@ -1122,3 +1122,117 @@ fn incr_by_float_treats_expired_key_as_missing() {
     assert_eq!(result, Ok(1.5));
     assert_eq!(database.get("counter"), Some("1.5"));
 }
+
+#[test]
+fn delete_many_removes_existing_keys() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+    database.set("c".to_owned(), "3".to_owned());
+
+    let keys = vec!["a".to_owned(), "c".to_owned()];
+
+    let deleted = database.delete_many(&keys);
+
+    assert_eq!(deleted, 2);
+    assert_eq!(database.get("a"), None);
+    assert_eq!(database.get("b"), Some("2"));
+    assert_eq!(database.get("c"), None);
+}
+
+#[test]
+fn delete_many_ignores_missing_keys() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+
+    let keys = vec!["a".to_owned(), "missing".to_owned()];
+
+    let deleted = database.delete_many(&keys);
+
+    assert_eq!(deleted, 1);
+}
+
+#[test]
+fn delete_many_counts_duplicate_key_once() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+
+    let keys = vec!["a".to_owned(), "a".to_owned(), "a".to_owned()];
+
+    let deleted = database.delete_many(&keys);
+
+    assert_eq!(deleted, 1);
+}
+
+#[test]
+fn delete_many_treats_expired_key_as_missing() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+
+    database.expire("a", 0);
+
+    let keys = vec!["a".to_owned(), "b".to_owned()];
+
+    let deleted = database.delete_many(&keys);
+
+    assert_eq!(deleted, 1);
+}
+
+#[test]
+fn exists_many_counts_existing_keys() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+
+    let keys = vec!["a".to_owned(), "b".to_owned(), "missing".to_owned()];
+
+    let count = database.exists_many(&keys);
+
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn exists_many_counts_duplicate_keys_multiple_times() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+
+    let keys = vec!["a".to_owned(), "a".to_owned(), "a".to_owned()];
+
+    let count = database.exists_many(&keys);
+
+    assert_eq!(count, 3);
+}
+
+#[test]
+fn exists_many_returns_zero_when_no_keys_exist() {
+    let mut database = Database::new();
+
+    let keys = vec!["a".to_owned(), "b".to_owned()];
+
+    let count = database.exists_many(&keys);
+
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn exists_many_does_not_count_expired_keys() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+
+    database.expire("a", 0);
+
+    let keys = vec!["a".to_owned(), "b".to_owned()];
+
+    let count = database.exists_many(&keys);
+
+    assert_eq!(count, 1);
+}

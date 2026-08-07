@@ -79,8 +79,9 @@ fn print_help() {
     println!("  INCRBY key inc_value");
     println!("  DECR key");
     println!("  DECRBY key decr_value");
-    println!("  EXISTS key");
-    println!("  DEL key");
+    println!("  INCRBYFLOAT key value");
+    println!("  DEL key [key ...]");
+    println!("  EXISTS key [key ...]");
     println!("  RENAME old_key new_key");
     println!("  EXPIRE key seconds");
     println!("  PEXPIRE key milliseconds");
