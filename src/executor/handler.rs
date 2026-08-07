@@ -82,9 +82,9 @@ pub(crate) fn execute(command: Command, database: &mut Database) -> Response {
             Err(error) => Response::Error(error.to_string()),
         },
 
-        Command::Exists { key } => Response::Integer(if database.exists(&key) { 1 } else { 0 }),
+        Command::Delete { keys } => Response::Integer(database.delete_many(&keys) as i64),
 
-        Command::Delete { key } => Response::Integer(if database.delete(&key) { 1 } else { 0 }),
+        Command::Exists { keys } => Response::Integer(database.exists_many(&keys) as i64),
 
         Command::Keys => Response::Lines(database.keys()),
 

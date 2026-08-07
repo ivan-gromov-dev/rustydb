@@ -49,10 +49,10 @@ pub(crate) enum Command {
         amount: f64,
     },
     Exists {
-        key: String,
+        keys: Vec<String>,
     },
     Delete {
-        key: String,
+        keys: Vec<String>,
     },
     Rename {
         old_key: String,
