@@ -1,0 +1,4 @@
+interface:
+  display_name: "RustyDB Implement"
+  short_description: "Implement verified RustyDB changes"
+  default_prompt: "Use $rustydb-implement to implement this change in RustyDB."
