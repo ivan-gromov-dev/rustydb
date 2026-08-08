@@ -122,6 +122,11 @@ python scripts/check_module_coverage.py coverage.json --threshold 70
 
 Coverage is aggregated separately for the logical modules `app`, `command`, `executor`, `output`, and `storage`. Every module must have more than 70% line coverage. Test sources and crate bootstrap files are excluded from the per-module calculation.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned learning milestones covering typed
+values, networking, RESP2, persistence, expiration, and observability.
+
 ## Continuous integration
 
 The GitHub Actions workflow runs formatting, Clippy, tests, and the per-module coverage gate on pushes and pull requests. The final `CI Success` job succeeds only when the complete quality job succeeds.
