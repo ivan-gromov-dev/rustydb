@@ -1,0 +1,4 @@
+interface:
+  display_name: "RustyDB Review"
+  short_description: "Review RustyDB changes for regressions"
+  default_prompt: "Use $rustydb-review to review the current changes."
