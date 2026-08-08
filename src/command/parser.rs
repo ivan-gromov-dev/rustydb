@@ -1,8 +1,8 @@
-use super::helper::{
+use super::arguments::{
     ensure_no_extra_arguments, parse_integer_argument_command, parse_key_value_command,
     required_argument,
 };
-use super::model::{Command, CommandError};
+use super::types::{Command, CommandError};
 
 impl Command {
     pub(crate) fn parse(input: &str) -> Result<Self, CommandError> {
@@ -366,7 +366,7 @@ fn parse_pttl(input: &str) -> Result<Command, CommandError> {
 }
 
 fn parse_persist(input: &str) -> Result<Command, CommandError> {
-    let usage = "TTL key";
+    let usage = "PERSIST key";
     let mut parts = input.split_whitespace();
 
     parts.next();
@@ -421,27 +421,22 @@ fn parse_getrange(input: &str) -> Result<Command, CommandError> {
 
 fn parse_setrange(input: &str) -> Result<Command, CommandError> {
     let usage = "SETRANGE key offset value";
-    let mut parts = input.splitn(4, char::is_whitespace);
-
-    parts.next();
-
-    let key = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let arguments = input
+        .split_once(char::is_whitespace)
+        .map(|(_, arguments)| arguments.trim_start())
+        .ok_or(CommandError::InvalidArguments(usage))?;
+    let (key, arguments) = arguments
+        .split_once(char::is_whitespace)
+        .map(|(key, arguments)| (key, arguments.trim_start()))
+        .ok_or(CommandError::InvalidArguments(usage))?;
+    let (offset, value) = arguments
+        .split_once(char::is_whitespace)
+        .map(|(offset, value)| (offset, value.trim_start()))
         .ok_or(CommandError::InvalidArguments(usage))?;
 
-    let offset = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    let value = parts
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(CommandError::InvalidArguments(usage))?;
+    if key.is_empty() || offset.is_empty() || value.is_empty() {
+        return Err(CommandError::InvalidArguments(usage));
+    }
 
     let offset = offset
         .parse::<usize>()

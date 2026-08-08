@@ -1,50 +1,56 @@
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 
 use crate::command::{Command, CommandError};
-use crate::database::Database;
 use crate::executor::execute;
-use crate::response::Response;
+use crate::output::CommandOutput;
+use crate::storage::InMemoryStore;
 
 pub fn run() -> io::Result<()> {
-    let mut database = Database::new();
+    let stdin = io::stdin();
+    let stdout = io::stdout();
 
-    println!("Rusty DB");
-    println!("Type HELP to see available commands.");
+    run_with(stdin.lock(), stdout.lock())
+}
+
+fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> {
+    let mut store = InMemoryStore::new();
+
+    writeln!(writer, "Rusty DB")?;
+    writeln!(writer, "Type HELP to see available commands.")?;
 
     loop {
-        print!("db> ");
-        io::stdout().flush()?;
+        write!(writer, "db> ")?;
+        writer.flush()?;
 
         let mut input = String::new();
-        let bytes_read = io::stdin().read_line(&mut input)?;
+        let bytes_read = reader.read_line(&mut input)?;
 
         if bytes_read == 0 {
-            println!();
+            writeln!(writer)?;
             break;
         }
 
         let command = match Command::parse(&input) {
             Ok(command) => command,
-
-            Err(CommandError::EmptyInput) => {
-                continue;
-            }
-
+            Err(CommandError::EmptyInput) => continue,
             Err(error) => {
-                println!("ERR {error}");
+                writeln!(writer, "ERR {error}")?;
                 continue;
             }
         };
 
-        let response = execute(command, &mut database);
+        let output = execute(command, &mut store);
 
-        if response == Response::Exit {
-            println!("Bye!");
+        if output == CommandOutput::Exit {
+            writeln!(writer, "Bye!")?;
             break;
         }
 
-        response.print();
+        output.write_to(&mut writer)?;
     }
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

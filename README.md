@@ -1,2 +1,134 @@
-# rustydb
-Simple Rust In-memory DB
+# RustyDB
+
+RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string and expiration commands.
+
+The project is intended for learning and experimentation. Data lives only in process memory and is lost when the application exits.
+
+## Requirements
+
+- Rust stable with the 2024 edition
+- Cargo
+
+## Running the database
+
+```console
+cargo run
+```
+
+Example session:
+
+```text
+Rusty DB
+Type HELP to see available commands.
+db> SET greeting Hello world
+OK
+db> GET greeting
+Hello world
+db> APPEND greeting !
+12
+db> GET greeting
+Hello world!
+db> EXIT
+Bye!
+```
+
+Command names are case-insensitive. Keys cannot contain whitespace. Commands accepting a value preserve spaces inside that value.
+
+## Commands
+
+| Command | Description | Result |
+| --- | --- | --- |
+| `SET key value` | Store or overwrite a value and clear its previous expiration | `OK` |
+| `MSET key value [key value ...]` | Store one or more key/value pairs | `OK` |
+| `SETNX key value` | Store only when the key does not exist | `1` if stored, otherwise `0` |
+| `GET key` | Read a value | Value or `(nil)` |
+| `MGET key [key ...]` | Read multiple values in request order | One value or `(nil)` per line |
+| `GETSET key value` | Replace a value and return the previous value | Previous value or `(nil)` |
+| `GETDEL key` | Delete a key and return its value | Previous value or `(nil)` |
+| `APPEND key value` | Append to a string, creating the key if necessary | New character length |
+| `INCR key` | Increment an integer by one | Updated integer |
+| `INCRBY key amount` | Increment an integer by `amount` | Updated integer |
+| `DECR key` | Decrement an integer by one | Updated integer |
+| `DECRBY key amount` | Decrement an integer by `amount` | Updated integer |
+| `INCRBYFLOAT key amount` | Increment a finite floating-point value | Updated number |
+| `EXISTS key` | Test whether a non-expired key exists | `1` or `0` |
+| `DEL key` | Delete a key | `1` if deleted, otherwise `0` |
+| `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
+| `EXPIRE key seconds` | Set expiration in seconds | `1` if set, otherwise `0` |
+| `PEXPIRE key milliseconds` | Set expiration in milliseconds | `1` if set, otherwise `0` |
+| `TTL key` | Read remaining lifetime in seconds | Remaining TTL, `-1`, or `-2` |
+| `PTTL key` | Read remaining lifetime in milliseconds | Remaining TTL, `-1`, or `-2` |
+| `PERSIST key` | Remove an expiration | `1` if removed, otherwise `0` |
+| `STRLEN key` | Count Unicode scalar values in a string | Character count |
+| `GETRANGE key start end` | Read an inclusive character range | String, possibly empty |
+| `SETRANGE key offset value` | Replace characters starting at an offset | New character length |
+| `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
+| `LEN` | Count non-expired keys | Number of keys |
+| `CLEAR` | Remove every key | `OK` |
+| `HELP` | Print the command list | Help text |
+| `EXIT` / `QUIT` | Close the application | `Bye!` |
+
+For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
+
+String offsets and lengths are measured in Unicode scalar values, not UTF-8 bytes. Negative `GETRANGE` indexes count backward from the end. When `SETRANGE` starts beyond the current end, the gap is padded with null characters (`\0`).
+
+## Project structure
+
+```text
+src/
+├── app.rs                 Interactive application loop
+├── app/tests.rs           End-to-end CLI-loop tests
+├── command/
+│   ├── arguments.rs       Shared argument parsing primitives
+│   ├── parser.rs          Text-to-command parser
+│   └── types.rs           Command and CommandError types
+├── executor/
+│   ├── execute.rs         Command dispatch and result mapping
+│   └── tests.rs
+├── output/
+│   ├── command_output.rs  Output model and writer-based rendering
+│   └── tests.rs
+└── storage/
+    ├── in_memory.rs       InMemoryStore and StoreError
+    ├── indexing.rs        Range-index normalization
+    ├── stored_value.rs    StoredValue and expiration metadata
+    └── tests/              Tests grouped by keys, numbers, strings, TTL, and values
+```
+
+The layers have deliberately narrow responsibilities:
+
+1. `command` validates and converts user input into typed commands.
+2. `executor` applies a command to the store and creates a `CommandOutput`.
+3. `storage` owns values, numeric operations, ranges, and expiration behavior.
+4. `output` renders results to any `Write` implementation without depending on global stdout.
+5. `app` connects input, parsing, execution, and output.
+
+## Development
+
+Run the complete local verification suite:
+
+```console
+cargo fmt -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+```
+
+To reproduce the CI coverage check, install [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) and run:
+
+```console
+cargo llvm-cov --workspace --all-features --json --output-path coverage.json
+python scripts/check_module_coverage.py coverage.json --threshold 70
+```
+
+Coverage is aggregated separately for the logical modules `app`, `command`, `executor`, `output`, and `storage`. Every module must have more than 70% line coverage. Test sources and crate bootstrap files are excluded from the per-module calculation.
+
+## Continuous integration
+
+The GitHub Actions workflow runs formatting, Clippy, tests, and the per-module coverage gate on pushes and pull requests. The final `CI Success` job succeeds only when the complete quality job succeeds.
+
+## Current limitations
+
+- No persistence, transactions, networking, authentication, or concurrent access.
+- Values and keys are held entirely in memory.
+- Expiration uses the process monotonic clock and does not survive restarts.
+- The command set resembles Redis but is not protocol-compatible with Redis.
