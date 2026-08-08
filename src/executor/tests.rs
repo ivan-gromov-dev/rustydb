@@ -55,7 +55,7 @@ fn execute_delete_returns_one_for_existing_key() {
 
     let response = execute(
         Command::Delete {
-            key: "name".to_owned(),
+            keys: vec!["name".to_owned()],
         },
         &mut database,
     );
@@ -70,7 +70,7 @@ fn execute_delete_returns_zero_for_missing_key() {
 
     let response = execute(
         Command::Delete {
-            key: "missing".to_owned(),
+            keys: vec!["missing".to_owned()],
         },
         &mut database,
     );
@@ -367,7 +367,7 @@ fn execute_atomic_value_commands() {
     assert_eq!(
         execute(
             Command::Exists {
-                key: "renamed".to_owned(),
+                keys: vec!["renamed".to_owned()],
             },
             &mut database,
         ),
@@ -444,4 +444,54 @@ fn execute_control_commands_return_control_responses() {
 
     assert_eq!(execute(Command::Help, &mut database), Response::Help);
     assert_eq!(execute(Command::Exit, &mut database), Response::Exit);
+}
+
+#[test]
+fn execute_delete_returns_number_of_deleted_keys() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+
+    let response = execute(
+        Command::Delete {
+            keys: vec!["a".to_owned(), "missing".to_owned(), "b".to_owned()],
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Integer(2));
+}
+
+#[test]
+fn execute_exists_returns_number_of_existing_keys() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+
+    let response = execute(
+        Command::Exists {
+            keys: vec!["a".to_owned(), "missing".to_owned(), "b".to_owned()],
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Integer(2));
+}
+
+#[test]
+fn execute_exists_counts_duplicates() {
+    let mut database = Database::new();
+
+    database.set("a".to_owned(), "1".to_owned());
+
+    let response = execute(
+        Command::Exists {
+            keys: vec!["a".to_owned(), "a".to_owned(), "a".to_owned()],
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Integer(3));
 }

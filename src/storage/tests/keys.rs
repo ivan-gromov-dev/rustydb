@@ -102,6 +102,71 @@ fn set_if_absent_increases_length_only_once() {
 }
 
 #[test]
+fn delete_many_removes_existing_keys() {
+    let mut database = Database::new();
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+    database.set("c".to_owned(), "3".to_owned());
+
+    let deleted = database.delete_many(&["a".to_owned(), "c".to_owned()]);
+
+    assert_eq!(deleted, 2);
+    assert_eq!(database.get("a"), None);
+    assert_eq!(database.get("b"), Some("2"));
+    assert_eq!(database.get("c"), None);
+}
+
+#[test]
+fn delete_many_ignores_missing_and_duplicate_keys() {
+    let mut database = Database::new();
+    database.set("a".to_owned(), "1".to_owned());
+
+    let deleted = database.delete_many(&["a".to_owned(), "missing".to_owned(), "a".to_owned()]);
+
+    assert_eq!(deleted, 1);
+}
+
+#[test]
+fn delete_many_treats_expired_keys_as_missing() {
+    let mut database = Database::new();
+    database.set("expired".to_owned(), "1".to_owned());
+    database.set("active".to_owned(), "2".to_owned());
+    database.expire("expired", 0);
+
+    let deleted = database.delete_many(&["expired".to_owned(), "active".to_owned()]);
+
+    assert_eq!(deleted, 1);
+}
+
+#[test]
+fn exists_many_counts_existing_and_duplicate_keys() {
+    let mut database = Database::new();
+    database.set("a".to_owned(), "1".to_owned());
+    database.set("b".to_owned(), "2".to_owned());
+
+    let count = database.exists_many(&[
+        "a".to_owned(),
+        "a".to_owned(),
+        "missing".to_owned(),
+        "b".to_owned(),
+    ]);
+
+    assert_eq!(count, 3);
+}
+
+#[test]
+fn exists_many_does_not_count_expired_keys() {
+    let mut database = Database::new();
+    database.set("expired".to_owned(), "1".to_owned());
+    database.set("active".to_owned(), "2".to_owned());
+    database.expire("expired", 0);
+
+    let count = database.exists_many(&["expired".to_owned(), "active".to_owned()]);
+
+    assert_eq!(count, 1);
+}
+
+#[test]
 fn get_and_delete_returns_existing_value() {
     let mut database = Database::new();
 

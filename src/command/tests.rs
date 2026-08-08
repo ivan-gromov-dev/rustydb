@@ -326,3 +326,71 @@ fn command_errors_have_user_facing_messages() {
         "invalid float: value"
     );
 }
+
+#[test]
+fn parses_delete_with_single_key() {
+    let result = Command::parse("DEL a");
+
+    assert_eq!(
+        result,
+        Ok(Command::Delete {
+            keys: vec!["a".to_owned()],
+        })
+    );
+}
+
+#[test]
+fn parses_delete_with_multiple_keys() {
+    let result = Command::parse("DEL a b c");
+
+    assert_eq!(
+        result,
+        Ok(Command::Delete {
+            keys: vec!["a".to_owned(), "b".to_owned(), "c".to_owned(),],
+        })
+    );
+}
+
+#[test]
+fn delete_requires_at_least_one_key() {
+    let result = Command::parse("DEL");
+
+    assert_eq!(
+        result,
+        Err(CommandError::InvalidArguments("DEL key [key ...]"))
+    );
+}
+
+#[test]
+fn parses_exists_with_single_key() {
+    let result = Command::parse("EXISTS a");
+
+    assert_eq!(
+        result,
+        Ok(Command::Exists {
+            keys: vec!["a".to_owned()],
+        })
+    );
+}
+
+#[test]
+fn parses_exists_with_multiple_keys() {
+    let result = Command::parse("EXISTS a b c");
+
+    assert_eq!(
+        result,
+        Ok(Command::Exists {
+            keys: vec!["a".to_owned(), "b".to_owned(), "c".to_owned(),],
+        })
+    );
+}
+
+#[test]
+fn exists_requires_at_least_one_key() {
+    let result = Command::parse("EXISTS");
+
+    assert_eq!(
+        result,
+        Err(CommandError::InvalidArguments("EXISTS key [key ...]"))
+    );
+}

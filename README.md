@@ -51,8 +51,8 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `DECR key` | Decrement an integer by one | Updated integer |
 | `DECRBY key amount` | Decrement an integer by `amount` | Updated integer |
 | `INCRBYFLOAT key amount` | Increment a finite floating-point value | Updated number |
-| `EXISTS key` | Test whether a non-expired key exists | `1` or `0` |
-| `DEL key` | Delete a key | `1` if deleted, otherwise `0` |
+| `EXISTS key [key ...]` | Count existing, non-expired keys; duplicate keys are counted repeatedly | Number of matches |
+| `DEL key [key ...]` | Delete one or more keys; duplicate keys are removed once | Number deleted |
 | `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
 | `EXPIRE key seconds` | Set expiration in seconds | `1` if set, otherwise `0` |
 | `PEXPIRE key milliseconds` | Set expiration in milliseconds | `1` if set, otherwise `0` |

@@ -84,9 +84,9 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
-        Command::Exists { key } => CommandOutput::Integer(if store.exists(&key) { 1 } else { 0 }),
+        Command::Delete { keys } => CommandOutput::Integer(store.delete_many(&keys) as i64),
 
-        Command::Delete { key } => CommandOutput::Integer(if store.delete(&key) { 1 } else { 0 }),
+        Command::Exists { keys } => CommandOutput::Integer(store.exists_many(&keys) as i64),
 
         Command::Keys => CommandOutput::KeyList(store.keys()),
 

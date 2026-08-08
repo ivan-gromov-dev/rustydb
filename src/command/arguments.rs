@@ -70,3 +70,20 @@ pub(super) fn parse_integer_argument_command(
         Err(_) => Err(CommandError::InvalidInteger(amount.to_owned())),
     }
 }
+
+pub(super) fn parse_keys_argument_command(
+    input: &str,
+    usage: &'static str,
+) -> Result<Vec<String>, CommandError> {
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let keys: Vec<String> = parts.map(str::to_owned).collect();
+
+    if keys.is_empty() {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+
+    Ok(keys)
+}
