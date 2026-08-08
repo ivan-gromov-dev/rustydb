@@ -11,8 +11,17 @@ The project is intended for learning and experimentation. Data lives only in pro
 
 ## Running the database
 
+Run directly from a source checkout:
+
 ```console
 cargo run
+```
+
+Or install the binary from a source checkout:
+
+```console
+cargo install --path .
+rustydb
 ```
 
 Example session:
@@ -124,8 +133,7 @@ Coverage is aggregated separately for the logical modules `app`, `command`, `exe
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned learning milestones covering typed
-values, networking, RESP2, persistence, expiration, and observability.
+See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 
 ## Continuous integration
 
@@ -137,3 +145,7 @@ The GitHub Actions workflow runs formatting, Clippy, tests, and the per-module c
 - Values and keys are held entirely in memory.
 - Expiration uses the process monotonic clock and does not survive restarts.
 - The command set resembles Redis but is not protocol-compatible with Redis.
+
+## License
+
+RustyDB is available under the [MIT License](LICENSE).

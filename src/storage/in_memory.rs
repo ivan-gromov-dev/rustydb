@@ -110,7 +110,7 @@ impl InMemoryStore {
             .value_mut();
 
         stored_value.push_str(&append_value);
-        stored_value.len()
+        stored_value.chars().count()
     }
 
     pub(crate) fn increment(&mut self, key: String) -> Result<i64, StoreError> {

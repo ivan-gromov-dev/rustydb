@@ -14,6 +14,17 @@ fn append() {
 }
 
 #[test]
+fn append_returns_unicode_scalar_length() {
+    let mut database = Database::new();
+    database.set("message".to_owned(), "Привет".to_owned());
+
+    let length = database.append("message", " 🌍".to_owned());
+
+    assert_eq!(length, 8);
+    assert_eq!(database.get("message"), Some("Привет 🌍"));
+}
+
+#[test]
 fn append_treats_expired_key_as_missing() {
     let mut database = Database::new();
 
