@@ -19,6 +19,9 @@ small pull requests and completed with tests and documentation before moving on.
 **Goal:** turn the existing implementation into a well-defined first release of
 the local, in-memory database.
 
+**Status:** release candidate. Implementation and local verification are
+complete; publishing remains a separate step.
+
 ### Already implemented
 
 - Interactive command-line application.
@@ -27,22 +30,24 @@ the local, in-memory database.
 - Separate command, executor, storage, output, and application layers.
 - Lazy expiration based on a monotonic clock.
 - Unit and application-level tests.
+- Black-box tests of the compiled CLI binary.
+- Release metadata, MIT license, changelog, and installation instructions.
 - Formatting, Clippy, test, and per-module coverage checks in CI.
 
-### Remaining work
+### Release work completed
 
-- Resolve the inconsistent length semantics: `APPEND` currently returns UTF-8
-  bytes while `STRLEN`, `GETRANGE`, and `SETRANGE` operate on Unicode scalar
-  values. Choose one model, document it, and test it consistently.
-- Review every documented command against its implementation and edge cases.
-- Add black-box CLI integration tests that run the compiled binary and verify
-  standard input, standard output, standard error, and exit codes.
-- Make the package metadata release-ready, including description, license,
-  repository, and Rust version where applicable.
-- Add a license file and a changelog containing the `0.1.0` release notes.
-- Verify the installation path with `cargo install --path .` and document it.
-- Run the complete local and CI verification suites on the release commit.
-- Tag the verified commit as `v0.1.0`.
+- String lengths and offsets consistently use Unicode scalar values.
+- Documented commands and edge cases are covered by the test suite.
+- Black-box CLI tests verify input, output, errors, and exit status.
+- Cargo package metadata and repository release documents are present.
+- `cargo install --path .` produces a working release binary.
+- Formatting, Clippy, tests, and per-module coverage gates pass locally.
+
+### Publishing step
+
+- Commit the verified release candidate.
+- Replace `Unreleased` with the release date in `CHANGELOG.md`.
+- Tag the release commit as `v0.1.0` and publish its release notes.
 
 ### Done when
 

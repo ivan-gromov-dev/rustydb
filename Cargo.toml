@@ -2,5 +2,13 @@
 name = "rustydb"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "A small dependency-free in-memory key-value database for learning"
+license = "MIT"
+repository = "https://github.com/Djunichi/rustydb"
+readme = "README.md"
+keywords = ["database", "key-value", "in-memory", "redis", "learning"]
+categories = ["database-implementations", "command-line-utilities"]
+exclude = ["scripts/__pycache__/"]
 
 [dependencies]
