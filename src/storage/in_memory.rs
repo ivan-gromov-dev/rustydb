@@ -1,22 +1,22 @@
-use super::entry::Entry;
-use super::helper::normalize_index;
+use super::indexing::normalize_index;
+use super::stored_value::StoredValue;
 use std::collections::{HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::time::{Duration, Instant};
 
-pub(crate) struct Database {
-    storage: HashMap<String, Entry>,
+pub(crate) struct InMemoryStore {
+    storage: HashMap<String, StoredValue>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum DatabaseError {
+pub(crate) enum StoreError {
     ValueIsNotInteger,
     IntegerOverflow,
     ValueIsNotFloat,
     FloatIsNotFinite,
 }
 
-impl fmt::Display for DatabaseError {
+impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ValueIsNotInteger => {
@@ -38,7 +38,7 @@ impl fmt::Display for DatabaseError {
     }
 }
 
-impl Database {
+impl InMemoryStore {
     pub(crate) fn new() -> Self {
         Self {
             storage: HashMap::new(),
@@ -46,13 +46,13 @@ impl Database {
     }
 
     pub(crate) fn set(&mut self, key: String, value: String) {
-        self.storage.insert(key, Entry::new(value));
+        self.storage.insert(key, StoredValue::new(value));
     }
 
     pub(crate) fn get(&mut self, key: &str) -> Option<&str> {
         self.remove_if_expired(key);
 
-        self.storage.get(key).map(Entry::value)
+        self.storage.get(key).map(StoredValue::value)
     }
 
     pub(crate) fn exists(&mut self, key: &str) -> bool {
@@ -86,7 +86,7 @@ impl Database {
         keys
     }
 
-    pub(crate) fn rename_key(&mut self, old_key: &str, new_key: String) -> bool {
+    pub(crate) fn rename(&mut self, old_key: &str, new_key: String) -> bool {
         self.remove_if_expired(old_key);
         self.remove_if_expired(&new_key);
 
@@ -106,32 +106,32 @@ impl Database {
         let stored_value = self
             .storage
             .entry(key.to_owned())
-            .or_insert_with(|| Entry::new(String::new()))
+            .or_insert_with(|| StoredValue::new(String::new()))
             .value_mut();
 
         stored_value.push_str(&append_value);
         stored_value.len()
     }
 
-    pub(crate) fn increment(&mut self, key: String) -> Result<i64, DatabaseError> {
+    pub(crate) fn increment(&mut self, key: String) -> Result<i64, StoreError> {
         self.increment_by(key, 1)
     }
 
-    pub(crate) fn increment_by(&mut self, key: String, amount: i64) -> Result<i64, DatabaseError> {
+    pub(crate) fn increment_by(&mut self, key: String, amount: i64) -> Result<i64, StoreError> {
         self.remove_if_expired(&key);
 
         let number = match self.storage.get(&key) {
             Some(entry) => entry
                 .value()
                 .parse::<i64>()
-                .map_err(|_| DatabaseError::ValueIsNotInteger)?,
+                .map_err(|_| StoreError::ValueIsNotInteger)?,
 
             None => 0,
         };
 
         let incremented = number
             .checked_add(amount)
-            .ok_or(DatabaseError::IntegerOverflow)?;
+            .ok_or(StoreError::IntegerOverflow)?;
 
         match self.storage.get_mut(&key) {
             Some(entry) => {
@@ -140,32 +140,32 @@ impl Database {
 
             None => {
                 self.storage
-                    .insert(key, Entry::new(incremented.to_string()));
+                    .insert(key, StoredValue::new(incremented.to_string()));
             }
         }
 
         Ok(incremented)
     }
 
-    pub(crate) fn decrement(&mut self, key: String) -> Result<i64, DatabaseError> {
+    pub(crate) fn decrement(&mut self, key: String) -> Result<i64, StoreError> {
         self.decrement_by(key, 1)
     }
 
-    pub(crate) fn decrement_by(&mut self, key: String, amount: i64) -> Result<i64, DatabaseError> {
+    pub(crate) fn decrement_by(&mut self, key: String, amount: i64) -> Result<i64, StoreError> {
         self.remove_if_expired(&key);
 
         let number = match self.storage.get(&key) {
             Some(entry) => entry
                 .value()
                 .parse::<i64>()
-                .map_err(|_| DatabaseError::ValueIsNotInteger)?,
+                .map_err(|_| StoreError::ValueIsNotInteger)?,
 
             None => 0,
         };
 
         let decremented = number
             .checked_sub(amount)
-            .ok_or(DatabaseError::IntegerOverflow)?;
+            .ok_or(StoreError::IntegerOverflow)?;
 
         match self.storage.get_mut(&key) {
             Some(entry) => {
@@ -174,33 +174,37 @@ impl Database {
 
             None => {
                 self.storage
-                    .insert(key, Entry::new(decremented.to_string()));
+                    .insert(key, StoredValue::new(decremented.to_string()));
             }
         }
 
         Ok(decremented)
     }
 
-    pub(crate) fn incr_by_float(&mut self, key: String, amount: f64) -> Result<f64, DatabaseError> {
+    pub(crate) fn increment_by_float(
+        &mut self,
+        key: String,
+        amount: f64,
+    ) -> Result<f64, StoreError> {
         self.remove_if_expired(&key);
 
         let number = match self.storage.get(&key) {
             Some(entry) => entry
                 .value()
                 .parse::<f64>()
-                .map_err(|_| DatabaseError::ValueIsNotFloat)?,
+                .map_err(|_| StoreError::ValueIsNotFloat)?,
 
             None => 0.0,
         };
 
         if !number.is_finite() {
-            return Err(DatabaseError::ValueIsNotFloat);
+            return Err(StoreError::ValueIsNotFloat);
         }
 
         let result = number + amount;
 
         if !result.is_finite() {
-            return Err(DatabaseError::FloatIsNotFinite);
+            return Err(StoreError::FloatIsNotFinite);
         }
 
         match self.storage.get_mut(&key) {
@@ -209,7 +213,8 @@ impl Database {
             }
 
             None => {
-                self.storage.insert(key, Entry::new(result.to_string()));
+                self.storage
+                    .insert(key, StoredValue::new(result.to_string()));
             }
         }
 
@@ -221,7 +226,7 @@ impl Database {
 
         match self.storage.entry(key) {
             HashMapEntry::Vacant(entry) => {
-                entry.insert(Entry::new(value));
+                entry.insert(StoredValue::new(value));
                 true
             }
 
@@ -233,14 +238,14 @@ impl Database {
         self.remove_if_expired(&key);
 
         self.storage
-            .insert(key, Entry::new(value))
-            .map(Entry::into_value)
+            .insert(key, StoredValue::new(value))
+            .map(StoredValue::into_value)
     }
 
     pub(crate) fn get_and_delete(&mut self, key: String) -> Option<String> {
         self.remove_if_expired(&key);
 
-        self.storage.remove(&key).map(Entry::into_value)
+        self.storage.remove(&key).map(StoredValue::into_value)
     }
 
     pub(crate) fn expire_at(&mut self, key: &str, expires_at: Instant) -> bool {
@@ -278,7 +283,9 @@ impl Database {
     }
 
     pub(crate) fn expire(&mut self, key: &str, seconds: u64) -> bool {
-        let expires_at = Instant::now() + Duration::from_secs(seconds);
+        let Some(expires_at) = Instant::now().checked_add(Duration::from_secs(seconds)) else {
+            return false;
+        };
 
         self.expire_at(key, expires_at)
     }
@@ -315,7 +322,10 @@ impl Database {
     }
 
     pub(crate) fn pexpire(&mut self, key: &str, milliseconds: u64) -> bool {
-        let expires_at = Instant::now() + Duration::from_millis(milliseconds);
+        let Some(expires_at) = Instant::now().checked_add(Duration::from_millis(milliseconds))
+        else {
+            return false;
+        };
 
         self.expire_at(key, expires_at)
     }
@@ -339,7 +349,7 @@ impl Database {
     }
 
     pub(crate) fn string_length(&mut self, key: &str) -> usize {
-        self.get(key).map_or(0, str::len)
+        self.get(key).map_or(0, |value| value.chars().count())
     }
 
     pub(crate) fn get_range(&mut self, key: &str, start: i64, end: i64) -> String {
@@ -373,7 +383,7 @@ impl Database {
         let entry = self
             .storage
             .entry(key)
-            .or_insert_with(|| Entry::new(String::new()));
+            .or_insert_with(|| StoredValue::new(String::new()));
 
         let mut characters: Vec<char> = entry.value().chars().collect();
 
@@ -408,6 +418,6 @@ impl Database {
 
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
-        self.storage.get(key).and_then(Entry::expires_at)
+        self.storage.get(key).and_then(StoredValue::expires_at)
     }
 }

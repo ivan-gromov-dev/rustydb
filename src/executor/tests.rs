@@ -1,7 +1,7 @@
 use super::execute;
 use crate::command::Command;
-use crate::database::Database;
-use crate::response::Response;
+use crate::output::CommandOutput as Response;
+use crate::storage::InMemoryStore as Database;
 
 #[test]
 fn execute_set_stores_value() {
@@ -10,19 +10,19 @@ fn execute_set_stores_value() {
     let response = execute(
         Command::Set {
             key: "name".to_owned(),
-            value: "Ivan".to_owned(),
+            value: "sample-value".to_owned(),
         },
         &mut database,
     );
 
     assert_eq!(response, Response::Ok);
-    assert_eq!(database.get("name"), Some("Ivan"));
+    assert_eq!(database.get("name"), Some("sample-value"));
 }
 
 #[test]
 fn execute_get_returns_value() {
     let mut database = Database::new();
-    database.set("name".to_owned(), "Ivan".to_owned());
+    database.set("name".to_owned(), "sample-value".to_owned());
 
     let response = execute(
         Command::Get {
@@ -31,7 +31,7 @@ fn execute_get_returns_value() {
         &mut database,
     );
 
-    assert_eq!(response, Response::Value("Ivan".to_owned()));
+    assert_eq!(response, Response::Value("sample-value".to_owned()));
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn execute_get_missing_key_returns_nil() {
 #[test]
 fn execute_delete_returns_one_for_existing_key() {
     let mut database = Database::new();
-    database.set("name".to_owned(), "Ivan".to_owned());
+    database.set("name".to_owned(), "sample-value".to_owned());
 
     let response = execute(
         Command::Delete {
@@ -82,8 +82,8 @@ fn execute_delete_returns_zero_for_missing_key() {
 fn execute_mget_returns_values_in_requested_order() {
     let mut database = Database::new();
 
-    database.set("name".to_owned(), "Ivan".to_owned());
-    database.set("city".to_owned(), "Berlin".to_owned());
+    database.set("name".to_owned(), "first-value".to_owned());
+    database.set("city".to_owned(), "second-value".to_owned());
 
     let response = execute(
         Command::MGet {
@@ -94,10 +94,10 @@ fn execute_mget_returns_values_in_requested_order() {
 
     assert_eq!(
         response,
-        Response::Values(vec![
-            Some("Ivan".to_owned()),
+        Response::OptionalValues(vec![
+            Some("first-value".to_owned()),
             None,
-            Some("Berlin".to_owned()),
+            Some("second-value".to_owned()),
         ])
     );
 }
@@ -109,31 +109,31 @@ fn execute_setnx_inserts_missing_key() {
     let response = execute(
         Command::SetNx {
             key: "name".to_owned(),
-            value: "Ivan".to_owned(),
+            value: "initial-value".to_owned(),
         },
         &mut database,
     );
 
     assert_eq!(response, Response::Integer(1));
-    assert_eq!(database.get("name"), Some("Ivan"));
+    assert_eq!(database.get("name"), Some("initial-value"));
 }
 
 #[test]
 fn execute_setnx_does_not_overwrite_existing_key() {
     let mut database = Database::new();
 
-    database.set("name".to_owned(), "Ivan".to_owned());
+    database.set("name".to_owned(), "initial-value".to_owned());
 
     let response = execute(
         Command::SetNx {
             key: "name".to_owned(),
-            value: "Alex".to_owned(),
+            value: "replacement-value".to_owned(),
         },
         &mut database,
     );
 
     assert_eq!(response, Response::Integer(0));
-    assert_eq!(database.get("name"), Some("Ivan"));
+    assert_eq!(database.get("name"), Some("initial-value"));
 }
 
 #[test]
@@ -271,6 +271,179 @@ fn execute_increment_by_float_returns_error() {
     );
 
     assert_eq!(response, Response::Error("value is not float".to_owned()));
+}
+
+#[test]
+fn execute_string_and_collection_commands() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(
+            Command::MSet {
+                entries: vec![
+                    ("first".to_owned(), "alpha".to_owned()),
+                    ("second".to_owned(), "beta".to_owned()),
+                ],
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    assert_eq!(execute(Command::Len, &mut database), Response::Integer(2));
+    assert_eq!(
+        execute(Command::Keys, &mut database),
+        Response::KeyList(vec!["first".to_owned(), "second".to_owned()])
+    );
+    assert_eq!(
+        execute(
+            Command::Append {
+                key: "first".to_owned(),
+                append_value: "-value".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(11)
+    );
+    assert_eq!(
+        execute(
+            Command::StrLen {
+                key: "first".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(11)
+    );
+    assert_eq!(
+        execute(
+            Command::GetRange {
+                key: "first".to_owned(),
+                start: 6,
+                end: 10,
+            },
+            &mut database,
+        ),
+        Response::Value("value".to_owned())
+    );
+    assert_eq!(
+        execute(
+            Command::SetRange {
+                key: "second".to_owned(),
+                offset: 0,
+                value: "z".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(4)
+    );
+    assert_eq!(execute(Command::Clear, &mut database), Response::Ok);
+    assert_eq!(execute(Command::Len, &mut database), Response::Integer(0));
+}
+
+#[test]
+fn execute_atomic_value_commands() {
+    let mut database = Database::new();
+    database.set("key".to_owned(), "old-value".to_owned());
+
+    assert_eq!(
+        execute(
+            Command::GetSet {
+                key: "key".to_owned(),
+                value: "new-value".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Value("old-value".to_owned())
+    );
+    assert_eq!(
+        execute(
+            Command::Rename {
+                old_key: "key".to_owned(),
+                new_key: "renamed".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::Exists {
+                keys: vec!["renamed".to_owned()],
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::GetDel {
+                key: "renamed".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Value("new-value".to_owned())
+    );
+    assert_eq!(database.len(), 0);
+}
+
+#[test]
+fn execute_numeric_and_expiration_commands() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(
+            Command::Decrement {
+                key: "counter".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(-1)
+    );
+    assert_eq!(
+        execute(
+            Command::DecrementBy {
+                key: "counter".to_owned(),
+                amount: 2,
+            },
+            &mut database,
+        ),
+        Response::Integer(-3)
+    );
+    assert_eq!(
+        execute(
+            Command::PExpire {
+                key: "counter".to_owned(),
+                milliseconds: 60_000,
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert!(matches!(
+        execute(
+            Command::PTtl {
+                key: "counter".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(0..=60_000)
+    ));
+    assert_eq!(
+        execute(
+            Command::Persist {
+                key: "counter".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
+fn execute_control_commands_return_control_responses() {
+    let mut database = Database::new();
+
+    assert_eq!(execute(Command::Help, &mut database), Response::Help);
+    assert_eq!(execute(Command::Exit, &mut database), Response::Exit);
 }
 
 #[test]

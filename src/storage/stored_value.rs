@@ -1,12 +1,12 @@
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Entry {
+pub(crate) struct StoredValue {
     value: String,
     expires_at: Option<Instant>,
 }
 
-impl Entry {
+impl StoredValue {
     pub(crate) fn new(value: String) -> Self {
         Self {
             value,

@@ -31,9 +31,11 @@ pub(super) fn parse_key_value_command<'a>(
     input: &'a str,
     usage: &'static str,
 ) -> Result<(&'a str, &'a str), CommandError> {
-    let mut parts = input.splitn(3, char::is_whitespace);
-
-    parts.next();
+    let arguments = input
+        .split_once(char::is_whitespace)
+        .map(|(_, arguments)| arguments.trim_start())
+        .ok_or(CommandError::InvalidArguments(usage))?;
+    let mut parts = arguments.splitn(2, char::is_whitespace);
 
     let key = parts
         .next()
@@ -43,7 +45,7 @@ pub(super) fn parse_key_value_command<'a>(
 
     let value = parts
         .next()
-        .map(str::trim)
+        .map(str::trim_start)
         .filter(|value| !value.is_empty())
         .ok_or(CommandError::InvalidArguments(usage))?;
 

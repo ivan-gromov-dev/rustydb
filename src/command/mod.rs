@@ -1,8 +1,8 @@
-mod helper;
-mod model;
+mod arguments;
 mod parser;
+mod types;
 
-pub(crate) use model::{Command, CommandError};
+pub(crate) use types::{Command, CommandError};
 
 #[cfg(test)]
 mod tests;
