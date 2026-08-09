@@ -98,9 +98,11 @@ src/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
 └── storage/
+    ├── clock.rs           Injectable monotonic clock abstraction
     ├── in_memory.rs       InMemoryStore and StoreError
     ├── indexing.rs        Range-index normalization
     ├── stored_value.rs    StoredValue and expiration metadata
+    ├── value.rs           Typed value representation
     └── tests/              Tests grouped by keys, numbers, strings, TTL, and values
 ```
 
@@ -112,17 +114,42 @@ The layers have deliberately narrow responsibilities:
 4. `output` renders results to any `Write` implementation without depending on global stdout.
 5. `app` connects input, parsing, execution, and output.
 
+Storage values use an internal enum so new data structures can be added without
+changing expiration metadata. The current command set creates strings only;
+string and numeric operations reject incompatible internal value kinds without
+changing the value or its TTL.
+
 ## Development
 
-Run the complete local verification suite:
+Run the fast local verification suite while iterating:
+
+```console
+python scripts/agent_harness.py fast
+```
+
+Before submitting a change, run the complete suite:
+
+```console
+python scripts/agent_harness.py full
+```
+
+The full suite runs the following checks:
 
 ```console
 cargo fmt -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
+git diff --check
 ```
 
-To reproduce the CI coverage check, install [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) and run:
+To reproduce the CI coverage gate, install
+[`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) and run:
+
+```console
+python scripts/agent_harness.py coverage
+```
+
+The coverage workflow is equivalent to:
 
 ```console
 cargo llvm-cov --workspace --all-features --json --output-path coverage.json
