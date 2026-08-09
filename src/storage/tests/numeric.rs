@@ -8,7 +8,7 @@ fn increment_missing_key_creates_value_one() {
     let result = database.increment("counter".to_owned());
 
     assert_eq!(result, Ok(1));
-    assert_eq!(database.get("counter"), Some("1"));
+    assert_eq!(database.get("counter"), Ok(Some("1")));
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn increment_existing_integer() {
     let result = database.increment("counter".to_owned());
 
     assert_eq!(result, Ok(11));
-    assert_eq!(database.get("counter"), Some("11"));
+    assert_eq!(database.get("counter"), Ok(Some("11")));
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn increment_multiple_times() {
     assert_eq!(database.increment("counter".to_owned()), Ok(2));
     assert_eq!(database.increment("counter".to_owned()), Ok(3));
 
-    assert_eq!(database.get("counter"), Some("3"));
+    assert_eq!(database.get("counter"), Ok(Some("3")));
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn increment_negative_integer() {
     let result = database.increment("counter".to_owned());
 
     assert_eq!(result, Ok(-1));
-    assert_eq!(database.get("counter"), Some("-1"));
+    assert_eq!(database.get("counter"), Ok(Some("-1")));
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn increment_non_integer_returns_error() {
     let result = database.increment("counter".to_owned());
 
     assert_eq!(result, Err(DatabaseError::ValueIsNotInteger));
-    assert_eq!(database.get("counter"), Some("hello"));
+    assert_eq!(database.get("counter"), Ok(Some("hello")));
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn decrement_missing_key_creates_minus_one() {
     let result = database.decrement("counter".to_owned());
 
     assert_eq!(result, Ok(-1));
-    assert_eq!(database.get("counter"), Some("-1"));
+    assert_eq!(database.get("counter"), Ok(Some("-1")));
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn decrement_existing_integer() {
     let result = database.decrement("counter".to_owned());
 
     assert_eq!(result, Ok(9));
-    assert_eq!(database.get("counter"), Some("9"));
+    assert_eq!(database.get("counter"), Ok(Some("9")));
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn decrement_multiple_times() {
     assert_eq!(database.decrement("counter".to_owned()), Ok(-2));
     assert_eq!(database.decrement("counter".to_owned()), Ok(-3));
 
-    assert_eq!(database.get("counter"), Some("-3"));
+    assert_eq!(database.get("counter"), Ok(Some("-3")));
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn decrement_negative_integer() {
     let result = database.decrement("counter".to_owned());
 
     assert_eq!(result, Ok(-6));
-    assert_eq!(database.get("counter"), Some("-6"));
+    assert_eq!(database.get("counter"), Ok(Some("-6")));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn decrement_non_integer_returns_error() {
     let result = database.decrement("counter".to_owned());
 
     assert_eq!(result, Err(DatabaseError::ValueIsNotInteger));
-    assert_eq!(database.get("counter"), Some("hello"));
+    assert_eq!(database.get("counter"), Ok(Some("hello")));
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn decrement_by_missing_key_uses_zero() {
     let result = database.decrement_by("counter".to_owned(), 5);
 
     assert_eq!(result, Ok(-5));
-    assert_eq!(database.get("counter"), Some("-5"));
+    assert_eq!(database.get("counter"), Ok(Some("-5")));
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn decrement_by_existing_integer() {
     let result = database.decrement_by("counter".to_owned(), 4);
 
     assert_eq!(result, Ok(6));
-    assert_eq!(database.get("counter"), Some("6"));
+    assert_eq!(database.get("counter"), Ok(Some("6")));
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn decrement_by_negative_amount_increments_value() {
     let result = database.decrement_by("counter".to_owned(), -5);
 
     assert_eq!(result, Ok(15));
-    assert_eq!(database.get("counter"), Some("15"));
+    assert_eq!(database.get("counter"), Ok(Some("15")));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn decrement_by_non_integer_returns_error() {
     let result = database.decrement_by("counter".to_owned(), 5);
 
     assert_eq!(result, Err(DatabaseError::ValueIsNotInteger));
-    assert_eq!(database.get("counter"), Some("hello"));
+    assert_eq!(database.get("counter"), Ok(Some("hello")));
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn decrement_by_detects_overflow() {
     let result = database.decrement_by("counter".to_owned(), 1);
 
     assert_eq!(result, Err(DatabaseError::IntegerOverflow));
-    assert_eq!(database.get("counter"), Some(min.as_str()));
+    assert_eq!(database.get("counter"), Ok(Some(min.as_str())));
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn decrement_by_detects_overflow_with_negative_amount() {
     let result = database.decrement_by("counter".to_owned(), -1);
 
     assert_eq!(result, Err(DatabaseError::IntegerOverflow));
-    assert_eq!(database.get("counter"), Some(max.as_str()));
+    assert_eq!(database.get("counter"), Ok(Some(max.as_str())));
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn increment_treats_expired_key_as_missing() {
     let result = database.increment("counter".to_owned());
 
     assert_eq!(result, Ok(1));
-    assert_eq!(database.get("counter"), Some("1"));
+    assert_eq!(database.get("counter"), Ok(Some("1")));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn decrement_treats_expired_key_as_missing() {
     let result = database.decrement("counter".to_owned());
 
     assert_eq!(result, Ok(-1));
-    assert_eq!(database.get("counter"), Some("-1"));
+    assert_eq!(database.get("counter"), Ok(Some("-1")));
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn increment_by_float_creates_missing_key() {
     let result = database.increment_by_float("counter".to_owned(), 1.5);
 
     assert_eq!(result, Ok(1.5));
-    assert_eq!(database.get("counter"), Some("1.5"));
+    assert_eq!(database.get("counter"), Ok(Some("1.5")));
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn increment_by_float_increments_existing_float() {
     let result = database.increment_by_float("counter".to_owned(), 2.25);
 
     assert_eq!(result, Ok(12.75));
-    assert_eq!(database.get("counter"), Some("12.75"));
+    assert_eq!(database.get("counter"), Ok(Some("12.75")));
 }
 
 #[test]
@@ -272,7 +272,7 @@ fn increment_by_float_accepts_integer_value() {
     let result = database.increment_by_float("counter".to_owned(), 0.5);
 
     assert_eq!(result, Ok(10.5));
-    assert_eq!(database.get("counter"), Some("10.5"));
+    assert_eq!(database.get("counter"), Ok(Some("10.5")));
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn increment_by_float_supports_negative_amount() {
     let result = database.increment_by_float("counter".to_owned(), -2.5);
 
     assert_eq!(result, Ok(8.0));
-    assert_eq!(database.get("counter"), Some("8"));
+    assert_eq!(database.get("counter"), Ok(Some("8")));
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn increment_by_float_returns_error_for_non_float_value() {
 
     assert_eq!(result, Err(DatabaseError::ValueIsNotFloat));
 
-    assert_eq!(database.get("counter"), Some("hello"));
+    assert_eq!(database.get("counter"), Ok(Some("hello")));
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn increment_by_float_returns_error_for_infinite_stored_value() {
 
     assert_eq!(result, Err(DatabaseError::ValueIsNotFloat));
 
-    assert_eq!(database.get("counter"), Some("inf"));
+    assert_eq!(database.get("counter"), Ok(Some("inf")));
 }
 
 #[test]
@@ -319,13 +319,17 @@ fn increment_by_float_returns_error_for_non_finite_result() {
 
     database.set("counter".to_owned(), f64::MAX.to_string());
 
-    let old_value = database.get("counter").unwrap().to_owned();
+    let old_value = database
+        .get("counter")
+        .expect("a string value should not produce a type error")
+        .expect("the counter should exist")
+        .to_owned();
 
     let result = database.increment_by_float("counter".to_owned(), f64::MAX);
 
     assert_eq!(result, Err(DatabaseError::FloatIsNotFinite));
 
-    assert_eq!(database.get("counter"), Some(old_value.as_str()));
+    assert_eq!(database.get("counter"), Ok(Some(old_value.as_str())));
 }
 
 #[test]
@@ -356,5 +360,5 @@ fn increment_by_float_treats_expired_key_as_missing() {
     let result = database.increment_by_float("counter".to_owned(), 1.5);
 
     assert_eq!(result, Ok(1.5));
-    assert_eq!(database.get("counter"), Some("1.5"));
+    assert_eq!(database.get("counter"), Ok(Some("1.5")));
 }

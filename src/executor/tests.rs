@@ -16,7 +16,7 @@ fn execute_set_stores_value() {
     );
 
     assert_eq!(response, Response::Ok);
-    assert_eq!(database.get("name"), Some("sample-value"));
+    assert_eq!(database.get("name"), Ok(Some("sample-value")));
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn execute_delete_returns_one_for_existing_key() {
     );
 
     assert_eq!(response, Response::Integer(1));
-    assert_eq!(database.get("name"), None);
+    assert_eq!(database.get("name"), Ok(None));
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn execute_setnx_inserts_missing_key() {
     );
 
     assert_eq!(response, Response::Integer(1));
-    assert_eq!(database.get("name"), Some("initial-value"));
+    assert_eq!(database.get("name"), Ok(Some("initial-value")));
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn execute_setnx_does_not_overwrite_existing_key() {
     );
 
     assert_eq!(response, Response::Integer(0));
-    assert_eq!(database.get("name"), Some("initial-value"));
+    assert_eq!(database.get("name"), Ok(Some("initial-value")));
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn execute_increment_returns_new_value() {
     );
 
     assert_eq!(response, Response::Integer(11));
-    assert_eq!(database.get("counter"), Some("11"));
+    assert_eq!(database.get("counter"), Ok(Some("11")));
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn execute_increment_returns_error_for_non_integer() {
 
     assert_eq!(response, Response::Error("value is not integer".to_owned()));
 
-    assert_eq!(database.get("counter"), Some("hello"));
+    assert_eq!(database.get("counter"), Ok(Some("hello")));
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn execute_increment_by_returns_overflow_error() {
 
     assert_eq!(response, Response::Error("integer overflow".to_owned()));
 
-    assert_eq!(database.get("counter"), Some(max.as_str()));
+    assert_eq!(database.get("counter"), Ok(Some(max.as_str())));
 }
 
 #[test]
@@ -494,4 +494,36 @@ fn execute_exists_counts_duplicates() {
     );
 
     assert_eq!(response, Response::Integer(3));
+}
+
+#[test]
+fn execute_string_commands_report_wrong_type() {
+    let mut database = Database::new();
+    database.set_list("list".to_owned(), vec!["value".to_owned()]);
+
+    let get = execute(
+        Command::Get {
+            key: "list".to_owned(),
+        },
+        &mut database,
+    );
+    let append = execute(
+        Command::Append {
+            key: "list".to_owned(),
+            append_value: "suffix".to_owned(),
+        },
+        &mut database,
+    );
+    let mget = execute(
+        Command::MGet {
+            keys: vec!["missing".to_owned(), "list".to_owned()],
+        },
+        &mut database,
+    );
+
+    let wrong_type =
+        Response::Error("operation against a key holding the wrong kind of value".to_owned());
+    assert_eq!(get, wrong_type);
+    assert_eq!(append, wrong_type);
+    assert_eq!(mget, wrong_type);
 }

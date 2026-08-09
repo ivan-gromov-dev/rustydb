@@ -9,8 +9,8 @@ fn append() {
 
     let length = database.append("message", ", world".to_owned());
 
-    assert_eq!(length, 12);
-    assert_eq!(database.get("message"), Some("Hello, world"));
+    assert_eq!(length, Ok(12));
+    assert_eq!(database.get("message"), Ok(Some("Hello, world")));
 }
 
 #[test]
@@ -20,8 +20,8 @@ fn append_returns_unicode_scalar_length() {
 
     let length = database.append("message", " 🌍".to_owned());
 
-    assert_eq!(length, 8);
-    assert_eq!(database.get("message"), Some("Привет 🌍"));
+    assert_eq!(length, Ok(8));
+    assert_eq!(database.get("message"), Ok(Some("Привет 🌍")));
 }
 
 #[test]
@@ -33,8 +33,8 @@ fn append_treats_expired_key_as_missing() {
 
     let length = database.append("key", "new".to_owned());
 
-    assert_eq!(length, 3);
-    assert_eq!(database.get("key"), Some("new"));
+    assert_eq!(length, Ok(3));
+    assert_eq!(database.get("key"), Ok(Some("new")));
 }
 
 #[test]
@@ -45,9 +45,9 @@ fn append_preserves_expiration() {
     database.set("key".to_owned(), "hello".to_owned());
     database.expire_at("key", expires_at);
 
-    database.append("key", " world".to_owned());
+    assert_eq!(database.append("key", " world".to_owned()), Ok(11));
 
-    assert_eq!(database.get("key"), Some("hello world"));
+    assert_eq!(database.get("key"), Ok(Some("hello world")));
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 
@@ -57,7 +57,7 @@ fn string_length_returns_character_count() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.string_length("key"), 5);
+    assert_eq!(database.string_length("key"), Ok(5));
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn string_length_counts_unicode_characters_instead_of_bytes() {
 
     database.set("key".to_owned(), "cafe\u{301}".to_owned());
 
-    assert_eq!(database.string_length("key"), 5);
+    assert_eq!(database.string_length("key"), Ok(5));
 }
 
 #[test]
@@ -75,17 +75,20 @@ fn ranges_use_the_same_character_offsets_as_string_length() {
 
     database.set("key".to_owned(), "a\u{00e9}z".to_owned());
 
-    assert_eq!(database.string_length("key"), 3);
-    assert_eq!(database.get_range("key", 1, 1), "\u{00e9}");
-    assert_eq!(database.set_range("key".to_owned(), 1, "x".to_owned()), 3);
-    assert_eq!(database.get("key"), Some("axz"));
+    assert_eq!(database.string_length("key"), Ok(3));
+    assert_eq!(database.get_range("key", 1, 1).as_deref(), Ok("\u{00e9}"));
+    assert_eq!(
+        database.set_range("key".to_owned(), 1, "x".to_owned()),
+        Ok(3)
+    );
+    assert_eq!(database.get("key"), Ok(Some("axz")));
 }
 
 #[test]
 fn string_length_returns_zero_for_missing_key() {
     let mut database = Database::new();
 
-    assert_eq!(database.string_length("missing"), 0);
+    assert_eq!(database.string_length("missing"), Ok(0));
 }
 
 #[test]
@@ -95,7 +98,7 @@ fn string_length_returns_zero_for_expired_key() {
     database.set("key".to_owned(), "hello".to_owned());
     database.expire("key", 0);
 
-    assert_eq!(database.string_length("key"), 0);
+    assert_eq!(database.string_length("key"), Ok(0));
 }
 
 #[test]
@@ -104,7 +107,7 @@ fn get_range_returns_requested_range() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", 1, 3), "ell");
+    assert_eq!(database.get_range("key", 1, 3).as_deref(), Ok("ell"));
 }
 
 #[test]
@@ -113,7 +116,7 @@ fn get_range_includes_end_index() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", 0, 4), "hello");
+    assert_eq!(database.get_range("key", 0, 4).as_deref(), Ok("hello"));
 }
 
 #[test]
@@ -122,7 +125,7 @@ fn get_range_supports_negative_indices() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", -3, -1), "llo");
+    assert_eq!(database.get_range("key", -3, -1).as_deref(), Ok("llo"));
 }
 
 #[test]
@@ -131,7 +134,7 @@ fn get_range_clamps_start_to_zero() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", -100, 1), "he");
+    assert_eq!(database.get_range("key", -100, 1).as_deref(), Ok("he"));
 }
 
 #[test]
@@ -140,7 +143,7 @@ fn get_range_clamps_end_to_last_character() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", 3, 100), "lo");
+    assert_eq!(database.get_range("key", 3, 100).as_deref(), Ok("lo"));
 }
 
 #[test]
@@ -149,7 +152,7 @@ fn get_range_returns_empty_when_start_is_after_end() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", 3, 1), "");
+    assert_eq!(database.get_range("key", 3, 1).as_deref(), Ok(""));
 }
 
 #[test]
@@ -158,7 +161,7 @@ fn get_range_returns_empty_when_start_is_out_of_bounds() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", 10, 20), "");
+    assert_eq!(database.get_range("key", 10, 20).as_deref(), Ok(""));
 }
 
 #[test]
@@ -167,14 +170,14 @@ fn get_range_returns_empty_when_end_is_before_string() {
 
     database.set("key".to_owned(), "hello".to_owned());
 
-    assert_eq!(database.get_range("key", -10, -6), "");
+    assert_eq!(database.get_range("key", -10, -6).as_deref(), Ok(""));
 }
 
 #[test]
 fn get_range_returns_empty_for_missing_key() {
     let mut database = Database::new();
 
-    assert_eq!(database.get_range("missing", 0, 10), "");
+    assert_eq!(database.get_range("missing", 0, 10).as_deref(), Ok(""));
 }
 
 #[test]
@@ -184,7 +187,7 @@ fn get_range_returns_empty_for_expired_key() {
     database.set("key".to_owned(), "hello".to_owned());
     database.expire("key", 0);
 
-    assert_eq!(database.get_range("key", 0, 4), "");
+    assert_eq!(database.get_range("key", 0, 4).as_deref(), Ok(""));
 }
 
 #[test]
@@ -195,8 +198,8 @@ fn set_range_replaces_existing_characters() {
 
     let length = database.set_range("key".to_owned(), 1, "XYZ".to_owned());
 
-    assert_eq!(length, 5);
-    assert_eq!(database.get("key"), Some("hXYZo"));
+    assert_eq!(length, Ok(5));
+    assert_eq!(database.get("key"), Ok(Some("hXYZo")));
 }
 
 #[test]
@@ -207,8 +210,8 @@ fn set_range_appends_at_end() {
 
     let length = database.set_range("key".to_owned(), 5, " world".to_owned());
 
-    assert_eq!(length, 11);
-    assert_eq!(database.get("key"), Some("hello world"));
+    assert_eq!(length, Ok(11));
+    assert_eq!(database.get("key"), Ok(Some("hello world")));
 }
 
 #[test]
@@ -219,8 +222,8 @@ fn set_range_extends_existing_value() {
 
     let length = database.set_range("key".to_owned(), 4, "XYZ".to_owned());
 
-    assert_eq!(length, 7);
-    assert_eq!(database.get("key"), Some("hellXYZ"));
+    assert_eq!(length, Ok(7));
+    assert_eq!(database.get("key"), Ok(Some("hellXYZ")));
 }
 
 #[test]
@@ -229,8 +232,8 @@ fn set_range_creates_missing_key() {
 
     let length = database.set_range("key".to_owned(), 0, "hello".to_owned());
 
-    assert_eq!(length, 5);
-    assert_eq!(database.get("key"), Some("hello"));
+    assert_eq!(length, Ok(5));
+    assert_eq!(database.get("key"), Ok(Some("hello")));
 }
 
 #[test]
@@ -239,8 +242,8 @@ fn set_range_pads_missing_space_with_null_characters() {
 
     let length = database.set_range("key".to_owned(), 3, "hi".to_owned());
 
-    assert_eq!(length, 5);
-    assert_eq!(database.get("key"), Some("\0\0\0hi"));
+    assert_eq!(length, Ok(5));
+    assert_eq!(database.get("key"), Ok(Some("\0\0\0hi")));
 }
 
 #[test]
@@ -251,9 +254,12 @@ fn set_range_preserves_existing_expiration() {
     database.set("key".to_owned(), "hello".to_owned());
     database.expire_at("key", expires_at);
 
-    database.set_range("key".to_owned(), 1, "XYZ".to_owned());
+    assert_eq!(
+        database.set_range("key".to_owned(), 1, "XYZ".to_owned()),
+        Ok(5)
+    );
 
-    assert_eq!(database.get("key"), Some("hXYZo"));
+    assert_eq!(database.get("key"), Ok(Some("hXYZo")));
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 
@@ -266,7 +272,7 @@ fn set_range_treats_expired_key_as_missing() {
 
     let length = database.set_range("key".to_owned(), 0, "new".to_owned());
 
-    assert_eq!(length, 3);
-    assert_eq!(database.get("key"), Some("new"));
+    assert_eq!(length, Ok(3));
+    assert_eq!(database.get("key"), Ok(Some("new")));
     assert_eq!(database.ttl("key"), -1);
 }

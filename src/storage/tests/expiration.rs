@@ -54,7 +54,7 @@ fn get_removes_expired_key() {
     database.set("key".to_owned(), "value".to_owned());
     database.expire_at("key", Instant::now());
 
-    assert_eq!(database.get("key"), None);
+    assert_eq!(database.get("key"), Ok(None));
     assert!(!database.exists("key"));
 }
 
@@ -65,7 +65,7 @@ fn get_returns_non_expired_value() {
     database.set("key".to_owned(), "value".to_owned());
     database.expire_at("key", Instant::now() + Duration::from_secs(60));
 
-    assert_eq!(database.get("key"), Some("value"));
+    assert_eq!(database.get("key"), Ok(Some("value")));
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn set_if_absent_replaces_expired_key() {
     let inserted = database.set_if_absent("key".to_owned(), "new".to_owned());
 
     assert!(inserted);
-    assert_eq!(database.get("key"), Some("new"));
+    assert_eq!(database.get("key"), Ok(Some("new")));
     assert_eq!(database.expiration("key"), None);
 }
 
@@ -133,8 +133,8 @@ fn get_and_set_does_not_return_expired_value() {
 
     let result = database.get_and_set("key".to_owned(), "new".to_owned());
 
-    assert_eq!(result, None);
-    assert_eq!(database.get("key"), Some("new"));
+    assert_eq!(result, Ok(None));
+    assert_eq!(database.get("key"), Ok(Some("new")));
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn get_and_delete_does_not_return_expired_value() {
 
     let result = database.get_and_delete("key".to_owned());
 
-    assert_eq!(result, None);
+    assert_eq!(result, Ok(None));
     assert!(!database.exists("key"));
 }
 
@@ -162,7 +162,7 @@ fn rename_preserves_expiration() {
 
     assert!(renamed);
     assert!(!database.exists("old"));
-    assert_eq!(database.get("new"), Some("value"));
+    assert_eq!(database.get("new"), Ok(Some("value")));
     assert_eq!(database.expiration("new"), Some(expires_at));
 }
 
@@ -215,7 +215,7 @@ fn expire_sets_ttl_for_existing_key() {
     let result = database.expire("key", 60);
 
     assert!(result);
-    assert_eq!(database.get("key"), Some("value"));
+    assert_eq!(database.get("key"), Ok(Some("value")));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn expire_with_zero_seconds_expires_key_immediately() {
     let result = database.expire("key", 0);
 
     assert!(result);
-    assert_eq!(database.get("key"), None);
+    assert_eq!(database.get("key"), Ok(None));
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn expire_rejects_duration_outside_instant_range_without_panicking() {
     database.set("key".to_owned(), "value".to_owned());
 
     assert!(!database.expire("key", u64::MAX));
-    assert_eq!(database.get("key"), Some("value"));
+    assert_eq!(database.get("key"), Ok(Some("value")));
 }
 
 #[test]
@@ -283,10 +283,10 @@ fn key_expires_when_test_clock_reaches_deadline() {
     assert!(database.expire("key", 60));
 
     clock.advance(Duration::from_secs(59));
-    assert_eq!(database.get("key"), Some("value"));
+    assert_eq!(database.get("key"), Ok(Some("value")));
 
     clock.advance(Duration::from_secs(1));
-    assert_eq!(database.get("key"), None);
+    assert_eq!(database.get("key"), Ok(None));
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn persist_removes_expiration() {
 
     assert!(result);
     assert_eq!(database.ttl("key"), -1);
-    assert_eq!(database.get("key"), Some("value"));
+    assert_eq!(database.get("key"), Ok(Some("value")));
 }
 
 #[test]
@@ -350,7 +350,10 @@ fn get_and_set_clears_expiration() {
     database.set("key".to_owned(), "old".to_owned());
     database.expire("key", 60);
 
-    database.get_and_set("key".to_owned(), "new".to_owned());
+    assert_eq!(
+        database.get_and_set("key".to_owned(), "new".to_owned()),
+        Ok(Some("old".to_owned()))
+    );
 
     assert_eq!(database.ttl("key"), -1);
 }
@@ -382,7 +385,7 @@ fn pexpire_with_zero_expires_key_immediately() {
     database.set("key".to_owned(), "value".to_owned());
 
     assert!(database.pexpire("key", 0));
-    assert_eq!(database.get("key"), None);
+    assert_eq!(database.get("key"), Ok(None));
 }
 
 #[test]
