@@ -1,33 +1,40 @@
+use crate::storage::value::Value;
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredValue {
-    value: String,
+    value: Value,
     expires_at: Option<Instant>,
 }
 
 impl StoredValue {
     pub(crate) fn new(value: String) -> Self {
         Self {
-            value,
+            value: Value::String(value),
             expires_at: None,
         }
     }
 
     pub(crate) fn value(&self) -> &str {
-        &self.value
+        match &self.value {
+            Value::String(value) => value,
+        }
     }
 
     pub(crate) fn value_mut(&mut self) -> &mut String {
-        &mut self.value
+        match &mut self.value {
+            Value::String(value) => value,
+        }
     }
 
     pub(crate) fn set_value(&mut self, value: String) {
-        self.value = value;
+        self.value = Value::String(value);
     }
 
     pub(crate) fn into_value(self) -> String {
-        self.value
+        match self.value {
+            Value::String(value) => value,
+        }
     }
     pub(crate) fn expires_at(&self) -> Option<Instant> {
         self.expires_at

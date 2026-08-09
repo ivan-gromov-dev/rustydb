@@ -1,11 +1,13 @@
 use super::indexing::normalize_index;
 use super::stored_value::StoredValue;
+use crate::storage::clock::{Clock, SystemClock};
 use std::collections::{HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::time::{Duration, Instant};
 
 pub(crate) struct InMemoryStore {
     storage: HashMap<String, StoredValue>,
+    clock: Box<dyn Clock>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -40,8 +42,13 @@ impl fmt::Display for StoreError {
 
 impl InMemoryStore {
     pub(crate) fn new() -> Self {
+        Self::with_clock(Box::new(SystemClock))
+    }
+
+    pub(crate) fn with_clock(clock: Box<dyn Clock>) -> Self {
         Self {
             storage: HashMap::new(),
+            clock,
         }
     }
 
@@ -262,12 +269,10 @@ impl InMemoryStore {
     }
 
     fn remove_if_expired(&mut self, key: &str) -> bool {
-        let now = Instant::now();
-
         let expired = self
             .storage
             .get(key)
-            .is_some_and(|entry| entry.is_expired(now));
+            .is_some_and(|entry| entry.is_expired(self.clock.now()));
 
         if expired {
             self.storage.remove(key);
@@ -277,13 +282,12 @@ impl InMemoryStore {
     }
 
     fn remove_expired(&mut self) {
-        let now = Instant::now();
-
+        let now = self.clock.now();
         self.storage.retain(|_, entry| !entry.is_expired(now));
     }
 
     pub(crate) fn expire(&mut self, key: &str, seconds: u64) -> bool {
-        let Some(expires_at) = Instant::now().checked_add(Duration::from_secs(seconds)) else {
+        let Some(expires_at) = self.clock.now().checked_add(Duration::from_secs(seconds)) else {
             return false;
         };
 
@@ -301,9 +305,9 @@ impl InMemoryStore {
             return -1;
         };
 
-        let now = Instant::now();
-
-        expires_at.saturating_duration_since(now).as_secs() as i64
+        expires_at
+            .saturating_duration_since(self.clock.now())
+            .as_secs() as i64
     }
 
     pub(crate) fn persist(&mut self, key: &str) -> bool {
@@ -322,7 +326,10 @@ impl InMemoryStore {
     }
 
     pub(crate) fn pexpire(&mut self, key: &str, milliseconds: u64) -> bool {
-        let Some(expires_at) = Instant::now().checked_add(Duration::from_millis(milliseconds))
+        let Some(expires_at) = self
+            .clock
+            .now()
+            .checked_add(Duration::from_millis(milliseconds))
         else {
             return false;
         };
@@ -342,7 +349,7 @@ impl InMemoryStore {
         };
 
         let milliseconds = expires_at
-            .saturating_duration_since(Instant::now())
+            .saturating_duration_since(self.clock.now())
             .as_millis();
 
         i64::try_from(milliseconds).unwrap_or(i64::MAX)
