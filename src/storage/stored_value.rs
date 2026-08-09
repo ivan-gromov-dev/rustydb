@@ -1,4 +1,4 @@
-use crate::storage::value::Value;
+use crate::storage::{in_memory::StoreError, value::Value};
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,15 +15,17 @@ impl StoredValue {
         }
     }
 
-    pub(crate) fn value(&self) -> &str {
+    pub(crate) fn value(&self) -> Result<&str, StoreError> {
         match &self.value {
-            Value::String(value) => value,
+            Value::String(value) => Ok(value),
+            Value::List(_) => Err(StoreError::WrongType),
         }
     }
 
-    pub(crate) fn value_mut(&mut self) -> &mut String {
+    pub(crate) fn value_mut(&mut self) -> Result<&mut String, StoreError> {
         match &mut self.value {
-            Value::String(value) => value,
+            Value::String(value) => Ok(value),
+            Value::List(_) => Err(StoreError::WrongType),
         }
     }
 
@@ -31,9 +33,10 @@ impl StoredValue {
         self.value = Value::String(value);
     }
 
-    pub(crate) fn into_value(self) -> String {
+    pub(crate) fn into_value(self) -> Result<String, StoreError> {
         match self.value {
-            Value::String(value) => value,
+            Value::String(value) => Ok(value),
+            Value::List(_) => Err(StoreError::WrongType),
         }
     }
     pub(crate) fn expires_at(&self) -> Option<Instant> {
@@ -56,6 +59,14 @@ impl StoredValue {
         match self.expires_at {
             Some(expires_at) => now >= expires_at,
             None => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_list(values: Vec<String>) -> Self {
+        Self {
+            value: Value::List(values),
+            expires_at: None,
         }
     }
 }

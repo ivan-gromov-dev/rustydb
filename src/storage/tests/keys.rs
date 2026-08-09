@@ -6,7 +6,7 @@ fn set_and_get_value() {
 
     database.set("name".to_owned(), "initial-value".to_owned());
 
-    assert_eq!(database.get("name"), Some("initial-value"));
+    assert_eq!(database.get("name"), Ok(Some("initial-value")));
 }
 
 #[test]
@@ -16,7 +16,7 @@ fn set_overwrites_value() {
     database.set("name".to_owned(), "initial-value".to_owned());
     database.set("name".to_owned(), "replacement-value".to_owned());
 
-    assert_eq!(database.get("name"), Some("replacement-value"));
+    assert_eq!(database.get("name"), Ok(Some("replacement-value")));
     assert_eq!(database.len(), 1);
 }
 
@@ -75,7 +75,7 @@ fn set_if_absent_inserts_missing_key() {
     let inserted = database.set_if_absent("name".to_owned(), "initial-value".to_owned());
 
     assert!(inserted);
-    assert_eq!(database.get("name"), Some("initial-value"));
+    assert_eq!(database.get("name"), Ok(Some("initial-value")));
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn set_if_absent_does_not_overwrite_existing_key() {
     let inserted = database.set_if_absent("name".to_owned(), "replacement-value".to_owned());
 
     assert!(!inserted);
-    assert_eq!(database.get("name"), Some("initial-value"));
+    assert_eq!(database.get("name"), Ok(Some("initial-value")));
 }
 
 #[test]
@@ -111,9 +111,9 @@ fn delete_many_removes_existing_keys() {
     let deleted = database.delete_many(&["a".to_owned(), "c".to_owned()]);
 
     assert_eq!(deleted, 2);
-    assert_eq!(database.get("a"), None);
-    assert_eq!(database.get("b"), Some("2"));
-    assert_eq!(database.get("c"), None);
+    assert_eq!(database.get("a"), Ok(None));
+    assert_eq!(database.get("b"), Ok(Some("2")));
+    assert_eq!(database.get("c"), Ok(None));
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn get_and_delete_returns_existing_value() {
 
     let result = database.get_and_delete("name".to_owned());
 
-    assert_eq!(result, Some("sample-value".to_owned()));
+    assert_eq!(result, Ok(Some("sample-value".to_owned())));
 }
 
 #[test]
@@ -183,9 +183,12 @@ fn get_and_delete_removes_existing_key() {
 
     database.set("name".to_owned(), "sample-value".to_owned());
 
-    database.get_and_delete("name".to_owned());
+    assert_eq!(
+        database.get_and_delete("name".to_owned()),
+        Ok(Some("sample-value".to_owned()))
+    );
 
-    assert_eq!(database.get("name"), None);
+    assert_eq!(database.get("name"), Ok(None));
     assert!(!database.exists("name"));
 }
 
@@ -195,7 +198,7 @@ fn get_and_delete_missing_key_returns_none() {
 
     let result = database.get_and_delete("missing".to_owned());
 
-    assert_eq!(result, None);
+    assert_eq!(result, Ok(None));
 }
 
 #[test]
@@ -207,7 +210,7 @@ fn get_and_delete_decreases_database_length() {
 
     let result = database.get_and_delete("name".to_owned());
 
-    assert_eq!(result, Some("first-value".to_owned()));
+    assert_eq!(result, Ok(Some("first-value".to_owned())));
     assert_eq!(database.len(), 1);
-    assert_eq!(database.get("city"), Some("second-value"));
+    assert_eq!(database.get("city"), Ok(Some("second-value")));
 }

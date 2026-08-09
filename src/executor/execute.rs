@@ -26,32 +26,39 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
         }
 
         Command::Get { key } => match store.get(&key) {
-            Some(value) => CommandOutput::Value(value.to_owned()),
-            None => CommandOutput::Nil,
+            Ok(Some(value)) => CommandOutput::Value(value.to_owned()),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
         },
 
         Command::MGet { keys } => {
-            let values = keys
+            let values: Result<Vec<Option<String>>, _> = keys
                 .into_iter()
-                .map(|key| store.get(&key).map(str::to_owned))
+                .map(|key| store.get(&key).map(|value| value.map(str::to_owned)))
                 .collect();
 
-            CommandOutput::OptionalValues(values)
+            match values {
+                Ok(values) => CommandOutput::OptionalValues(values),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
         }
 
         Command::GetSet { key, value } => match store.get_and_set(key, value) {
-            Some(old_value) => CommandOutput::Value(old_value),
-            None => CommandOutput::Nil,
+            Ok(Some(old_value)) => CommandOutput::Value(old_value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
         },
 
         Command::GetDel { key } => match store.get_and_delete(key) {
-            Some(old_value) => CommandOutput::Value(old_value),
-            None => CommandOutput::Nil,
+            Ok(Some(old_value)) => CommandOutput::Value(old_value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
         },
 
-        Command::Append { key, append_value } => {
-            CommandOutput::Integer(store.append(&key, append_value) as i64)
-        }
+        Command::Append { key, append_value } => match store.append(&key, append_value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::Increment { key } => match store.increment(key) {
             Ok(value) => CommandOutput::Integer(value),
@@ -116,15 +123,20 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
 
         Command::Persist { key } => CommandOutput::Integer(if store.persist(&key) { 1 } else { 0 }),
 
-        Command::StrLen { key } => CommandOutput::Integer(store.string_length(&key) as i64),
+        Command::StrLen { key } => match store.string_length(&key) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
-        Command::GetRange { key, start, end } => {
-            CommandOutput::Value(store.get_range(&key, start, end))
-        }
+        Command::GetRange { key, start, end } => match store.get_range(&key, start, end) {
+            Ok(value) => CommandOutput::Value(value),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
-        Command::SetRange { key, offset, value } => {
-            CommandOutput::Integer(store.set_range(key, offset, value) as i64)
-        }
+        Command::SetRange { key, offset, value } => match store.set_range(key, offset, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
