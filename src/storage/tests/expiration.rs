@@ -1,6 +1,39 @@
 use super::super::in_memory::InMemoryStore as Database;
 use super::super::stored_value::StoredValue as Entry;
+use crate::storage::clock::Clock;
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
+
+#[derive(Clone)]
+struct TestClock {
+    now: Rc<Cell<Instant>>,
+}
+
+impl TestClock {
+    fn new(now: Instant) -> Self {
+        Self {
+            now: Rc::new(Cell::new(now)),
+        }
+    }
+
+    fn advance(&self, duration: Duration) {
+        self.now.set(self.now.get() + duration);
+    }
+}
+
+impl Clock for TestClock {
+    fn now(&self) -> Instant {
+        self.now.get()
+    }
+}
+
+fn database_with_clock() -> (Database, TestClock) {
+    let clock = TestClock::new(Instant::now());
+    let database = Database::with_clock(Box::new(clock.clone()));
+
+    (database, clock)
+}
 
 #[test]
 fn clear_expiration_removes_expiration() {
@@ -233,14 +266,27 @@ fn ttl_returns_minus_one_for_key_without_expiration() {
 
 #[test]
 fn ttl_returns_remaining_seconds() {
-    let mut database = Database::new();
+    let (mut database, clock) = database_with_clock();
 
     database.set("key".to_owned(), "value".to_owned());
     database.expire("key", 60);
+    clock.advance(Duration::from_secs(17));
 
-    let ttl = database.ttl("key");
+    assert_eq!(database.ttl("key"), 43);
+}
 
-    assert!((59..=60).contains(&ttl));
+#[test]
+fn key_expires_when_test_clock_reaches_deadline() {
+    let (mut database, clock) = database_with_clock();
+
+    database.set("key".to_owned(), "value".to_owned());
+    assert!(database.expire("key", 60));
+
+    clock.advance(Duration::from_secs(59));
+    assert_eq!(database.get("key"), Some("value"));
+
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(database.get("key"), None);
 }
 
 #[test]
@@ -311,16 +357,15 @@ fn get_and_set_clears_expiration() {
 
 #[test]
 fn pexpire_sets_expiration_for_existing_key() {
-    let mut database = Database::new();
+    let (mut database, clock) = database_with_clock();
 
     database.set("key".to_owned(), "value".to_owned());
 
     let result = database.pexpire("key", 60_000);
+    clock.advance(Duration::from_millis(1234));
 
     assert!(result);
-
-    let ttl = database.pttl("key");
-    assert!((59_000..=60_000).contains(&ttl));
+    assert_eq!(database.pttl("key"), 58_766);
 }
 
 #[test]
@@ -358,12 +403,11 @@ fn pttl_returns_minus_one_without_expiration() {
 
 #[test]
 fn pttl_returns_remaining_milliseconds() {
-    let mut database = Database::new();
+    let (mut database, clock) = database_with_clock();
 
     database.set("key".to_owned(), "value".to_owned());
     database.pexpire("key", 10_000);
+    clock.advance(Duration::from_millis(2345));
 
-    let ttl = database.pttl("key");
-
-    assert!((9_000..=10_000).contains(&ttl));
+    assert_eq!(database.pttl("key"), 7655);
 }
