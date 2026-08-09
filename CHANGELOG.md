@@ -7,7 +7,24 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-## [0.1.0] - Unreleased
+## [0.2.0] - 2026-08-09
+
+### Added
+
+- Injectable monotonic clocks for deterministic expiration tests without sleeps
+  or wall-clock timing assumptions.
+- A typed storage value enum that prepares the data model for additional value
+  kinds.
+- A `WRONGTYPE`-style storage error for string and numeric operations applied to
+  incompatible values.
+- A reusable local verification harness for fast, full, and coverage checks.
+
+### Changed
+
+- String commands now access stored values through checked type conversions.
+  Failed wrong-type mutations preserve both the existing value and its TTL.
+
+## [0.1.0] - 2026-08-08
 
 ### Added
 
@@ -33,5 +50,6 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Djunichi/rustydb/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Djunichi/rustydb/releases/tag/v0.1.0

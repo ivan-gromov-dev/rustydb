@@ -1,0 +1,4 @@
+interface:
+  display_name: "RustyDB Release Docs"
+  short_description: "Prepare RustyDB documentation for a release"
+  default_prompt: "Use $rustydb-release-docs to prepare the project documentation for the next RustyDB release."
