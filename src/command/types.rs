@@ -99,6 +99,12 @@ pub(crate) enum Command {
     LLen {
         key: String,
     },
+    LPop {
+        key: String,
+    },
+    RPop {
+        key: String,
+    },
     Keys,
     Len,
     Clear,

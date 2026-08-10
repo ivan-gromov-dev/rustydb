@@ -153,6 +153,18 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::LPop { key } => match store.pop_left(&key) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::RPop { key } => match store.pop_right(&key) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

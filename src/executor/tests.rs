@@ -590,3 +590,58 @@ fn execute_list_commands_report_wrong_type() {
         Response::Error("operation against a key holding the wrong kind of value".to_owned())
     );
 }
+
+#[test]
+fn execute_list_pop_commands_return_values_and_nil() {
+    let mut database = Database::new();
+    database.set_list(
+        "list".to_owned(),
+        vec!["first".to_owned(), "last".to_owned()],
+    );
+
+    assert_eq!(
+        execute(
+            Command::LPop {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Value("first".to_owned())
+    );
+    assert_eq!(
+        execute(
+            Command::RPop {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Value("last".to_owned())
+    );
+    assert_eq!(
+        execute(
+            Command::LPop {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Nil
+    );
+}
+
+#[test]
+fn execute_list_pop_commands_report_wrong_type() {
+    let mut database = Database::new();
+    database.set("key".to_owned(), "string".to_owned());
+
+    let response = execute(
+        Command::RPop {
+            key: "key".to_owned(),
+        },
+        &mut database,
+    );
+
+    assert_eq!(
+        response,
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}

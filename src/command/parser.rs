@@ -73,6 +73,10 @@ impl Command {
 
             "LLEN" => parse_llen(input),
 
+            "LPOP" => parse_lpop(input),
+
+            "RPOP" => parse_rpop(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -467,6 +471,34 @@ fn parse_llen(input: &str) -> Result<Command, CommandError> {
     ensure_no_extra_arguments(&mut parts, usage)?;
 
     Ok(Command::LLen {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_lpop(input: &str) -> Result<Command, CommandError> {
+    let usage = "LPOP key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::LPop {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_rpop(input: &str) -> Result<Command, CommandError> {
+    let usage = "RPOP key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::RPop {
         key: key.to_owned(),
     })
 }

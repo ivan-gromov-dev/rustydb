@@ -240,6 +240,18 @@ fn parses_list_commands() {
             key: "queue".to_owned(),
         })
     );
+    assert_eq!(
+        Command::parse("lpop queue"),
+        Ok(Command::LPop {
+            key: "queue".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("RPOP queue"),
+        Ok(Command::RPop {
+            key: "queue".to_owned(),
+        })
+    );
 }
 
 #[test]
@@ -259,6 +271,17 @@ fn list_commands_validate_arguments() {
         Command::parse("LLEN key extra"),
         Err(CommandError::InvalidArguments("LLEN key"))
     );
+    for (input, usage) in [
+        ("LPOP", "LPOP key"),
+        ("LPOP key extra", "LPOP key"),
+        ("RPOP", "RPOP key"),
+        ("RPOP key extra", "RPOP key"),
+    ] {
+        assert_eq!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(usage))
+        );
+    }
 }
 
 #[test]
@@ -305,6 +328,8 @@ fn parses_every_supported_command_form() {
         "LPUSH list first",
         "RPUSH list last",
         "LLEN list",
+        "LPOP list",
+        "RPOP list",
         "KEYS",
         "LEN",
         "CLEAR",

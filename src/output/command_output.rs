@@ -29,6 +29,8 @@ const HELP_TEXT: &str = concat!(
     "  LPUSH key value\n",
     "  RPUSH key value\n",
     "  LLEN key\n",
+    "  LPOP key\n",
+    "  RPOP key\n",
     "  KEYS\n",
     "  LEN\n",
     "  CLEAR\n",

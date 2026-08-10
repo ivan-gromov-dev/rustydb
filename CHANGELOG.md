@@ -9,12 +9,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
-- List values with `LPUSH`, `RPUSH`, and `LLEN` commands.
+- List values with `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, and `LLEN` commands.
 
 ### Changed
 
 - Mutating an existing list preserves its expiration, while list commands
   reject string values without mutation.
+- Removing the final value from a list also removes its key.
 
 ## [0.2.0] - 2026-08-09
 

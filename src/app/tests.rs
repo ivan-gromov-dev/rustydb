@@ -20,10 +20,10 @@ fn runs_commands_until_exit() {
 #[test]
 fn runs_list_commands() {
     let output = run_script(
-        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nEXIT\n",
+        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nLPOP tasks\nRPOP tasks\nEXIT\n",
     );
 
-    assert!(output.contains("db> 1\ndb> 2\ndb> 3\ndb> 3\n"));
+    assert!(output.contains("db> 1\ndb> 2\ndb> 3\ndb> 3\ndb> first item\ndb> third item\n"));
     assert!(output.ends_with("db> Bye!\n"));
 }
 

@@ -74,6 +74,8 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `LPUSH key value` | Prepend a value to a list, creating it if necessary | New list length |
 | `RPUSH key value` | Append a value to a list, creating it if necessary | New list length |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
+| `LPOP key` | Remove and return the first list value | Value or `(nil)` |
+| `RPOP key` | Remove and return the last list value | Value or `(nil)` |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
@@ -88,7 +90,9 @@ RustyDB stores string and list values. `LPUSH` and `RPUSH` accept the remainder
 of the command line as one list element, so an element may contain spaces.
 Pushing to an existing list preserves its expiration. List commands applied to
 a string, and string or numeric commands applied to a list, return a wrong-type
-error without changing the value or its expiration.
+error without changing the value or its expiration. Popping from a non-empty
+list preserves its expiration while values remain; removing the final value
+also removes the key.
 
 ## Project structure
 

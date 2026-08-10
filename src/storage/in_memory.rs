@@ -491,6 +491,46 @@ impl InMemoryStore {
         }
     }
 
+    pub(crate) fn pop_left(&mut self, key: &str) -> Result<Option<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let (value, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(None);
+            };
+
+            let list = entry.list_mut()?;
+            let value = list.pop_front();
+            (value, list.is_empty())
+        };
+
+        if became_empty {
+            self.storage.remove(key);
+        }
+
+        Ok(value)
+    }
+
+    pub(crate) fn pop_right(&mut self, key: &str) -> Result<Option<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let (value, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(None);
+            };
+
+            let list = entry.list_mut()?;
+            let value = list.pop_back();
+            (value, list.is_empty())
+        };
+
+        if became_empty {
+            self.storage.remove(key);
+        }
+
+        Ok(value)
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
         self.storage.get(key).and_then(StoredValue::expires_at)
