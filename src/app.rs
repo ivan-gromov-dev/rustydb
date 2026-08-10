@@ -16,7 +16,9 @@ fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> 
     writeln!(writer, "Rusty DB")?;
     writeln!(writer, "Type HELP to see available commands.")?;
 
-    run_session(&mut reader, &mut writer, &mut database, Some("db> "))
+    run_session(&mut reader, &mut writer, Some("db> "), |command| {
+        database.execute(command)
+    })
 }
 
 #[cfg(test)]

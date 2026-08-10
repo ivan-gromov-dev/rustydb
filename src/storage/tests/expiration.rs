@@ -1,30 +1,30 @@
 use super::super::in_memory::InMemoryStore as Database;
 use super::super::stored_value::StoredValue as Entry;
 use crate::storage::clock::Clock;
-use std::cell::Cell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 struct TestClock {
-    now: Rc<Cell<Instant>>,
+    now: Arc<Mutex<Instant>>,
 }
 
 impl TestClock {
     fn new(now: Instant) -> Self {
         Self {
-            now: Rc::new(Cell::new(now)),
+            now: Arc::new(Mutex::new(now)),
         }
     }
 
     fn advance(&self, duration: Duration) {
-        self.now.set(self.now.get() + duration);
+        let mut now = self.now.lock().unwrap();
+        *now += duration;
     }
 }
 
 impl Clock for TestClock {
     fn now(&self) -> Instant {
-        self.now.get()
+        *self.now.lock().unwrap()
     }
 }
 

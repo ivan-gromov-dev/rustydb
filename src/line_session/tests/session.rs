@@ -8,7 +8,10 @@ fn run_script(script: &str, prompt: Option<&str>) -> String {
     let mut writer = Vec::new();
     let mut database = Database::default();
 
-    run_session(&mut reader, &mut writer, &mut database, prompt).unwrap();
+    run_session(&mut reader, &mut writer, prompt, |command| {
+        database.execute(command)
+    })
+    .unwrap();
 
     String::from_utf8(writer).unwrap()
 }
@@ -25,6 +28,25 @@ fn empty_and_malformed_lines_do_not_end_the_session() {
     let output = run_script("\nUNKNOWN\nSET key value\n", None);
 
     assert_eq!(output, "ERR unknown command: UNKNOWN\nOK\n");
+}
+
+#[test]
+fn empty_and_malformed_lines_do_not_invoke_the_executor() {
+    let mut reader = Cursor::new("\nUNKNOWN\n");
+    let mut writer = Vec::new();
+    let mut executions = 0;
+
+    run_session(&mut reader, &mut writer, None, |_| {
+        executions += 1;
+        crate::output::CommandOutput::Ok
+    })
+    .unwrap();
+
+    assert_eq!(executions, 0);
+    assert_eq!(
+        String::from_utf8(writer).unwrap(),
+        "ERR unknown command: UNKNOWN\n"
+    );
 }
 
 #[test]
@@ -68,7 +90,10 @@ fn propagates_reader_errors() {
     let mut writer = Vec::new();
     let mut database = Database::default();
 
-    let error = run_session(&mut reader, &mut writer, &mut database, None).unwrap_err();
+    let error = run_session(&mut reader, &mut writer, None, |command| {
+        database.execute(command)
+    })
+    .unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::Other);
 }
@@ -91,7 +116,10 @@ fn propagates_writer_errors() {
     let mut writer = FailingWriter;
     let mut database = Database::default();
 
-    let error = run_session(&mut reader, &mut writer, &mut database, None).unwrap_err();
+    let error = run_session(&mut reader, &mut writer, None, |command| {
+        database.execute(command)
+    })
+    .unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::Other);
 }

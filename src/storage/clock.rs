@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-pub(crate) trait Clock {
+pub(crate) trait Clock: Send {
     fn now(&self) -> Instant;
 }
 

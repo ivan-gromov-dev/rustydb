@@ -1,12 +1,18 @@
 use crate::command::{Command, CommandError};
-use crate::database::Database;
 use crate::output::CommandOutput;
 
-pub(crate) fn process_line(database: &mut Database, input: &str) -> Option<CommandOutput> {
+#[derive(Debug, PartialEq)]
+pub(crate) enum ParsedLine {
+    Empty,
+    Command(Command),
+    Error(CommandOutput),
+}
+
+pub(crate) fn parse_line(input: &str) -> ParsedLine {
     match Command::parse(input) {
-        Ok(command) => Some(database.execute(command)),
-        Err(CommandError::EmptyInput) => None,
-        Err(error) => Some(CommandOutput::Error(error.to_string())),
+        Ok(command) => ParsedLine::Command(command),
+        Err(CommandError::EmptyInput) => ParsedLine::Empty,
+        Err(error) => ParsedLine::Error(CommandOutput::Error(error.to_string())),
     }
 }
 
