@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Write};
 
-use crate::command::{Command, CommandError};
 use crate::database::Database;
+use crate::line_protocol;
 use crate::output::CommandOutput;
 
 pub fn run() -> io::Result<()> {
@@ -29,23 +29,14 @@ fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> 
             break;
         }
 
-        let command = match Command::parse(&input) {
-            Ok(command) => command,
-            Err(CommandError::EmptyInput) => continue,
-            Err(error) => {
-                writeln!(writer, "ERR {error}")?;
-                continue;
+        match line_protocol::process_line(&mut database, &input) {
+            Some(CommandOutput::Exit) => {
+                writeln!(writer, "Bye!")?;
+                break;
             }
-        };
-
-        let output = database.execute(command);
-
-        if output == CommandOutput::Exit {
-            writeln!(writer, "Bye!")?;
-            break;
+            Some(command) => command.write_to(&mut writer)?,
+            None => continue,
         }
-
-        output.write_to(&mut writer)?;
     }
 
     Ok(())
