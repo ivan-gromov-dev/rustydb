@@ -2,7 +2,12 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 fn run_cli(input: &str) -> Output {
+    run_cli_with_args(&[], input)
+}
+
+fn run_cli_with_args(arguments: &[&str], input: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rustydb"))
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -121,5 +126,42 @@ fn end_of_input_is_a_successful_shutdown() {
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
         "Rusty DB\nType HELP to see available commands.\ndb> \n"
+    );
+}
+
+#[test]
+fn unknown_mode_reports_usage_and_returns_exit_code_two() {
+    let output = run_cli_with_args(&["unknown"], "");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "Usage:\n  rustydb\n  rustydb server [bind-address]\n"
+    );
+}
+
+#[test]
+fn extra_server_arguments_report_usage_and_return_exit_code_two() {
+    let output = run_cli_with_args(&["server", "127.0.0.1:6379", "extra"], "");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "Usage:\n  rustydb\n  rustydb server [bind-address]\n"
+    );
+}
+
+#[test]
+fn invalid_bind_address_returns_exit_code_one() {
+    let output = run_cli_with_args(&["server", "not a valid socket address"], "");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .starts_with("Error: ")
     );
 }

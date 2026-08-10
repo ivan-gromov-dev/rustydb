@@ -1,9 +1,7 @@
 use std::io::{self, BufRead, Write};
 
-use crate::command::{Command, CommandError};
-use crate::executor::execute;
-use crate::output::CommandOutput;
-use crate::storage::InMemoryStore;
+use crate::database::Database;
+use crate::line_session::run_session;
 
 pub fn run() -> io::Result<()> {
     let stdin = io::stdin();
@@ -13,43 +11,14 @@ pub fn run() -> io::Result<()> {
 }
 
 fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> {
-    let mut store = InMemoryStore::new();
+    let mut database = Database::default();
 
     writeln!(writer, "Rusty DB")?;
     writeln!(writer, "Type HELP to see available commands.")?;
 
-    loop {
-        write!(writer, "db> ")?;
-        writer.flush()?;
-
-        let mut input = String::new();
-        let bytes_read = reader.read_line(&mut input)?;
-
-        if bytes_read == 0 {
-            writeln!(writer)?;
-            break;
-        }
-
-        let command = match Command::parse(&input) {
-            Ok(command) => command,
-            Err(CommandError::EmptyInput) => continue,
-            Err(error) => {
-                writeln!(writer, "ERR {error}")?;
-                continue;
-            }
-        };
-
-        let output = execute(command, &mut store);
-
-        if output == CommandOutput::Exit {
-            writeln!(writer, "Bye!")?;
-            break;
-        }
-
-        output.write_to(&mut writer)?;
-    }
-
-    Ok(())
+    run_session(&mut reader, &mut writer, Some("db> "), |command| {
+        database.execute(command)
+    })
 }
 
 #[cfg(test)]

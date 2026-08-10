@@ -3,7 +3,7 @@ name = "rustydb"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "A small dependency-free in-memory key-value database for learning"
+description = "A small in-memory key-value database written in Rust."
 license = "MIT"
 repository = "https://github.com/Djunichi/rustydb"
 readme = "README.md"
@@ -12,3 +12,4 @@ categories = ["database-implementations", "command-line-utilities"]
 exclude = ["scripts/__pycache__/"]
 
 [dependencies]
+ctrlc = "3.5.2"

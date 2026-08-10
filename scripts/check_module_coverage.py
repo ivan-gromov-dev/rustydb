@@ -10,7 +10,17 @@ from collections import defaultdict
 from pathlib import Path
 
 
-MODULES = ("app", "command", "executor", "output", "storage")
+MODULES = (
+    "app",
+    "command",
+    "database",
+    "executor",
+    "line_protocol",
+    "line_session",
+    "output",
+    "server",
+    "storage",
+)
 
 
 def parse_args() -> argparse.Namespace:

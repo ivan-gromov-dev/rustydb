@@ -1,10 +1,14 @@
 # RustyDB Roadmap
 
-RustyDB is a learning project. This roadmap prioritizes understanding database
-internals over matching every Redis feature or optimizing prematurely.
+RustyDB begins as a learning-oriented implementation and is intended to evolve
+toward a production-capable database. This roadmap first prioritizes
+understanding database internals and establishing explicit correctness guarantees
+before adding operational maturity and scalability.
 
 Versions describe milestones, not deadlines. Each milestone should be split into
 small pull requests and completed with tests and documentation before moving on.
+Completing a milestone adds only its documented guarantees; releases remain
+experimental until the production-readiness work is complete.
 
 ## Guiding principles
 
@@ -13,31 +17,6 @@ small pull requests and completed with tests and documentation before moving on.
 - Specify behavior with tests, especially around expiration and failures.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
-
-## `0.4` — TCP server
-
-**Goal:** make the database accessible to multiple network clients.
-
-### Work
-
-- Extract a reusable database service from the interactive application.
-- Add bind-address and port configuration.
-- Initially accept commands through a documented line protocol over
-  `TcpListener`.
-- Handle disconnects and malformed input without terminating the server.
-- Start with one client, then support multiple clients with shared storage.
-- Define one command under the store lock as the atomicity boundary.
-- Add graceful shutdown.
-
-### Done when
-
-- Two clients can safely observe and modify the same database.
-- Integration tests start a server on an ephemeral port and use `TcpStream`.
-- A bad client cannot crash or poison the server.
-- Shutdown stops new connections and lets active work finish cleanly.
-
-**Learning focus:** sockets, threads, synchronization, shared ownership, failure
-isolation, and graceful shutdown.
 
 ## `0.5` — RESP2 protocol
 
@@ -173,6 +152,21 @@ features.
   documentation alone.
 - CI covers formatting, linting, unit and integration tests, and recovery.
 - Known limitations and non-goals are explicit.
+
+## Beyond `1.0` — Production readiness
+
+**Goal:** strengthen the stable core with the operational guarantees required
+for real deployments.
+
+Expected areas include authentication and transport encryption, resource limits
+and backpressure, stable configuration and upgrade paths, backup and restore,
+and fault-injection, crash, and stress testing. Replication and high
+availability should follow only after the single-node system is dependable and
+measurable.
+
+Production readiness is a set of explicit, verified guarantees rather than a
+version label. Its detailed milestones will be refined using evidence gathered
+while building and operating the releases through `1.0`.
 
 ## Deferred ideas
 

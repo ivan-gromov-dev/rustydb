@@ -15,38 +15,62 @@ concurrency:
 
 jobs:
   quality:
-    name: Format, lint, test, and coverage
+    name: Format and lint
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt, llvm-tools-preview
-
+          components: clippy, rustfmt
       - name: Check formatting
         run: cargo fmt -- --check
-
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Run tests
+  tests:
+    name: Unit, CLI, and TCP integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run all Cargo tests
         run: cargo test --all-features
 
+  ctrl_c:
+    name: Ctrl+C process test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build RustyDB
+        run: cargo build --bin rustydb
+      - name: Test graceful Ctrl+C shutdown
+        run: python3 scripts/test_ctrl_c.py target/debug/rustydb
+
+  coverage:
+    name: Per-module coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-
       - name: Generate coverage report
         run: cargo llvm-cov --workspace --all-features --json --output-path coverage.json
-
       - name: Require more than 70% coverage per module
         run: python3 scripts/check_module_coverage.py coverage.json --threshold 70
-
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -56,13 +80,22 @@ jobs:
   ci-success:
     name: CI Success
     if: always()
-    needs: quality
+    needs:
+      - quality
+      - tests
+      - ctrl_c
+      - coverage
     runs-on: ubuntu-latest
-
     steps:
-      - name: CI Success
+      - name: Require every CI job to succeed
         env:
           QUALITY_RESULT: ${{ needs.quality.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          CTRL_C_RESULT: ${{ needs.ctrl_c.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
         run: |
           test "$QUALITY_RESULT" = "success"
+          test "$TESTS_RESULT" = "success"
+          test "$CTRL_C_RESULT" = "success"
+          test "$COVERAGE_RESULT" = "success"
           echo "CI Success: true"
