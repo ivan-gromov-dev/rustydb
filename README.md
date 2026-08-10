@@ -92,7 +92,7 @@ For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` mean
 
 String offsets and lengths are measured in Unicode scalar values, not UTF-8 bytes. Negative `GETRANGE` indexes count backward from the end. When `SETRANGE` starts beyond the current end, the gap is padded with null characters (`\0`).
 
-RustyDB stores string and list values. `LPUSH` and `RPUSH` accept the remainder
+RustyDB stores string, list, and set values. `LPUSH` and `RPUSH` accept the remainder
 of the command line as one list element, so an element may contain spaces.
 Pushing to an existing list preserves its expiration. List commands applied to
 a string, and string or numeric commands applied to a list, return a wrong-type

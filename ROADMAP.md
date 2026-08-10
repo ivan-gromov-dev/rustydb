@@ -14,28 +14,6 @@ small pull requests and completed with tests and documentation before moving on.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.3` — Lists and sets
-
-**Goal:** evolve RustyDB into a typed data-structure server.
-
-### Work
-
-- Add `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, and `LRANGE`.
-- Add `SADD`, `SREM`, `SISMEMBER`, `SMEMBERS`, and `SCARD`.
-- Preserve TTL while mutating existing values.
-- Define whether commands retain or remove empty collections.
-- Keep parser, executor, and storage tests at their respective boundaries.
-
-### Done when
-
-- Commands reject incompatible types consistently.
-- Exposed ordering is deterministic.
-- Empty values, expired keys, boundaries, and duplicates are tested.
-- README documents all supported data types and commands.
-
-**Learning focus:** data-structure selection, ownership, enum mutation, and
-precise command semantics.
-
 ## `0.4` — TCP server
 
 **Goal:** make the database accessible to multiple network clients.
