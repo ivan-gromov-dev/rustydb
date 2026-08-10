@@ -40,6 +40,61 @@ fn executes_a_script_and_exits_successfully() {
 }
 
 #[test]
+fn executes_list_commands() {
+    let output = run_cli(
+        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nLRANGE tasks 0 -1\nLPOP tasks\nRPOP tasks\nLPOP missing\nEXIT\n",
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        concat!(
+            "Rusty DB\n",
+            "Type HELP to see available commands.\n",
+            "db> 1\n",
+            "db> 2\n",
+            "db> 3\n",
+            "db> 3\n",
+            "db> first item\n",
+            "second item\n",
+            "third item\n",
+            "db> first item\n",
+            "db> third item\n",
+            "db> (nil)\n",
+            "db> Bye!\n",
+        )
+    );
+}
+
+#[test]
+fn executes_set_collection_commands() {
+    let output = run_cli(
+        "SADD tags zeta\nSADD tags alpha value\nSADD tags alpha value\nSISMEMBER tags alpha value\nSCARD tags\nSMEMBERS tags\nSREM tags alpha value\nSCARD tags\nEXIT\n",
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        concat!(
+            "Rusty DB\n",
+            "Type HELP to see available commands.\n",
+            "db> 1\n",
+            "db> 1\n",
+            "db> 0\n",
+            "db> 1\n",
+            "db> 2\n",
+            "db> alpha value\n",
+            "zeta\n",
+            "db> 1\n",
+            "db> 1\n",
+            "db> Bye!\n",
+        )
+    );
+}
+
+#[test]
 fn reports_invalid_input_and_continues() {
     let output = run_cli("GET\nUNKNOWN\nEXIT\n");
 

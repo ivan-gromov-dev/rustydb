@@ -54,23 +54,43 @@ fn string_value_can_be_moved_out() {
 
 #[test]
 fn list_rejects_immutable_string_access() {
-    let entry = Entry::new_list(vec!["value".to_owned()]);
+    let entry = Entry::new_list();
 
     assert_eq!(entry.value(), Err(StoreError::WrongType));
 }
 
 #[test]
 fn list_rejects_mutable_string_access() {
-    let mut entry = Entry::new_list(vec!["value".to_owned()]);
+    let mut entry = Entry::new_list();
 
     assert_eq!(entry.value_mut(), Err(StoreError::WrongType));
 }
 
 #[test]
 fn list_rejects_string_extraction() {
-    let entry = Entry::new_list(vec!["value".to_owned()]);
+    let entry = Entry::new_list();
 
     assert_eq!(entry.into_value(), Err(StoreError::WrongType));
+}
+
+#[test]
+fn set_exposes_only_set_access() {
+    let mut entry = Entry::new_set();
+
+    assert_eq!(entry.value(), Err(StoreError::WrongType));
+    assert_eq!(entry.list(), Err(StoreError::WrongType));
+    assert!(
+        entry
+            .set_mut()
+            .expect("a set entry should expose its set")
+            .insert("member".to_owned())
+    );
+    assert!(
+        entry
+            .set()
+            .expect("a set entry should expose its set")
+            .contains("member")
+    );
 }
 
 #[test]

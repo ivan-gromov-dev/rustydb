@@ -138,6 +138,63 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::LPush { key, value } => match store.push_left(&key, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::RPush { key, value } => match store.push_right(&key, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::LLen { key } => match store.list_length(&key) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::LPop { key } => match store.pop_left(&key) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::RPop { key } => match store.pop_right(&key) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::LRange { key, start, end } => match store.list_range(&key, start, end) {
+            Ok(value) => CommandOutput::KeyList(value),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SAdd { key, member } => match store.set_add(&key, member) {
+            Ok(added) => CommandOutput::Integer(i64::from(added)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SRem { key, member } => match store.set_remove(&key, &member) {
+            Ok(removed) => CommandOutput::Integer(i64::from(removed)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SIsMember { key, member } => match store.set_contains(&key, &member) {
+            Ok(found) => CommandOutput::Integer(i64::from(found)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SMembers { key } => match store.set_members(&key) {
+            Ok(members) => CommandOutput::KeyList(members),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SCard { key } => match store.set_cardinality(&key) {
+            Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

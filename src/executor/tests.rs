@@ -527,3 +527,266 @@ fn execute_string_commands_report_wrong_type() {
     assert_eq!(append, wrong_type);
     assert_eq!(mget, wrong_type);
 }
+
+#[test]
+fn execute_list_commands_return_lengths() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(
+            Command::LPush {
+                key: "list".to_owned(),
+                value: "middle".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::RPush {
+                key: "list".to_owned(),
+                value: "last".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::LLen {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::LLen {
+                key: "missing".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+}
+
+#[test]
+fn execute_list_commands_report_wrong_type() {
+    let mut database = Database::new();
+    database.set("key".to_owned(), "string".to_owned());
+
+    let response = execute(
+        Command::LPush {
+            key: "key".to_owned(),
+            value: "value".to_owned(),
+        },
+        &mut database,
+    );
+
+    assert_eq!(
+        response,
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}
+
+#[test]
+fn execute_list_pop_commands_return_values_and_nil() {
+    let mut database = Database::new();
+    database.set_list(
+        "list".to_owned(),
+        vec!["first".to_owned(), "last".to_owned()],
+    );
+
+    assert_eq!(
+        execute(
+            Command::LPop {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Value("first".to_owned())
+    );
+    assert_eq!(
+        execute(
+            Command::RPop {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Value("last".to_owned())
+    );
+    assert_eq!(
+        execute(
+            Command::LPop {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Nil
+    );
+}
+
+#[test]
+fn execute_list_pop_commands_report_wrong_type() {
+    let mut database = Database::new();
+    database.set("key".to_owned(), "string".to_owned());
+
+    let response = execute(
+        Command::RPop {
+            key: "key".to_owned(),
+        },
+        &mut database,
+    );
+
+    assert_eq!(
+        response,
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}
+
+#[test]
+fn execute_list_range_returns_values_nil_and_wrong_type() {
+    let mut database = Database::new();
+    database.set_list(
+        "list".to_owned(),
+        vec!["first".to_owned(), "second".to_owned(), "third".to_owned()],
+    );
+    database.set("string".to_owned(), "value".to_owned());
+
+    assert_eq!(
+        execute(
+            Command::LRange {
+                key: "list".to_owned(),
+                start: 1,
+                end: -1,
+            },
+            &mut database,
+        ),
+        Response::KeyList(vec!["second".to_owned(), "third".to_owned()])
+    );
+    assert_eq!(
+        execute(
+            Command::LRange {
+                key: "missing".to_owned(),
+                start: 0,
+                end: -1,
+            },
+            &mut database,
+        ),
+        Response::KeyList(Vec::new())
+    );
+    assert_eq!(
+        execute(
+            Command::LRange {
+                key: "string".to_owned(),
+                start: 0,
+                end: -1,
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}
+
+#[test]
+fn execute_set_collection_commands() {
+    let mut database = Database::new();
+
+    for (member, expected) in [("zeta", 1), ("alpha", 1), ("zeta", 0)] {
+        assert_eq!(
+            execute(
+                Command::SAdd {
+                    key: "set".to_owned(),
+                    member: member.to_owned(),
+                },
+                &mut database,
+            ),
+            Response::Integer(expected)
+        );
+    }
+    assert_eq!(
+        execute(
+            Command::SIsMember {
+                key: "set".to_owned(),
+                member: "alpha".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::SMembers {
+                key: "set".to_owned()
+            },
+            &mut database
+        ),
+        Response::KeyList(vec!["alpha".to_owned(), "zeta".to_owned()])
+    );
+    assert_eq!(
+        execute(
+            Command::SCard {
+                key: "set".to_owned()
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::SRem {
+                key: "set".to_owned(),
+                member: "alpha".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
+fn execute_set_collection_commands_handle_missing_and_wrong_types() {
+    let mut database = Database::new();
+    database.set("string".to_owned(), "value".to_owned());
+
+    assert_eq!(
+        execute(
+            Command::SIsMember {
+                key: "missing".to_owned(),
+                member: "member".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(
+            Command::SMembers {
+                key: "missing".to_owned()
+            },
+            &mut database
+        ),
+        Response::KeyList(Vec::new())
+    );
+    assert_eq!(
+        execute(
+            Command::SCard {
+                key: "missing".to_owned()
+            },
+            &mut database
+        ),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(
+            Command::SAdd {
+                key: "string".to_owned(),
+                member: "member".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}

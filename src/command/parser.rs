@@ -67,6 +67,28 @@ impl Command {
 
             "SETRANGE" => parse_setrange(input),
 
+            "LPUSH" => parse_lpush(input),
+
+            "RPUSH" => parse_rpush(input),
+
+            "LLEN" => parse_llen(input),
+
+            "LPOP" => parse_lpop(input),
+
+            "RPOP" => parse_rpop(input),
+
+            "LRANGE" => parse_lrange(input),
+
+            "SADD" => parse_sadd(input),
+
+            "SREM" => parse_srem(input),
+
+            "SISMEMBER" => parse_sismember(input),
+
+            "SMEMBERS" => parse_smembers(input),
+
+            "SCARD" => parse_scard(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -430,6 +452,139 @@ fn parse_setrange(input: &str) -> Result<Command, CommandError> {
         key: key.to_owned(),
         offset,
         value: value.to_owned(),
+    })
+}
+
+fn parse_lpush(input: &str) -> Result<Command, CommandError> {
+    let (key, value) = parse_key_value_command(input, "LPUSH key value")?;
+
+    Ok(Command::LPush {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    })
+}
+
+fn parse_rpush(input: &str) -> Result<Command, CommandError> {
+    let (key, value) = parse_key_value_command(input, "RPUSH key value")?;
+
+    Ok(Command::RPush {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    })
+}
+
+fn parse_llen(input: &str) -> Result<Command, CommandError> {
+    let usage = "LLEN key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::LLen {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_lpop(input: &str) -> Result<Command, CommandError> {
+    let usage = "LPOP key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::LPop {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_rpop(input: &str) -> Result<Command, CommandError> {
+    let usage = "RPOP key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::RPop {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_lrange(input: &str) -> Result<Command, CommandError> {
+    let usage = "LRANGE key start end";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    let start = required_argument(&mut parts, usage)?;
+    let end = required_argument(&mut parts, usage)?;
+
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    let start = start
+        .parse::<i64>()
+        .map_err(|_| CommandError::InvalidInteger(start.to_owned()))?;
+
+    let end = end
+        .parse::<i64>()
+        .map_err(|_| CommandError::InvalidInteger(end.to_owned()))?;
+
+    Ok(Command::LRange {
+        key: key.to_owned(),
+        start,
+        end,
+    })
+}
+
+fn parse_sadd(input: &str) -> Result<Command, CommandError> {
+    let (key, member) = parse_key_value_command(input, "SADD key member")?;
+    Ok(Command::SAdd {
+        key: key.to_owned(),
+        member: member.to_owned(),
+    })
+}
+
+fn parse_srem(input: &str) -> Result<Command, CommandError> {
+    let (key, member) = parse_key_value_command(input, "SREM key member")?;
+    Ok(Command::SRem {
+        key: key.to_owned(),
+        member: member.to_owned(),
+    })
+}
+
+fn parse_sismember(input: &str) -> Result<Command, CommandError> {
+    let (key, member) = parse_key_value_command(input, "SISMEMBER key member")?;
+    Ok(Command::SIsMember {
+        key: key.to_owned(),
+        member: member.to_owned(),
+    })
+}
+
+fn parse_smembers(input: &str) -> Result<Command, CommandError> {
+    let usage = "SMEMBERS key";
+    let mut parts = input.split_whitespace();
+    parts.next();
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+    Ok(Command::SMembers {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_scard(input: &str) -> Result<Command, CommandError> {
+    let usage = "SCARD key";
+    let mut parts = input.split_whitespace();
+    parts.next();
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+    Ok(Command::SCard {
+        key: key.to_owned(),
     })
 }
 

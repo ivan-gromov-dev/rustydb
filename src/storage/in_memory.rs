@@ -456,6 +456,177 @@ impl InMemoryStore {
         keys.iter().filter(|key| self.exists(key)).count()
     }
 
+    pub(crate) fn push_left(&mut self, key: &str, value: String) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        let list = self
+            .storage
+            .entry(key.to_owned())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+
+        list.push_front(value);
+        Ok(list.len())
+    }
+
+    pub(crate) fn push_right(&mut self, key: &str, value: String) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        let list = self
+            .storage
+            .entry(key.to_owned())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+
+        list.push_back(value);
+        Ok(list.len())
+    }
+
+    pub(crate) fn list_length(&mut self, key: &str) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        match self.storage.get(key) {
+            Some(entry) => Ok(entry.list()?.len()),
+            None => Ok(0),
+        }
+    }
+
+    pub(crate) fn pop_left(&mut self, key: &str) -> Result<Option<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let (value, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(None);
+            };
+
+            let list = entry.list_mut()?;
+            let value = list.pop_front();
+            (value, list.is_empty())
+        };
+
+        if became_empty {
+            self.storage.remove(key);
+        }
+
+        Ok(value)
+    }
+
+    pub(crate) fn pop_right(&mut self, key: &str) -> Result<Option<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let (value, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(None);
+            };
+
+            let list = entry.list_mut()?;
+            let value = list.pop_back();
+            (value, list.is_empty())
+        };
+
+        if became_empty {
+            self.storage.remove(key);
+        }
+
+        Ok(value)
+    }
+
+    pub(crate) fn list_range(
+        &mut self,
+        key: &str,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+
+        let list = entry.list()?;
+        let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+
+        if length == 0 {
+            return Ok(Vec::new());
+        }
+
+        let start = normalize_index(start, length).max(0);
+        let end = normalize_index(end, length).min(length - 1);
+
+        if start >= length || end < 0 || start > end {
+            return Ok(Vec::new());
+        }
+
+        let count = (end - start + 1) as usize;
+
+        Ok(list
+            .iter()
+            .skip(start as usize)
+            .take(count)
+            .cloned()
+            .collect())
+    }
+
+    pub(crate) fn set_add(&mut self, key: &str, member: String) -> Result<bool, StoreError> {
+        self.remove_if_expired(key);
+
+        self.storage
+            .entry(key.to_owned())
+            .or_insert_with(StoredValue::new_set)
+            .set_mut()
+            .map(|set| set.insert(member))
+    }
+
+    pub(crate) fn set_remove(&mut self, key: &str, member: &str) -> Result<bool, StoreError> {
+        self.remove_if_expired(key);
+
+        let (removed, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(false);
+            };
+
+            let set = entry.set_mut()?;
+            let removed = set.remove(member);
+            (removed, set.is_empty())
+        };
+
+        if became_empty {
+            self.storage.remove(key);
+        }
+
+        Ok(removed)
+    }
+
+    pub(crate) fn set_contains(&mut self, key: &str, member: &str) -> Result<bool, StoreError> {
+        self.remove_if_expired(key);
+
+        match self.storage.get(key) {
+            Some(entry) => Ok(entry.set()?.contains(member)),
+            None => Ok(false),
+        }
+    }
+
+    pub(crate) fn set_members(&mut self, key: &str) -> Result<Vec<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+
+        let mut members: Vec<_> = entry.set()?.iter().cloned().collect();
+        members.sort();
+        Ok(members)
+    }
+
+    pub(crate) fn set_cardinality(&mut self, key: &str) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        match self.storage.get(key) {
+            Some(entry) => Ok(entry.set()?.len()),
+            None => Ok(0),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
         self.storage.get(key).and_then(StoredValue::expires_at)
@@ -463,6 +634,29 @@ impl InMemoryStore {
 
     #[cfg(test)]
     pub(crate) fn set_list(&mut self, key: String, values: Vec<String>) {
-        self.storage.insert(key, StoredValue::new_list(values));
+        let mut entry = StoredValue::new_list();
+        entry
+            .list_mut()
+            .expect("a new list entry should expose its list")
+            .extend(values);
+        self.storage.insert(key, entry);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn list_values(&self, key: &str) -> Result<Option<Vec<String>>, StoreError> {
+        self.storage
+            .get(key)
+            .map(|entry| entry.list().map(|values| values.iter().cloned().collect()))
+            .transpose()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_set(&mut self, key: String, members: Vec<String>) {
+        let mut entry = StoredValue::new_set();
+        entry
+            .set_mut()
+            .expect("a new set entry should expose its set")
+            .extend(members);
+        self.storage.insert(key, entry);
     }
 }

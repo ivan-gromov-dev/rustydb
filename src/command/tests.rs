@@ -219,6 +219,165 @@ fn set_range_accepts_repeated_whitespace() {
 }
 
 #[test]
+fn parses_list_commands() {
+    assert_eq!(
+        Command::parse("lpush queue first item"),
+        Ok(Command::LPush {
+            key: "queue".to_owned(),
+            value: "first item".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("RPUSH queue last item"),
+        Ok(Command::RPush {
+            key: "queue".to_owned(),
+            value: "last item".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("LLEN queue"),
+        Ok(Command::LLen {
+            key: "queue".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("lpop queue"),
+        Ok(Command::LPop {
+            key: "queue".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("RPOP queue"),
+        Ok(Command::RPop {
+            key: "queue".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("LRANGE queue -2 -1"),
+        Ok(Command::LRange {
+            key: "queue".to_owned(),
+            start: -2,
+            end: -1,
+        })
+    );
+}
+
+#[test]
+fn list_commands_validate_arguments() {
+    for input in ["LPUSH", "LPUSH key", "RPUSH", "RPUSH key"] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+
+    assert_eq!(
+        Command::parse("LLEN"),
+        Err(CommandError::InvalidArguments("LLEN key"))
+    );
+    assert_eq!(
+        Command::parse("LLEN key extra"),
+        Err(CommandError::InvalidArguments("LLEN key"))
+    );
+    for (input, usage) in [
+        ("LPOP", "LPOP key"),
+        ("LPOP key extra", "LPOP key"),
+        ("RPOP", "RPOP key"),
+        ("RPOP key extra", "RPOP key"),
+    ] {
+        assert_eq!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(usage))
+        );
+    }
+    for input in [
+        "LRANGE",
+        "LRANGE key",
+        "LRANGE key 0",
+        "LRANGE key 0 1 extra",
+    ] {
+        assert_eq!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments("LRANGE key start end"))
+        );
+    }
+    assert_eq!(
+        Command::parse("LRANGE key start 1"),
+        Err(CommandError::InvalidInteger("start".to_owned()))
+    );
+    assert_eq!(
+        Command::parse("LRANGE key 0 end"),
+        Err(CommandError::InvalidInteger("end".to_owned()))
+    );
+}
+
+#[test]
+fn parses_set_collection_commands() {
+    assert_eq!(
+        Command::parse("sadd tags first member"),
+        Ok(Command::SAdd {
+            key: "tags".to_owned(),
+            member: "first member".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SREM tags first member"),
+        Ok(Command::SRem {
+            key: "tags".to_owned(),
+            member: "first member".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SISMEMBER tags first member"),
+        Ok(Command::SIsMember {
+            key: "tags".to_owned(),
+            member: "first member".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SMEMBERS tags"),
+        Ok(Command::SMembers {
+            key: "tags".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SCARD tags"),
+        Ok(Command::SCard {
+            key: "tags".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn set_collection_commands_validate_arguments() {
+    for input in [
+        "SADD",
+        "SADD key",
+        "SREM",
+        "SREM key",
+        "SISMEMBER",
+        "SISMEMBER key",
+    ] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+
+    for (input, usage) in [
+        ("SMEMBERS", "SMEMBERS key"),
+        ("SMEMBERS key extra", "SMEMBERS key"),
+        ("SCARD", "SCARD key"),
+        ("SCARD key extra", "SCARD key"),
+    ] {
+        assert_eq!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(usage))
+        );
+    }
+}
+
+#[test]
 fn persist_reports_its_own_usage() {
     assert_eq!(
         Command::parse("PERSIST"),
@@ -259,6 +418,17 @@ fn parses_every_supported_command_form() {
         "STRLEN key",
         "GETRANGE key -2 -1",
         "SETRANGE key 2 value",
+        "LPUSH list first",
+        "RPUSH list last",
+        "LLEN list",
+        "LPOP list",
+        "RPOP list",
+        "LRANGE list 0 -1",
+        "SADD set member",
+        "SREM set member",
+        "SISMEMBER set member",
+        "SMEMBERS set",
+        "SCARD set",
         "KEYS",
         "LEN",
         "CLEAR",

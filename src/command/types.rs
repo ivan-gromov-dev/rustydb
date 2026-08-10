@@ -88,6 +88,46 @@ pub(crate) enum Command {
         offset: usize,
         value: String,
     },
+    LPush {
+        key: String,
+        value: String,
+    },
+    RPush {
+        key: String,
+        value: String,
+    },
+    LLen {
+        key: String,
+    },
+    LPop {
+        key: String,
+    },
+    RPop {
+        key: String,
+    },
+    LRange {
+        key: String,
+        start: i64,
+        end: i64,
+    },
+    SAdd {
+        key: String,
+        member: String,
+    },
+    SRem {
+        key: String,
+        member: String,
+    },
+    SIsMember {
+        key: String,
+        member: String,
+    },
+    SMembers {
+        key: String,
+    },
+    SCard {
+        key: String,
+    },
     Keys,
     Len,
     Clear,
