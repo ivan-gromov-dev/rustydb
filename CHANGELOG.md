@@ -11,12 +11,16 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - List values with `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, and `LRANGE`
   commands.
+- Set values with `SADD`, `SREM`, `SISMEMBER`, `SMEMBERS`, and `SCARD`
+  commands.
 
 ### Changed
 
 - Mutating an existing list preserves its expiration, while list commands
   reject string values without mutation.
 - Removing the final value from a list also removes its key.
+- Set mutations preserve expiration while members remain, removing the final
+  member removes the key, and `SMEMBERS` output is sorted.
 
 ## [0.2.0] - 2026-08-09
 

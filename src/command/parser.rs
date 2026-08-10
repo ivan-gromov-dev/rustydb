@@ -79,6 +79,16 @@ impl Command {
 
             "LRANGE" => parse_lrange(input),
 
+            "SADD" => parse_sadd(input),
+
+            "SREM" => parse_srem(input),
+
+            "SISMEMBER" => parse_sismember(input),
+
+            "SMEMBERS" => parse_smembers(input),
+
+            "SCARD" => parse_scard(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -529,6 +539,52 @@ fn parse_lrange(input: &str) -> Result<Command, CommandError> {
         key: key.to_owned(),
         start,
         end,
+    })
+}
+
+fn parse_sadd(input: &str) -> Result<Command, CommandError> {
+    let (key, member) = parse_key_value_command(input, "SADD key member")?;
+    Ok(Command::SAdd {
+        key: key.to_owned(),
+        member: member.to_owned(),
+    })
+}
+
+fn parse_srem(input: &str) -> Result<Command, CommandError> {
+    let (key, member) = parse_key_value_command(input, "SREM key member")?;
+    Ok(Command::SRem {
+        key: key.to_owned(),
+        member: member.to_owned(),
+    })
+}
+
+fn parse_sismember(input: &str) -> Result<Command, CommandError> {
+    let (key, member) = parse_key_value_command(input, "SISMEMBER key member")?;
+    Ok(Command::SIsMember {
+        key: key.to_owned(),
+        member: member.to_owned(),
+    })
+}
+
+fn parse_smembers(input: &str) -> Result<Command, CommandError> {
+    let usage = "SMEMBERS key";
+    let mut parts = input.split_whitespace();
+    parts.next();
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+    Ok(Command::SMembers {
+        key: key.to_owned(),
+    })
+}
+
+fn parse_scard(input: &str) -> Result<Command, CommandError> {
+    let usage = "SCARD key";
+    let mut parts = input.split_whitespace();
+    parts.next();
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+    Ok(Command::SCard {
+        key: key.to_owned(),
     })
 }
 

@@ -110,6 +110,24 @@ pub(crate) enum Command {
         start: i64,
         end: i64,
     },
+    SAdd {
+        key: String,
+        member: String,
+    },
+    SRem {
+        key: String,
+        member: String,
+    },
+    SIsMember {
+        key: String,
+        member: String,
+    },
+    SMembers {
+        key: String,
+    },
+    SCard {
+        key: String,
+    },
     Keys,
     Len,
     Clear,

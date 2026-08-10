@@ -567,6 +567,66 @@ impl InMemoryStore {
             .collect())
     }
 
+    pub(crate) fn set_add(&mut self, key: &str, member: String) -> Result<bool, StoreError> {
+        self.remove_if_expired(key);
+
+        self.storage
+            .entry(key.to_owned())
+            .or_insert_with(StoredValue::new_set)
+            .set_mut()
+            .map(|set| set.insert(member))
+    }
+
+    pub(crate) fn set_remove(&mut self, key: &str, member: &str) -> Result<bool, StoreError> {
+        self.remove_if_expired(key);
+
+        let (removed, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(false);
+            };
+
+            let set = entry.set_mut()?;
+            let removed = set.remove(member);
+            (removed, set.is_empty())
+        };
+
+        if became_empty {
+            self.storage.remove(key);
+        }
+
+        Ok(removed)
+    }
+
+    pub(crate) fn set_contains(&mut self, key: &str, member: &str) -> Result<bool, StoreError> {
+        self.remove_if_expired(key);
+
+        match self.storage.get(key) {
+            Some(entry) => Ok(entry.set()?.contains(member)),
+            None => Ok(false),
+        }
+    }
+
+    pub(crate) fn set_members(&mut self, key: &str) -> Result<Vec<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+
+        let mut members: Vec<_> = entry.set()?.iter().cloned().collect();
+        members.sort();
+        Ok(members)
+    }
+
+    pub(crate) fn set_cardinality(&mut self, key: &str) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        match self.storage.get(key) {
+            Some(entry) => Ok(entry.set()?.len()),
+            None => Ok(0),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
         self.storage.get(key).and_then(StoredValue::expires_at)
@@ -588,5 +648,15 @@ impl InMemoryStore {
             .get(key)
             .map(|entry| entry.list().map(|values| values.iter().cloned().collect()))
             .transpose()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_set(&mut self, key: String, members: Vec<String>) {
+        let mut entry = StoredValue::new_set();
+        entry
+            .set_mut()
+            .expect("a new set entry should expose its set")
+            .extend(members);
+        self.storage.insert(key, entry);
     }
 }

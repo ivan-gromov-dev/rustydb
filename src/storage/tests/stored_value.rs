@@ -74,6 +74,26 @@ fn list_rejects_string_extraction() {
 }
 
 #[test]
+fn set_exposes_only_set_access() {
+    let mut entry = Entry::new_set();
+
+    assert_eq!(entry.value(), Err(StoreError::WrongType));
+    assert_eq!(entry.list(), Err(StoreError::WrongType));
+    assert!(
+        entry
+            .set_mut()
+            .expect("a set entry should expose its set")
+            .insert("member".to_owned())
+    );
+    assert!(
+        entry
+            .set()
+            .expect("a set entry should expose its set")
+            .contains("member")
+    );
+}
+
+#[test]
 fn entry_without_expiration_is_not_expired() {
     let entry = Entry::new("value".to_owned());
 

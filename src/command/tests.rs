@@ -312,6 +312,72 @@ fn list_commands_validate_arguments() {
 }
 
 #[test]
+fn parses_set_collection_commands() {
+    assert_eq!(
+        Command::parse("sadd tags first member"),
+        Ok(Command::SAdd {
+            key: "tags".to_owned(),
+            member: "first member".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SREM tags first member"),
+        Ok(Command::SRem {
+            key: "tags".to_owned(),
+            member: "first member".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SISMEMBER tags first member"),
+        Ok(Command::SIsMember {
+            key: "tags".to_owned(),
+            member: "first member".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SMEMBERS tags"),
+        Ok(Command::SMembers {
+            key: "tags".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("SCARD tags"),
+        Ok(Command::SCard {
+            key: "tags".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn set_collection_commands_validate_arguments() {
+    for input in [
+        "SADD",
+        "SADD key",
+        "SREM",
+        "SREM key",
+        "SISMEMBER",
+        "SISMEMBER key",
+    ] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+
+    for (input, usage) in [
+        ("SMEMBERS", "SMEMBERS key"),
+        ("SMEMBERS key extra", "SMEMBERS key"),
+        ("SCARD", "SCARD key"),
+        ("SCARD key extra", "SCARD key"),
+    ] {
+        assert_eq!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(usage))
+        );
+    }
+}
+
+#[test]
 fn persist_reports_its_own_usage() {
     assert_eq!(
         Command::parse("PERSIST"),
@@ -358,6 +424,11 @@ fn parses_every_supported_command_form() {
         "LPOP list",
         "RPOP list",
         "LRANGE list 0 -1",
+        "SADD set member",
+        "SREM set member",
+        "SISMEMBER set member",
+        "SMEMBERS set",
+        "SCARD set",
         "KEYS",
         "LEN",
         "CLEAR",

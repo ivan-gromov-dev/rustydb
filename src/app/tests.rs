@@ -30,6 +30,16 @@ fn runs_list_commands() {
 }
 
 #[test]
+fn runs_set_collection_commands() {
+    let output = run_script(
+        "SADD tags zeta\nSADD tags alpha\nSADD tags alpha\nSISMEMBER tags alpha\nSCARD tags\nSMEMBERS tags\nSREM tags alpha\nSCARD tags\nEXIT\n",
+    );
+
+    assert!(output.contains("db> 1\ndb> 1\ndb> 0\ndb> 1\ndb> 2\ndb> alpha\nzeta\ndb> 1\ndb> 1\n"));
+    assert!(output.ends_with("db> Bye!\n"));
+}
+
+#[test]
 fn reports_parse_errors_and_ignores_empty_input() {
     let output = run_script("\nUNKNOWN\nEXIT\n");
 

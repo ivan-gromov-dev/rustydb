@@ -75,3 +75,25 @@ fn numeric_mutations_reject_lists_without_changing_value_or_ttl() {
     );
     assert_list_and_expiration_are_unchanged(&mut database, expires_at);
 }
+
+#[test]
+fn string_and_list_commands_reject_sets_without_changing_value_or_ttl() {
+    let mut database = Database::new();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    database.set_set("key".to_owned(), vec!["member".to_owned()]);
+    assert!(database.expire_at("key", expires_at));
+
+    assert_eq!(database.get("key"), Err(StoreError::WrongType));
+    assert_eq!(
+        database.append("key", "value".to_owned()),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        database.push_left("key", "value".to_owned()),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(database.list_length("key"), Err(StoreError::WrongType));
+
+    assert_eq!(database.set_members("key"), Ok(vec!["member".to_owned()]));
+    assert_eq!(database.expiration("key"), Some(expires_at));
+}

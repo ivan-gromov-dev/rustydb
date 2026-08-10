@@ -170,6 +170,31 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::SAdd { key, member } => match store.set_add(&key, member) {
+            Ok(added) => CommandOutput::Integer(i64::from(added)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SRem { key, member } => match store.set_remove(&key, &member) {
+            Ok(removed) => CommandOutput::Integer(i64::from(removed)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SIsMember { key, member } => match store.set_contains(&key, &member) {
+            Ok(found) => CommandOutput::Integer(i64::from(found)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SMembers { key } => match store.set_members(&key) {
+            Ok(members) => CommandOutput::KeyList(members),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::SCard { key } => match store.set_cardinality(&key) {
+            Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

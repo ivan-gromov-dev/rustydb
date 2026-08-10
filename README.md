@@ -1,6 +1,6 @@
 # RustyDB
 
-RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string, list, and expiration commands.
+RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string, list, set, and expiration commands.
 
 The project is intended for learning and experimentation. Data lives only in process memory and is lost when the application exits.
 
@@ -77,6 +77,11 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `LPOP key` | Remove and return the first list value | Value or `(nil)` |
 | `RPOP key` | Remove and return the last list value | Value or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
+| `SADD key member` | Add a member to a set, creating it if necessary | `1` if added, otherwise `0` |
+| `SREM key member` | Remove a member from a set | `1` if removed, otherwise `0` |
+| `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
+| `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
+| `SCARD key` | Read a set's cardinality | Number of members, or `0` |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
@@ -100,6 +105,12 @@ of the list, and indexes outside the list are clamped to its bounds. An empty
 range, missing key, or expired key produces `(nil)`. Reading a range does not
 change the list or its expiration.
 
+Set members are unique strings. `SADD`, `SREM`, and `SISMEMBER` accept the
+remainder of the command line as one member, so members may contain spaces.
+`SMEMBERS` sorts members for deterministic output. Mutating an existing set
+preserves its expiration while members remain; removing the final member also
+removes the key. Set commands reject strings and lists without mutation.
+
 ## Project structure
 
 ```text
@@ -122,7 +133,7 @@ src/
     ├── indexing.rs        Range-index normalization
     ├── stored_value.rs    StoredValue and expiration metadata
     ├── value.rs           Typed value representation
-    └── tests/              Tests grouped by keys, numbers, strings, TTL, and values
+    └── tests/              Tests grouped by keys, numbers, strings, lists, sets, TTL, and values
 ```
 
 The layers have deliberately narrow responsibilities:
@@ -134,7 +145,7 @@ The layers have deliberately narrow responsibilities:
 5. `app` connects input, parsing, execution, and output.
 
 Storage values use an internal enum so new data structures can be added without
-changing expiration metadata. Commands currently create string and list values;
+changing expiration metadata. Commands currently create string, list, and set values;
 operations reject incompatible value kinds without changing the value or its
 TTL.
 
