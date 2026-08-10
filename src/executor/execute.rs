@@ -165,6 +165,11 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::LRange { key, start, end } => match store.list_range(&key, start, end) {
+            Ok(value) => CommandOutput::KeyList(value),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

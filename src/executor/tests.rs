@@ -645,3 +645,47 @@ fn execute_list_pop_commands_report_wrong_type() {
         Response::Error("operation against a key holding the wrong kind of value".to_owned())
     );
 }
+
+#[test]
+fn execute_list_range_returns_values_nil_and_wrong_type() {
+    let mut database = Database::new();
+    database.set_list(
+        "list".to_owned(),
+        vec!["first".to_owned(), "second".to_owned(), "third".to_owned()],
+    );
+    database.set("string".to_owned(), "value".to_owned());
+
+    assert_eq!(
+        execute(
+            Command::LRange {
+                key: "list".to_owned(),
+                start: 1,
+                end: -1,
+            },
+            &mut database,
+        ),
+        Response::KeyList(vec!["second".to_owned(), "third".to_owned()])
+    );
+    assert_eq!(
+        execute(
+            Command::LRange {
+                key: "missing".to_owned(),
+                start: 0,
+                end: -1,
+            },
+            &mut database,
+        ),
+        Response::KeyList(Vec::new())
+    );
+    assert_eq!(
+        execute(
+            Command::LRange {
+                key: "string".to_owned(),
+                start: 0,
+                end: -1,
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}

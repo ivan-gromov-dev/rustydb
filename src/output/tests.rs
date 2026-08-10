@@ -77,6 +77,7 @@ fn help_lists_every_supported_command() {
         "LLEN",
         "LPOP",
         "RPOP",
+        "LRANGE",
         "KEYS",
         "LEN",
         "CLEAR",

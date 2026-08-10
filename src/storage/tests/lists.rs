@@ -171,3 +171,94 @@ fn pop_removes_the_key_after_the_last_value() {
     assert!(!database.exists("key"));
     assert_eq!(database.ttl("key"), -2);
 }
+
+fn database_with_range_values() -> Database {
+    let mut database = Database::new();
+    database.set_list(
+        "key".to_owned(),
+        vec![
+            "zero".to_owned(),
+            "one".to_owned(),
+            "two".to_owned(),
+            "three".to_owned(),
+        ],
+    );
+    database
+}
+
+#[test]
+fn list_range_uses_inclusive_indices_and_preserves_order() {
+    let mut database = database_with_range_values();
+
+    assert_eq!(
+        database.list_range("key", 1, 2),
+        Ok(vec!["one".to_owned(), "two".to_owned()])
+    );
+}
+
+#[test]
+fn list_range_supports_negative_and_out_of_bounds_indices() {
+    let mut database = database_with_range_values();
+
+    assert_eq!(
+        database.list_range("key", -2, -1),
+        Ok(vec!["two".to_owned(), "three".to_owned()])
+    );
+    assert_eq!(
+        database.list_range("key", -100, 1),
+        Ok(vec!["zero".to_owned(), "one".to_owned()])
+    );
+    assert_eq!(
+        database.list_range("key", 2, 100),
+        Ok(vec!["two".to_owned(), "three".to_owned()])
+    );
+}
+
+#[test]
+fn list_range_handles_empty_and_extreme_ranges() {
+    let mut database = database_with_range_values();
+
+    assert_eq!(database.list_range("key", 3, 1), Ok(Vec::new()));
+    assert_eq!(database.list_range("key", 10, 20), Ok(Vec::new()));
+    assert_eq!(database.list_range("key", i64::MIN, -1).unwrap().len(), 4);
+    assert_eq!(
+        database.list_range("key", i64::MAX, i64::MAX),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn list_range_returns_empty_for_missing_and_expired_keys() {
+    let mut database = Database::new();
+
+    assert_eq!(database.list_range("missing", 0, -1), Ok(Vec::new()));
+
+    database.set_list("expired".to_owned(), vec!["value".to_owned()]);
+    assert!(database.expire("expired", 0));
+    assert_eq!(database.list_range("expired", 0, -1), Ok(Vec::new()));
+}
+
+#[test]
+fn list_range_rejects_strings_without_changing_value_or_expiration() {
+    let mut database = Database::new();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    database.set("key".to_owned(), "value".to_owned());
+    assert!(database.expire_at("key", expires_at));
+
+    assert_eq!(
+        database.list_range("key", 0, -1),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(database.get("key"), Ok(Some("value")));
+    assert_eq!(database.expiration("key"), Some(expires_at));
+}
+
+#[test]
+fn list_range_does_not_change_a_lists_expiration() {
+    let mut database = database_with_range_values();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("key", expires_at));
+
+    assert_eq!(database.list_range("key", 0, 1).unwrap().len(), 2);
+    assert_eq!(database.expiration("key"), Some(expires_at));
+}

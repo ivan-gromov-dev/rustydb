@@ -42,7 +42,7 @@ fn executes_a_script_and_exits_successfully() {
 #[test]
 fn executes_list_commands() {
     let output = run_cli(
-        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nLPOP tasks\nRPOP tasks\nLPOP missing\nEXIT\n",
+        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nLRANGE tasks 0 -1\nLPOP tasks\nRPOP tasks\nLPOP missing\nEXIT\n",
     );
 
     assert!(output.status.success());
@@ -56,6 +56,9 @@ fn executes_list_commands() {
             "db> 2\n",
             "db> 3\n",
             "db> 3\n",
+            "db> first item\n",
+            "second item\n",
+            "third item\n",
             "db> first item\n",
             "db> third item\n",
             "db> (nil)\n",

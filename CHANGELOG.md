@@ -9,7 +9,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
-- List values with `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, and `LLEN` commands.
+- List values with `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, and `LRANGE`
+  commands.
 
 ### Changed
 

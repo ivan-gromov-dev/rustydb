@@ -28,6 +28,7 @@ const HELP_TEXT: &str = concat!(
     "  SETRANGE key offset value\n",
     "  LPUSH key value\n",
     "  RPUSH key value\n",
+    "  LRANGE key start end\n",
     "  LLEN key\n",
     "  LPOP key\n",
     "  RPOP key\n",

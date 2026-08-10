@@ -105,6 +105,11 @@ pub(crate) enum Command {
     RPop {
         key: String,
     },
+    LRange {
+        key: String,
+        start: i64,
+        end: i64,
+    },
     Keys,
     Len,
     Clear,

@@ -531,6 +531,42 @@ impl InMemoryStore {
         Ok(value)
     }
 
+    pub(crate) fn list_range(
+        &mut self,
+        key: &str,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<String>, StoreError> {
+        self.remove_if_expired(key);
+
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+
+        let list = entry.list()?;
+        let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+
+        if length == 0 {
+            return Ok(Vec::new());
+        }
+
+        let start = normalize_index(start, length).max(0);
+        let end = normalize_index(end, length).min(length - 1);
+
+        if start >= length || end < 0 || start > end {
+            return Ok(Vec::new());
+        }
+
+        let count = (end - start + 1) as usize;
+
+        Ok(list
+            .iter()
+            .skip(start as usize)
+            .take(count)
+            .cloned()
+            .collect())
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
         self.storage.get(key).and_then(StoredValue::expires_at)

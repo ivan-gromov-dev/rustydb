@@ -252,6 +252,14 @@ fn parses_list_commands() {
             key: "queue".to_owned(),
         })
     );
+    assert_eq!(
+        Command::parse("LRANGE queue -2 -1"),
+        Ok(Command::LRange {
+            key: "queue".to_owned(),
+            start: -2,
+            end: -1,
+        })
+    );
 }
 
 #[test]
@@ -282,6 +290,25 @@ fn list_commands_validate_arguments() {
             Err(CommandError::InvalidArguments(usage))
         );
     }
+    for input in [
+        "LRANGE",
+        "LRANGE key",
+        "LRANGE key 0",
+        "LRANGE key 0 1 extra",
+    ] {
+        assert_eq!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments("LRANGE key start end"))
+        );
+    }
+    assert_eq!(
+        Command::parse("LRANGE key start 1"),
+        Err(CommandError::InvalidInteger("start".to_owned()))
+    );
+    assert_eq!(
+        Command::parse("LRANGE key 0 end"),
+        Err(CommandError::InvalidInteger("end".to_owned()))
+    );
 }
 
 #[test]
@@ -330,6 +357,7 @@ fn parses_every_supported_command_form() {
         "LLEN list",
         "LPOP list",
         "RPOP list",
+        "LRANGE list 0 -1",
         "KEYS",
         "LEN",
         "CLEAR",

@@ -76,6 +76,7 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
 | `LPOP key` | Remove and return the first list value | Value or `(nil)` |
 | `RPOP key` | Remove and return the last list value | Value or `(nil)` |
+| `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
@@ -93,6 +94,11 @@ a string, and string or numeric commands applied to a list, return a wrong-type
 error without changing the value or its expiration. Popping from a non-empty
 list preserves its expiration while values remain; removing the final value
 also removes the key.
+
+`LRANGE` uses inclusive indexes. Negative indexes count backward from the end
+of the list, and indexes outside the list are clamped to its bounds. An empty
+range, missing key, or expired key produces `(nil)`. Reading a range does not
+change the list or its expiration.
 
 ## Project structure
 

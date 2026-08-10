@@ -77,6 +77,8 @@ impl Command {
 
             "RPOP" => parse_rpop(input),
 
+            "LRANGE" => parse_lrange(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -500,6 +502,33 @@ fn parse_rpop(input: &str) -> Result<Command, CommandError> {
 
     Ok(Command::RPop {
         key: key.to_owned(),
+    })
+}
+
+fn parse_lrange(input: &str) -> Result<Command, CommandError> {
+    let usage = "LRANGE key start end";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    let start = required_argument(&mut parts, usage)?;
+    let end = required_argument(&mut parts, usage)?;
+
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    let start = start
+        .parse::<i64>()
+        .map_err(|_| CommandError::InvalidInteger(start.to_owned()))?;
+
+    let end = end
+        .parse::<i64>()
+        .map_err(|_| CommandError::InvalidInteger(end.to_owned()))?;
+
+    Ok(Command::LRange {
+        key: key.to_owned(),
+        start,
+        end,
     })
 }
 
