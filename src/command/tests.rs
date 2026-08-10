@@ -219,6 +219,49 @@ fn set_range_accepts_repeated_whitespace() {
 }
 
 #[test]
+fn parses_list_commands() {
+    assert_eq!(
+        Command::parse("lpush queue first item"),
+        Ok(Command::LPush {
+            key: "queue".to_owned(),
+            value: "first item".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("RPUSH queue last item"),
+        Ok(Command::RPush {
+            key: "queue".to_owned(),
+            value: "last item".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::parse("LLEN queue"),
+        Ok(Command::LLen {
+            key: "queue".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn list_commands_validate_arguments() {
+    for input in ["LPUSH", "LPUSH key", "RPUSH", "RPUSH key"] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+
+    assert_eq!(
+        Command::parse("LLEN"),
+        Err(CommandError::InvalidArguments("LLEN key"))
+    );
+    assert_eq!(
+        Command::parse("LLEN key extra"),
+        Err(CommandError::InvalidArguments("LLEN key"))
+    );
+}
+
+#[test]
 fn persist_reports_its_own_usage() {
     assert_eq!(
         Command::parse("PERSIST"),
@@ -259,6 +302,9 @@ fn parses_every_supported_command_form() {
         "STRLEN key",
         "GETRANGE key -2 -1",
         "SETRANGE key 2 value",
+        "LPUSH list first",
+        "RPUSH list last",
+        "LLEN list",
         "KEYS",
         "LEN",
         "CLEAR",

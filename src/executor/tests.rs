@@ -527,3 +527,66 @@ fn execute_string_commands_report_wrong_type() {
     assert_eq!(append, wrong_type);
     assert_eq!(mget, wrong_type);
 }
+
+#[test]
+fn execute_list_commands_return_lengths() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(
+            Command::LPush {
+                key: "list".to_owned(),
+                value: "middle".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::RPush {
+                key: "list".to_owned(),
+                value: "last".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::LLen {
+                key: "list".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::LLen {
+                key: "missing".to_owned(),
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+}
+
+#[test]
+fn execute_list_commands_report_wrong_type() {
+    let mut database = Database::new();
+    database.set("key".to_owned(), "string".to_owned());
+
+    let response = execute(
+        Command::LPush {
+            key: "key".to_owned(),
+            value: "value".to_owned(),
+        },
+        &mut database,
+    );
+
+    assert_eq!(
+        response,
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+}

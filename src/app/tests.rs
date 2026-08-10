@@ -18,6 +18,16 @@ fn runs_commands_until_exit() {
 }
 
 #[test]
+fn runs_list_commands() {
+    let output = run_script(
+        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nEXIT\n",
+    );
+
+    assert!(output.contains("db> 1\ndb> 2\ndb> 3\ndb> 3\n"));
+    assert!(output.ends_with("db> Bye!\n"));
+}
+
+#[test]
 fn reports_parse_errors_and_ignores_empty_input() {
     let output = run_script("\nUNKNOWN\nEXIT\n");
 

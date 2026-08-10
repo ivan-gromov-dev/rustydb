@@ -40,6 +40,28 @@ fn executes_a_script_and_exits_successfully() {
 }
 
 #[test]
+fn executes_list_commands() {
+    let output = run_cli(
+        "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nEXIT\n",
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        concat!(
+            "Rusty DB\n",
+            "Type HELP to see available commands.\n",
+            "db> 1\n",
+            "db> 2\n",
+            "db> 3\n",
+            "db> 3\n",
+            "db> Bye!\n",
+        )
+    );
+}
+
+#[test]
 fn reports_invalid_input_and_continues() {
     let output = run_cli("GET\nUNKNOWN\nEXIT\n");
 

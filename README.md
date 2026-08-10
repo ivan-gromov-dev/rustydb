@@ -1,6 +1,6 @@
 # RustyDB
 
-RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string and expiration commands.
+RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string, list, and expiration commands.
 
 The project is intended for learning and experimentation. Data lives only in process memory and is lost when the application exits.
 
@@ -71,6 +71,9 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `STRLEN key` | Count Unicode scalar values in a string | Character count |
 | `GETRANGE key start end` | Read an inclusive character range | String, possibly empty |
 | `SETRANGE key offset value` | Replace characters starting at an offset | New character length |
+| `LPUSH key value` | Prepend a value to a list, creating it if necessary | New list length |
+| `RPUSH key value` | Append a value to a list, creating it if necessary | New list length |
+| `LLEN key` | Read a list's length | List length, or `0` for a missing key |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
@@ -80,6 +83,12 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
 
 String offsets and lengths are measured in Unicode scalar values, not UTF-8 bytes. Negative `GETRANGE` indexes count backward from the end. When `SETRANGE` starts beyond the current end, the gap is padded with null characters (`\0`).
+
+RustyDB stores string and list values. `LPUSH` and `RPUSH` accept the remainder
+of the command line as one list element, so an element may contain spaces.
+Pushing to an existing list preserves its expiration. List commands applied to
+a string, and string or numeric commands applied to a list, return a wrong-type
+error without changing the value or its expiration.
 
 ## Project structure
 
@@ -115,9 +124,9 @@ The layers have deliberately narrow responsibilities:
 5. `app` connects input, parsing, execution, and output.
 
 Storage values use an internal enum so new data structures can be added without
-changing expiration metadata. The current command set creates strings only;
-string and numeric operations reject incompatible internal value kinds without
-changing the value or its TTL.
+changing expiration metadata. Commands currently create string and list values;
+operations reject incompatible value kinds without changing the value or its
+TTL.
 
 ## Development
 
