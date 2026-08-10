@@ -1,8 +1,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::database::Database;
-use crate::line_protocol;
-use crate::output::CommandOutput;
+use crate::line_session::run_session;
 
 pub fn run() -> io::Result<()> {
     let stdin = io::stdin();
@@ -17,29 +16,7 @@ fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> 
     writeln!(writer, "Rusty DB")?;
     writeln!(writer, "Type HELP to see available commands.")?;
 
-    loop {
-        write!(writer, "db> ")?;
-        writer.flush()?;
-
-        let mut input = String::new();
-        let bytes_read = reader.read_line(&mut input)?;
-
-        if bytes_read == 0 {
-            writeln!(writer)?;
-            break;
-        }
-
-        match line_protocol::process_line(&mut database, &input) {
-            Some(CommandOutput::Exit) => {
-                writeln!(writer, "Bye!")?;
-                break;
-            }
-            Some(command) => command.write_to(&mut writer)?,
-            None => continue,
-        }
-    }
-
-    Ok(())
+    run_session(&mut reader, &mut writer, &mut database, Some("db> "))
 }
 
 #[cfg(test)]
