@@ -10,11 +10,22 @@ pub fn run_server(bind_address: &str) -> io::Result<()> {
     serve(listener)
 }
 
-pub(crate) fn serve(listener: TcpListener) -> io::Result<()> {
+fn serve(listener: TcpListener) -> io::Result<()> {
     let mut database = Database::default();
-    let (stream, _) = listener.accept()?;
 
-    handle_client(stream, &mut database)
+    serve_incoming(listener.incoming(), &mut database)
+}
+
+pub(crate) fn serve_incoming<I>(incoming: I, database: &mut Database) -> io::Result<()>
+where
+    I: IntoIterator<Item = io::Result<TcpStream>>,
+{
+    for stream in incoming {
+        let stream = stream?;
+        let _ = handle_client(stream, database);
+    }
+
+    Ok(())
 }
 
 fn handle_client(mut stream: TcpStream, database: &mut Database) -> io::Result<()> {
