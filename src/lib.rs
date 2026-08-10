@@ -9,4 +9,4 @@ mod server;
 mod storage;
 
 pub use app::run;
-pub use server::run_server;
+pub use server::{Shutdown, run_server, run_server_on_listener, run_server_until};

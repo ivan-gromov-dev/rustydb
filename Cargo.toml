@@ -12,3 +12,4 @@ categories = ["database-implementations", "command-line-utilities"]
 exclude = ["scripts/__pycache__/"]
 
 [dependencies]
+ctrlc = "3.5.2"

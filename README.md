@@ -27,6 +27,22 @@ cargo install --path .
 rustydb
 ```
 
+Start the TCP server on the default `127.0.0.1:6379` address:
+
+```console
+rustydb server
+```
+
+Or provide an explicit bind address:
+
+```console
+rustydb server 127.0.0.1:6380
+```
+
+The server accepts one line-delimited command per line and shares one database
+between connected clients. Press Ctrl+C to stop accepting new connections and
+wait for active client sessions to finish cleanly.
+
 Example session:
 
 ```text
@@ -197,7 +213,10 @@ See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 
 ## Continuous integration
 
-The GitHub Actions workflow runs formatting, Clippy, tests, and the per-module coverage gate on pushes and pull requests. The final `CI Success` job succeeds only when the complete quality job succeeds.
+The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
+(including the CLI and TCP integration tests), a real-process Ctrl+C shutdown
+test on Linux, and the per-module coverage gate. The final `CI Success` job
+succeeds only when all four jobs succeed.
 
 ## Current limitations
 

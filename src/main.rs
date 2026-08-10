@@ -1,4 +1,6 @@
-use rustydb::{run, run_server};
+use std::io;
+
+use rustydb::{Shutdown, run, run_server_until};
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:6379";
 const USAGE: &str = "Usage:\n  rustydb\n  rustydb server [bind-address]";
@@ -8,8 +10,8 @@ fn main() {
 
     let result = match arguments.as_slice() {
         [] => run(),
-        [command] if command == "server" => run_server(DEFAULT_BIND_ADDRESS),
-        [command, bind_address] if command == "server" => run_server(bind_address),
+        [command] if command == "server" => run_server_with_ctrl_c(DEFAULT_BIND_ADDRESS),
+        [command, bind_address] if command == "server" => run_server_with_ctrl_c(bind_address),
         _ => {
             eprintln!("{USAGE}");
             std::process::exit(2);
@@ -20,4 +22,13 @@ fn main() {
         eprintln!("Error: {err}");
         std::process::exit(1);
     }
+}
+
+fn run_server_with_ctrl_c(bind_address: &str) -> io::Result<()> {
+    let shutdown = Shutdown::default();
+    let signal_shutdown = shutdown.clone();
+
+    ctrlc::set_handler(move || signal_shutdown.request()).map_err(io::Error::other)?;
+
+    run_server_until(bind_address, shutdown)
 }

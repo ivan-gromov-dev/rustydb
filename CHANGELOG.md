@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- A concurrent TCP server using a documented line-delimited command protocol,
+  configurable bind address, shared command-atomic storage, isolated client
+  failures, and graceful Ctrl+C shutdown.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added
