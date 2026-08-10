@@ -67,6 +67,12 @@ impl Command {
 
             "SETRANGE" => parse_setrange(input),
 
+            "LPUSH" => parse_lpush(input),
+
+            "RPUSH" => parse_rpush(input),
+
+            "LLEN" => parse_llen(input),
+
             "KEYS" => parse_keys(input),
 
             "LEN" => parse_len(input),
@@ -430,6 +436,38 @@ fn parse_setrange(input: &str) -> Result<Command, CommandError> {
         key: key.to_owned(),
         offset,
         value: value.to_owned(),
+    })
+}
+
+fn parse_lpush(input: &str) -> Result<Command, CommandError> {
+    let (key, value) = parse_key_value_command(input, "LPUSH key value")?;
+
+    Ok(Command::LPush {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    })
+}
+
+fn parse_rpush(input: &str) -> Result<Command, CommandError> {
+    let (key, value) = parse_key_value_command(input, "RPUSH key value")?;
+
+    Ok(Command::RPush {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    })
+}
+
+fn parse_llen(input: &str) -> Result<Command, CommandError> {
+    let usage = "LLEN key";
+    let mut parts = input.split_whitespace();
+
+    parts.next();
+
+    let key = required_argument(&mut parts, usage)?;
+    ensure_no_extra_arguments(&mut parts, usage)?;
+
+    Ok(Command::LLen {
+        key: key.to_owned(),
     })
 }
 

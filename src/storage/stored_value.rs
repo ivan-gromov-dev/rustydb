@@ -1,4 +1,5 @@
 use crate::storage::{in_memory::StoreError, value::Value};
+use std::collections::VecDeque;
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,11 +63,24 @@ impl StoredValue {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_list(values: Vec<String>) -> Self {
+    pub(crate) fn new_list() -> Self {
         Self {
-            value: Value::List(values),
+            value: Value::List(VecDeque::new()),
             expires_at: None,
+        }
+    }
+
+    pub(crate) fn list(&self) -> Result<&VecDeque<String>, StoreError> {
+        match &self.value {
+            Value::List(values) => Ok(values),
+            Value::String(_) => Err(StoreError::WrongType),
+        }
+    }
+
+    pub(crate) fn list_mut(&mut self) -> Result<&mut VecDeque<String>, StoreError> {
+        match &mut self.value {
+            Value::List(values) => Ok(values),
+            Value::String(_) => Err(StoreError::WrongType),
         }
     }
 }

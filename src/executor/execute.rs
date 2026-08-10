@@ -138,6 +138,21 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::LPush { key, value } => match store.push_left(&key, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::RPush { key, value } => match store.push_right(&key, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
+        Command::LLen { key } => match store.list_length(&key) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

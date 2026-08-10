@@ -88,6 +88,17 @@ pub(crate) enum Command {
         offset: usize,
         value: String,
     },
+    LPush {
+        key: String,
+        value: String,
+    },
+    RPush {
+        key: String,
+        value: String,
+    },
+    LLen {
+        key: String,
+    },
     Keys,
     Len,
     Clear,

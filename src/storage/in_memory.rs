@@ -456,6 +456,41 @@ impl InMemoryStore {
         keys.iter().filter(|key| self.exists(key)).count()
     }
 
+    pub(crate) fn push_left(&mut self, key: &str, value: String) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        let list = self
+            .storage
+            .entry(key.to_owned())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+
+        list.push_front(value);
+        Ok(list.len())
+    }
+
+    pub(crate) fn push_right(&mut self, key: &str, value: String) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        let list = self
+            .storage
+            .entry(key.to_owned())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+
+        list.push_back(value);
+        Ok(list.len())
+    }
+
+    pub(crate) fn list_length(&mut self, key: &str) -> Result<usize, StoreError> {
+        self.remove_if_expired(key);
+
+        match self.storage.get(key) {
+            Some(entry) => Ok(entry.list()?.len()),
+            None => Ok(0),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
         self.storage.get(key).and_then(StoredValue::expires_at)
@@ -463,6 +498,19 @@ impl InMemoryStore {
 
     #[cfg(test)]
     pub(crate) fn set_list(&mut self, key: String, values: Vec<String>) {
-        self.storage.insert(key, StoredValue::new_list(values));
+        let mut entry = StoredValue::new_list();
+        entry
+            .list_mut()
+            .expect("a new list entry should expose its list")
+            .extend(values);
+        self.storage.insert(key, entry);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn list_values(&self, key: &str) -> Result<Option<Vec<String>>, StoreError> {
+        self.storage
+            .get(key)
+            .map(|entry| entry.list().map(|values| values.iter().cloned().collect()))
+            .transpose()
     }
 }
