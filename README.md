@@ -2,7 +2,10 @@
 
 RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string, list, set, and expiration commands.
 
-The project is intended for learning and experimentation. Data lives only in process memory and is lost when the application exits.
+RustyDB begins as a learning-oriented implementation of database internals and
+is intended to evolve toward a production-capable system through explicit,
+tested guarantees. Current releases remain experimental: data lives only in
+process memory and is lost when the application exits.
 
 ## Requirements
 
@@ -198,6 +201,8 @@ The GitHub Actions workflow runs formatting, Clippy, tests, and the per-module c
 
 ## Current limitations
 
+- RustyDB is experimental and does not yet provide production durability,
+  security, availability, or compatibility guarantees.
 - No persistence, transactions, networking, authentication, or concurrent access.
 - Values and keys are held entirely in memory.
 - Expiration uses the process monotonic clock and does not survive restarts.

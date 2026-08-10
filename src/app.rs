@@ -1,9 +1,8 @@
 use std::io::{self, BufRead, Write};
 
 use crate::command::{Command, CommandError};
-use crate::executor::execute;
+use crate::database::Database;
 use crate::output::CommandOutput;
-use crate::storage::InMemoryStore;
 
 pub fn run() -> io::Result<()> {
     let stdin = io::stdin();
@@ -13,7 +12,7 @@ pub fn run() -> io::Result<()> {
 }
 
 fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> {
-    let mut store = InMemoryStore::new();
+    let mut database = Database::default();
 
     writeln!(writer, "Rusty DB")?;
     writeln!(writer, "Type HELP to see available commands.")?;
@@ -39,7 +38,7 @@ fn run_with(mut reader: impl BufRead, mut writer: impl Write) -> io::Result<()> 
             }
         };
 
-        let output = execute(command, &mut store);
+        let output = database.execute(command);
 
         if output == CommandOutput::Exit {
             writeln!(writer, "Bye!")?;
