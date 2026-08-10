@@ -46,6 +46,7 @@ pub fn run_server_on_listener(listener: TcpListener, shutdown: Shutdown) -> io::
         reap_finished(&mut workers);
     };
 
+    drop(listener);
     join_all(workers);
 
     result

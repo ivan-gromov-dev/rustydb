@@ -18,31 +18,6 @@ experimental until the production-readiness work is complete.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.4` — TCP server
-
-**Goal:** make the database accessible to multiple network clients.
-
-### Work
-
-- Extract a reusable database service from the interactive application.
-- Add bind-address and port configuration.
-- Initially accept commands through a documented line protocol over
-  `TcpListener`.
-- Handle disconnects and malformed input without terminating the server.
-- Start with one client, then support multiple clients with shared storage.
-- Define one command under the store lock as the atomicity boundary.
-- Add graceful shutdown.
-
-### Done when
-
-- Two clients can safely observe and modify the same database.
-- Integration tests start a server on an ephemeral port and use `TcpStream`.
-- A bad client cannot crash or poison the server.
-- Shutdown stops new connections and lets active work finish cleanly.
-
-**Learning focus:** sockets, threads, synchronization, shared ownership, failure
-isolation, and graceful shutdown.
-
 ## `0.5` — RESP2 protocol
 
 **Goal:** add a framed, binary-safe protocol compatible with standard Redis

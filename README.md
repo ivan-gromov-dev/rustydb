@@ -1,6 +1,8 @@
 # RustyDB
 
-RustyDB is a small, dependency-free, in-memory key-value database written in Rust. It provides an interactive command-line interface inspired by a focused subset of Redis string, list, set, and expiration commands.
+RustyDB is a small in-memory key-value database written in Rust. It provides an
+interactive command-line interface and a concurrent TCP server inspired by a
+focused subset of Redis string, list, set, and expiration commands.
 
 RustyDB begins as a learning-oriented implementation of database internals and
 is intended to evolve toward a production-capable system through explicit,
@@ -9,7 +11,7 @@ process memory and is lost when the application exits.
 
 ## Requirements
 
-- Rust stable with the 2024 edition
+- Rust 1.85 or newer with the 2024 edition
 - Cargo
 
 ## Running the database
@@ -42,6 +44,11 @@ rustydb server 127.0.0.1:6380
 The server accepts one line-delimited command per line and shares one database
 between connected clients. Press Ctrl+C to stop accepting new connections and
 wait for active client sessions to finish cleanly.
+
+Each client receives command results without the interactive banner or prompt.
+Commands from different clients operate on shared storage, and each complete
+command executes atomically under the database lock. The protocol accepts
+UTF-8 text only; RESP and binary-safe values are planned for a later release.
 
 Example session:
 
@@ -140,12 +147,16 @@ src/
 │   ├── arguments.rs       Shared argument parsing primitives
 │   ├── parser.rs          Text-to-command parser
 │   └── types.rs           Command and CommandError types
+├── database/              Reusable stateful database service
 ├── executor/
 │   ├── execute.rs         Command dispatch and result mapping
 │   └── tests.rs
+├── line_protocol.rs       Text-line parsing without execution
+├── line_session/          Reusable line-oriented client session
 ├── output/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
+├── server/                Concurrent TCP listener and graceful shutdown
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
     ├── in_memory.rs       InMemoryStore and StoreError
@@ -158,10 +169,13 @@ src/
 The layers have deliberately narrow responsibilities:
 
 1. `command` validates and converts user input into typed commands.
-2. `executor` applies a command to the store and creates a `CommandOutput`.
+2. `executor` applies a command to storage and creates a `CommandOutput`.
 3. `storage` owns values, numeric operations, ranges, and expiration behavior.
-4. `output` renders results to any `Write` implementation without depending on global stdout.
-5. `app` connects input, parsing, execution, and output.
+4. `database` owns reusable state and command execution.
+5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
+6. `output` renders results to any `Write` implementation.
+7. `app` provides the interactive loop, while `server` accepts TCP clients and
+   shares one database between their sessions.
 
 Storage values use an internal enum so new data structures can be added without
 changing expiration metadata. Commands currently create string, list, and set values;
@@ -205,7 +219,10 @@ cargo llvm-cov --workspace --all-features --json --output-path coverage.json
 python scripts/check_module_coverage.py coverage.json --threshold 70
 ```
 
-Coverage is aggregated separately for the logical modules `app`, `command`, `executor`, `output`, and `storage`. Every module must have more than 70% line coverage. Test sources and crate bootstrap files are excluded from the per-module calculation.
+Coverage is aggregated separately for the logical modules `app`, `command`,
+`database`, `executor`, `line_protocol`, `line_session`, `output`, `server`, and
+`storage`. Every module must have more than 70% line coverage. Test sources and
+crate bootstrap files are excluded from the per-module calculation.
 
 ## Roadmap
 
@@ -222,10 +239,11 @@ succeeds only when all four jobs succeed.
 
 - RustyDB is experimental and does not yet provide production durability,
   security, availability, or compatibility guarantees.
-- No persistence, transactions, networking, authentication, or concurrent access.
+- No persistence, transactions, authentication, or transport encryption.
+- The TCP line protocol is experimental and is not binary-safe or compatible
+  with Redis clients.
 - Values and keys are held entirely in memory.
 - Expiration uses the process monotonic clock and does not survive restarts.
-- The command set resembles Redis but is not protocol-compatible with Redis.
 
 ## License
 

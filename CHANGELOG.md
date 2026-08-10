@@ -7,11 +7,24 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-10
+
 ### Added
 
-- A concurrent TCP server using a documented line-delimited command protocol,
-  configurable bind address, shared command-atomic storage, isolated client
-  failures, and graceful Ctrl+C shutdown.
+- A reusable `Database` service and line-session layer shared by interactive and
+  network frontends.
+- A concurrent TCP server with a configurable bind address and documented
+  line-delimited command protocol.
+- Shared storage across clients with one command as the atomicity boundary.
+- Graceful Ctrl+C shutdown that stops new connections and lets active sessions
+  finish.
+- TCP integration tests, a Linux Ctrl+C process test, and per-module coverage
+  enforcement for the new database, protocol, session, and server modules.
+
+### Changed
+
+- Client disconnects, malformed commands, invalid UTF-8, and individual worker
+  failures are isolated without terminating or poisoning the server.
 
 ## [0.3.0] - 2026-08-10
 
@@ -73,7 +86,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Djunichi/rustydb/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Djunichi/rustydb/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Djunichi/rustydb/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Djunichi/rustydb/releases/tag/v0.1.0

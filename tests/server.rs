@@ -73,6 +73,21 @@ fn public_shutdown_api_allows_an_active_session_to_finish() {
     assert_eq!(response, "OK\n");
 
     shutdown.request();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match TcpStream::connect_timeout(&address, Duration::from_millis(50)) {
+            Ok(new_client) if Instant::now() < deadline => {
+                drop(new_client);
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(new_client) => {
+                drop(new_client);
+                panic!("server continued accepting connections after shutdown");
+            }
+            Err(_) => break,
+        }
+    }
+
     stream.write_all(b"GET key\nEXIT\n").unwrap();
 
     response.clear();

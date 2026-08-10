@@ -37,6 +37,17 @@ def connect_when_ready(
     raise TimeoutError(f"server did not listen on {address[0]}:{address[1]}")
 
 
+def wait_until_connections_stop(address: tuple[str, int]) -> None:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(address, timeout=0.2):
+                time.sleep(0.05)
+        except OSError:
+            return
+    raise TimeoutError("server continued accepting connections after SIGINT")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(f"usage: {Path(sys.argv[0]).name} RUSTYDB_BINARY", file=sys.stderr)
@@ -65,6 +76,8 @@ def main() -> int:
         assert stream.readline() == b"OK\n"
 
         process.send_signal(signal.SIGINT)
+        wait_until_connections_stop(address)
+
         stream.write(b"GET shutdown-test\nEXIT\n")
         stream.flush()
         assert stream.readline() == b"value\n"
