@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::output::{CommandOutput, HELP_TEXT};
 
 use super::frame::RespFrame;
@@ -21,11 +23,11 @@ pub(crate) fn frame_from_output(output: CommandOutput) -> RespFrame {
         CommandOutput::KeyList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::BulkString).collect())
         }
-        CommandOutput::Error(error) => RespFrame::Error(format!("ERR {}", single_line(error))),
+        CommandOutput::Error(error) => error_frame(format_args!("ERR {error}")),
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
     }
 }
 
-fn single_line(error: String) -> String {
-    error.replace(['\r', '\n'], " ")
+pub(crate) fn error_frame(error: impl fmt::Display) -> RespFrame {
+    RespFrame::Error(error.to_string().replace(['\r', '\n'], " "))
 }

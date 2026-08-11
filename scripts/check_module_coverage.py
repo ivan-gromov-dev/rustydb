@@ -19,6 +19,7 @@ MODULES = (
     "line_session",
     "output",
     "resp",
+    "resp_session",
     "server",
     "storage",
 )

@@ -158,6 +158,7 @@ src/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
 ├── resp/                  RESP2 frames, codec, and command/output adapters
+├── resp_session/          Buffered RESP2 request/response session loop
 ├── server/                Concurrent TCP listener and graceful shutdown
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
@@ -177,7 +178,8 @@ The layers have deliberately narrow responsibilities:
 5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
 6. `output` renders results to any `Write` implementation.
 7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
-8. `app` provides the interactive loop, while `server` accepts TCP clients and
+8. `resp_session` coordinates buffered RESP2 request and response processing.
+9. `app` provides the interactive loop, while `server` accepts TCP clients and
    shares one database between their sessions.
 
 Storage values use an internal enum so new data structures can be added without
@@ -225,9 +227,9 @@ python scripts/check_module_coverage.py coverage.json --threshold 70
 
 Coverage is aggregated separately for the logical modules `app`, `command`,
 `database`, `executor`, `line_protocol`, `line_session`, `output`, `resp`,
-`server`, and `storage`. Every module must have more than 70% line coverage.
-Test sources and crate bootstrap files are excluded from the per-module
-calculation.
+`resp_session`, `server`, and `storage`. Every module must have more than 70%
+line coverage. Test sources and crate bootstrap files are excluded from the
+per-module calculation.
 
 ## Roadmap
 

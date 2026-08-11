@@ -7,6 +7,8 @@ mod line_session;
 mod output;
 #[allow(dead_code)]
 mod resp;
+#[allow(dead_code)]
+mod resp_session;
 mod server;
 mod storage;
 
