@@ -5,6 +5,8 @@ mod executor;
 mod line_protocol;
 mod line_session;
 mod output;
+#[allow(dead_code)]
+mod resp;
 mod server;
 mod storage;
 

@@ -18,6 +18,7 @@ MODULES = (
     "line_protocol",
     "line_session",
     "output",
+    "resp",
     "server",
     "storage",
 )
