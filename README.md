@@ -157,7 +157,7 @@ src/
 ├── output/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
-├── resp/                  RESP2 frame model, encoder, and incremental decoder
+├── resp/                  RESP2 frames, codec, and command/output adapters
 ├── server/                Concurrent TCP listener and graceful shutdown
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
@@ -176,7 +176,7 @@ The layers have deliberately narrow responsibilities:
 4. `database` owns reusable state and command execution.
 5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
 6. `output` renders results to any `Write` implementation.
-7. `resp` owns the RESP2 wire-frame model and encoding.
+7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
 8. `app` provides the interactive loop, while `server` accepts TCP clients and
    shares one database between their sessions.
 

@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-const HELP_TEXT: &str = concat!(
+pub(crate) const HELP_TEXT: &str = concat!(
     "Available commands:\n",
     "  SET key value\n",
     "  MSET key value [key value ...]\n",
