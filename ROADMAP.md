@@ -18,30 +18,6 @@ experimental until the production-readiness work is complete.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.5` — RESP2 protocol
-
-**Goal:** add a framed, binary-safe protocol compatible with standard Redis
-tooling for the supported subset.
-
-### Work
-
-- Model RESP simple strings, errors, integers, bulk strings, arrays, and nulls.
-- Build an incremental decoder for partial and multiple frames.
-- Encode command output as RESP frames.
-- Convert RESP arrays into typed commands.
-- Limit frame depth and payload size.
-- Document the supported `redis-cli` behavior.
-
-### Done when
-
-- Values can contain whitespace, newlines, and null bytes.
-- Fragmented reads and pipelined commands are tested.
-- Invalid frames affect only the offending connection.
-- Supported commands work through `redis-cli`.
-
-**Learning focus:** wire protocols, byte parsing, buffering, framing, and
-defensive input handling.
-
 ## `0.6` — Snapshots
 
 **Goal:** preserve state across clean restarts.

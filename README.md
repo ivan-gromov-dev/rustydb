@@ -51,7 +51,45 @@ Commands from different clients operate on shared storage, and each complete
 command executes atomically under the database lock. A malformed RESP frame
 closes only its client connection after a protocol error response.
 
-Example session:
+### Using `redis-cli`
+
+Force RESP2 when connecting because RustyDB does not implement the RESP3
+`HELLO` handshake:
+
+```console
+redis-cli -2 -h 127.0.0.1 -p 6379
+```
+
+One-shot invocations work for the command subset in the table below, and normal
+commands can also be entered in an interactive session. Arguments are sent as
+binary-safe bulk strings, so spaces do not require RustyDB-specific parsing.
+`redis-cli -x` can supply a binary final argument from standard input:
+
+```console
+printf 'line 1\nline 2\0tail' | redis-cli -2 -x SET binary
+redis-cli -2 --raw GET binary
+```
+
+Run the external-client smoke test after installing `redis-cli`:
+
+```console
+python scripts/redis_cli_smoke.py
+```
+
+Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
+`PATH`. The smoke test covers strings, binary input, integers, lists, sets, and
+expiration output through a real client.
+
+RustyDB does not implement RESP3, authentication, database selection,
+transactions, Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and
+`INFO`. Features of `redis-cli` that probe or depend on those commands are not
+supported. Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands;
+use one-shot invocations to send RustyDB commands with those names. Command
+errors use RustyDB's documented messages rather than full Redis error
+compatibility. See the official [`redis-cli` documentation](https://redis.io/docs/latest/develop/tools/cli/)
+for client installation and option details.
+
+Example interactive CLI session:
 
 ```text
 Rusty DB
@@ -68,9 +106,15 @@ db> EXIT
 Bye!
 ```
 
-Command names are case-insensitive. Keys cannot contain whitespace. Commands accepting a value preserve spaces inside that value.
+Command names are case-insensitive. In the interactive CLI, keys cannot contain
+whitespace and commands accepting a value preserve spaces inside that value.
+RESP clients pass every key and value as an exact binary argument.
 
 ## Commands
+
+The result column describes the interactive CLI representation. The RESP2
+server returns the corresponding typed RESP value: simple strings, integers,
+bulk strings, null bulk strings, or arrays.
 
 | Command | Description | Result |
 | --- | --- | --- |
@@ -113,7 +157,7 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
 | `HELP` | Print the command list | Help text |
-| `EXIT` / `QUIT` | Close the application | `Bye!` |
+| `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
 
@@ -121,8 +165,10 @@ String offsets and lengths are measured in bytes. Negative `GETRANGE` indexes
 count backward from the end. When `SETRANGE` starts beyond the current end, the
 gap is padded with null bytes (`\0`).
 
-RustyDB stores string, list, and set values. `LPUSH` and `RPUSH` accept the remainder
-of the command line as one list element, so an element may contain spaces.
+RustyDB stores string, list, and set values. In the interactive CLI, `LPUSH` and
+`RPUSH` accept the remainder of the command line as one list element, so an
+element may contain spaces. RESP clients provide the element as one bulk-string
+argument.
 Pushing to an existing list preserves its expiration. List commands applied to
 a string, and string or numeric commands applied to a list, return a wrong-type
 error without changing the value or its expiration. Popping from a non-empty
@@ -134,8 +180,9 @@ of the list, and indexes outside the list are clamped to its bounds. An empty
 range, missing key, or expired key produces `(nil)`. Reading a range does not
 change the list or its expiration.
 
-Set members are unique strings. `SADD`, `SREM`, and `SISMEMBER` accept the
-remainder of the command line as one member, so members may contain spaces.
+Set members are unique byte strings. In the interactive CLI, `SADD`, `SREM`, and
+`SISMEMBER` accept the remainder of the command line as one member, so members
+may contain spaces. RESP clients provide the member as one bulk-string argument.
 `SMEMBERS` sorts members for deterministic output. Mutating an existing set
 preserves its expiration while members remain; removing the final member also
 removes the key. Set commands reject strings and lists without mutation.
@@ -240,8 +287,9 @@ See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 
 The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
 (including the CLI and TCP integration tests), a real-process Ctrl+C shutdown
-test on Linux, and the per-module coverage gate. The final `CI Success` job
-succeeds only when all four jobs succeed.
+test on Linux, the external `redis-cli` RESP2 smoke test, and the per-module
+coverage gate. The final `CI Success` job succeeds only when all five jobs
+succeed.
 
 ## Current limitations
 
