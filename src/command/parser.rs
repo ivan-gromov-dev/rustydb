@@ -1,634 +1,307 @@
-use super::arguments::{
-    ensure_no_extra_arguments, parse_integer_argument_command, parse_key_value_command,
-    parse_keys_argument_command, required_argument,
-};
 use super::types::{Command, CommandError};
 
 impl Command {
     pub(crate) fn parse(input: &str) -> Result<Self, CommandError> {
         let input = input.trim();
-
-        if input.is_empty() {
+        let Some(command) = input.split_whitespace().next() else {
             return Err(CommandError::EmptyInput);
-        }
+        };
 
-        let command = input
-            .split_whitespace()
-            .next()
-            .ok_or(CommandError::EmptyInput)?
-            .to_ascii_uppercase();
+        let command = command.to_ascii_uppercase();
+        let tail_after = match command.as_str() {
+            "SET" | "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "RPUSH" | "SADD" | "SREM"
+            | "SISMEMBER" => Some(2),
+            "SETRANGE" => Some(3),
+            _ => None,
+        };
+        let args = match tail_after {
+            Some(head_len) => split_with_tail(input, head_len),
+            None => input.split_whitespace().collect(),
+        };
+
+        Self::from_args(&args)
+    }
+
+    pub(crate) fn from_args(args: &[&str]) -> Result<Self, CommandError> {
+        let Some(command) = args.first() else {
+            return Err(CommandError::EmptyInput);
+        };
+        let command = command.to_ascii_uppercase();
 
         match command.as_str() {
-            "SET" => parse_set(input),
-
-            "MSET" => parse_mset(input),
-
-            "SETNX" => parse_setnx(input),
-
-            "GET" => parse_get(input),
-
-            "MGET" => parse_mget(input),
-
-            "GETSET" => parse_getset(input),
-
-            "GETDEL" => parse_getdel(input),
-
-            "APPEND" => parse_append(input),
-
-            "INCR" => parse_increment(input),
-
-            "INCRBY" => parse_incrby(input),
-
-            "DECR" => parse_decrement(input),
-
-            "DECRBY" => parse_decrby(input),
-
-            "INCRBYFLOAT" => parse_increment_by_float(input),
-
-            "EXISTS" => parse_exists(input),
-
-            "DEL" => parse_del(input),
-
-            "RENAME" => parse_rename(input),
-
-            "EXPIRE" => parse_expire(input),
-
-            "PEXPIRE" => parse_pexpire(input),
-
-            "TTL" => parse_ttl(input),
-
-            "PTTL" => parse_pttl(input),
-
-            "PERSIST" => parse_persist(input),
-
-            "STRLEN" => parse_strlen(input),
-
-            "GETRANGE" => parse_getrange(input),
-
-            "SETRANGE" => parse_setrange(input),
-
-            "LPUSH" => parse_lpush(input),
-
-            "RPUSH" => parse_rpush(input),
-
-            "LLEN" => parse_llen(input),
-
-            "LPOP" => parse_lpop(input),
-
-            "RPOP" => parse_rpop(input),
-
-            "LRANGE" => parse_lrange(input),
-
-            "SADD" => parse_sadd(input),
-
-            "SREM" => parse_srem(input),
-
-            "SISMEMBER" => parse_sismember(input),
-
-            "SMEMBERS" => parse_smembers(input),
-
-            "SCARD" => parse_scard(input),
-
-            "KEYS" => parse_keys(input),
-
-            "LEN" => parse_len(input),
-
-            "CLEAR" => parse_clear(input),
-
-            "HELP" => parse_help(input),
-
-            "EXIT" | "QUIT" => parse_exit(input),
-
+            "SET" => {
+                exact(args, 3, "SET key value")?;
+                Ok(Self::Set {
+                    key: owned(args[1]),
+                    value: owned(args[2]),
+                })
+            }
+            "MSET" => parse_mset(args),
+            "SETNX" => {
+                exact(args, 3, "SETNX key value")?;
+                Ok(Self::SetNx {
+                    key: owned(args[1]),
+                    value: owned(args[2]),
+                })
+            }
+            "GET" => Ok(Self::Get {
+                key: one(args, "GET key")?,
+            }),
+            "MGET" => Ok(Self::MGet {
+                keys: many(args, "MGET key [key ...]")?,
+            }),
+            "GETSET" => {
+                exact(args, 3, "GETSET key value")?;
+                Ok(Self::GetSet {
+                    key: owned(args[1]),
+                    value: owned(args[2]),
+                })
+            }
+            "GETDEL" => Ok(Self::GetDel {
+                key: one(args, "GETDEL key")?,
+            }),
+            "APPEND" => {
+                exact(args, 3, "APPEND key value")?;
+                Ok(Self::Append {
+                    key: owned(args[1]),
+                    append_value: owned(args[2]),
+                })
+            }
+            "INCR" => Ok(Self::Increment {
+                key: one(args, "INCR key")?,
+            }),
+            "INCRBY" => {
+                let (key, amount) = key_i64(args, "INCRBY key inc_value")?;
+                Ok(Self::IncrementBy { key, amount })
+            }
+            "DECR" => Ok(Self::Decrement {
+                key: one(args, "DECR key")?,
+            }),
+            "DECRBY" => {
+                let (key, amount) = key_i64(args, "DECRBY key decr_value")?;
+                Ok(Self::DecrementBy { key, amount })
+            }
+            "INCRBYFLOAT" => parse_increment_by_float(args),
+            "EXISTS" => Ok(Self::Exists {
+                keys: many(args, "EXISTS key [key ...]")?,
+            }),
+            "DEL" => Ok(Self::Delete {
+                keys: many(args, "DEL key [key ...]")?,
+            }),
+            "RENAME" => {
+                exact(args, 3, "RENAME old_key new_key")?;
+                Ok(Self::Rename {
+                    old_key: owned(args[1]),
+                    new_key: owned(args[2]),
+                })
+            }
+            "EXPIRE" => {
+                let (key, seconds) = key_u64(args, "EXPIRE key seconds")?;
+                Ok(Self::Expire { key, seconds })
+            }
+            "PEXPIRE" => {
+                let (key, milliseconds) = key_u64(args, "PEXPIRE key milliseconds")?;
+                Ok(Self::PExpire { key, milliseconds })
+            }
+            "TTL" => Ok(Self::Ttl {
+                key: one(args, "TTL key")?,
+            }),
+            "PTTL" => Ok(Self::PTtl {
+                key: one(args, "PTTL key")?,
+            }),
+            "PERSIST" => Ok(Self::Persist {
+                key: one(args, "PERSIST key")?,
+            }),
+            "STRLEN" => Ok(Self::StrLen {
+                key: one(args, "STRLEN key")?,
+            }),
+            "GETRANGE" => {
+                let (key, start, end) = range_args(args, "GETRANGE key start end")?;
+                Ok(Self::GetRange { key, start, end })
+            }
+            "SETRANGE" => {
+                exact(args, 4, "SETRANGE key offset value")?;
+                let offset = parse_usize(args[2])?;
+                Ok(Self::SetRange {
+                    key: owned(args[1]),
+                    offset,
+                    value: owned(args[3]),
+                })
+            }
+            "LPUSH" => {
+                exact(args, 3, "LPUSH key value")?;
+                Ok(Self::LPush {
+                    key: owned(args[1]),
+                    value: owned(args[2]),
+                })
+            }
+            "RPUSH" => {
+                exact(args, 3, "RPUSH key value")?;
+                Ok(Self::RPush {
+                    key: owned(args[1]),
+                    value: owned(args[2]),
+                })
+            }
+            "LLEN" => Ok(Self::LLen {
+                key: one(args, "LLEN key")?,
+            }),
+            "LPOP" => Ok(Self::LPop {
+                key: one(args, "LPOP key")?,
+            }),
+            "RPOP" => Ok(Self::RPop {
+                key: one(args, "RPOP key")?,
+            }),
+            "LRANGE" => {
+                let (key, start, end) = range_args(args, "LRANGE key start end")?;
+                Ok(Self::LRange { key, start, end })
+            }
+            "SADD" => {
+                exact(args, 3, "SADD key member")?;
+                Ok(Self::SAdd {
+                    key: owned(args[1]),
+                    member: owned(args[2]),
+                })
+            }
+            "SREM" => {
+                exact(args, 3, "SREM key member")?;
+                Ok(Self::SRem {
+                    key: owned(args[1]),
+                    member: owned(args[2]),
+                })
+            }
+            "SISMEMBER" => {
+                exact(args, 3, "SISMEMBER key member")?;
+                Ok(Self::SIsMember {
+                    key: owned(args[1]),
+                    member: owned(args[2]),
+                })
+            }
+            "SMEMBERS" => Ok(Self::SMembers {
+                key: one(args, "SMEMBERS key")?,
+            }),
+            "SCARD" => Ok(Self::SCard {
+                key: one(args, "SCARD key")?,
+            }),
+            "KEYS" => no_args(args, "KEYS", Self::Keys),
+            "LEN" => no_args(args, "LEN", Self::Len),
+            "CLEAR" => no_args(args, "CLEAR", Self::Clear),
+            "HELP" => no_args(args, "HELP", Self::Help),
+            "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),
             _ => Err(CommandError::UnknownCommand(command)),
         }
     }
 }
 
-fn parse_set(input: &str) -> Result<Command, CommandError> {
-    let (key, value) = parse_key_value_command(input, "SET key value")?;
+fn split_with_tail(input: &str, head_len: usize) -> Vec<&str> {
+    let mut args = Vec::with_capacity(head_len + 1);
+    let mut remaining = input;
 
-    Ok(Command::Set {
-        key: key.to_owned(),
-        value: value.to_owned(),
-    })
-}
+    for _ in 0..head_len {
+        remaining = remaining.trim_start();
+        if remaining.is_empty() {
+            return args;
+        }
 
-fn parse_mset(input: &str) -> Result<Command, CommandError> {
-    let usage = "MSET key value [key value ...]";
-
-    let mut parts = input.split_whitespace();
-    parts.next();
-
-    let mut entries = Vec::new();
-
-    while let Some(key) = parts.next() {
-        let Some(value) = parts.next() else {
-            return Err(CommandError::InvalidArguments(usage));
-        };
-
-        entries.push((key.to_owned(), value.to_owned()));
+        let end = remaining
+            .find(char::is_whitespace)
+            .unwrap_or(remaining.len());
+        args.push(&remaining[..end]);
+        remaining = &remaining[end..];
     }
 
-    if entries.is_empty() {
+    remaining = remaining.trim_start();
+    if !remaining.is_empty() {
+        args.push(remaining);
+    }
+
+    args
+}
+
+fn exact(args: &[&str], length: usize, usage: &'static str) -> Result<(), CommandError> {
+    if args.len() == length {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidArguments(usage))
+    }
+}
+
+fn no_args(args: &[&str], usage: &'static str, command: Command) -> Result<Command, CommandError> {
+    exact(args, 1, usage)?;
+    Ok(command)
+}
+
+fn one(args: &[&str], usage: &'static str) -> Result<String, CommandError> {
+    exact(args, 2, usage)?;
+    Ok(owned(args[1]))
+}
+
+fn many(args: &[&str], usage: &'static str) -> Result<Vec<String>, CommandError> {
+    if args.len() < 2 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok(args[1..].iter().map(|value| owned(value)).collect())
+}
+
+fn parse_mset(args: &[&str]) -> Result<Command, CommandError> {
+    let usage = "MSET key value [key value ...]";
+    if args.len() < 3 || args.len() % 2 == 0 {
         return Err(CommandError::InvalidArguments(usage));
     }
 
+    let entries = args[1..]
+        .chunks_exact(2)
+        .map(|entry| (owned(entry[0]), owned(entry[1])))
+        .collect();
     Ok(Command::MSet { entries })
 }
 
-fn parse_setnx(input: &str) -> Result<Command, CommandError> {
-    let (key, value) = parse_key_value_command(input, "SETNX key value")?;
-    Ok(Command::SetNx {
-        key: key.to_owned(),
-        value: value.to_owned(),
-    })
+fn key_i64(args: &[&str], usage: &'static str) -> Result<(String, i64), CommandError> {
+    exact(args, 3, usage)?;
+    Ok((owned(args[1]), parse_i64(args[2])?))
 }
 
-fn parse_get(input: &str) -> Result<Command, CommandError> {
-    let usage = "GET key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::Get {
-        key: key.to_owned(),
-    })
+fn key_u64(args: &[&str], usage: &'static str) -> Result<(String, u64), CommandError> {
+    exact(args, 3, usage)?;
+    Ok((owned(args[1]), parse_u64(args[2])?))
 }
 
-fn parse_mget(input: &str) -> Result<Command, CommandError> {
-    let usage = "MGET key [key ...]";
-
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let keys: Vec<String> = parts.map(str::to_owned).collect();
-
-    if keys.is_empty() {
-        return Err(CommandError::InvalidArguments(usage));
-    }
-
-    Ok(Command::MGet { keys })
+fn range_args(args: &[&str], usage: &'static str) -> Result<(String, i64, i64), CommandError> {
+    exact(args, 4, usage)?;
+    Ok((owned(args[1]), parse_i64(args[2])?, parse_i64(args[3])?))
 }
 
-fn parse_getset(input: &str) -> Result<Command, CommandError> {
-    let (key, value) = parse_key_value_command(input, "GETSET key value")?;
-
-    Ok(Command::GetSet {
-        key: key.to_owned(),
-        value: value.to_owned(),
-    })
-}
-
-fn parse_getdel(input: &str) -> Result<Command, CommandError> {
-    let usage = "GETDEL key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::GetDel {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_append(input: &str) -> Result<Command, CommandError> {
-    let (key, value) = parse_key_value_command(input, "APPEND key value")?;
-
-    Ok(Command::Append {
-        key: key.to_owned(),
-        append_value: value.to_owned(),
-    })
-}
-
-fn parse_increment(input: &str) -> Result<Command, CommandError> {
-    let usage = "INCR key";
-
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::Increment {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_incrby(input: &str) -> Result<Command, CommandError> {
-    let (key, amount) = parse_integer_argument_command(input, "INCRBY key inc_value")?;
-
-    Ok(Command::IncrementBy { key, amount })
-}
-
-fn parse_decrement(input: &str) -> Result<Command, CommandError> {
-    let usage = "DECR key";
-
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::Decrement {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_decrby(input: &str) -> Result<Command, CommandError> {
-    let (key, amount) = parse_integer_argument_command(input, "DECRBY key decr_value")?;
-
-    Ok(Command::DecrementBy { key, amount })
-}
-
-fn parse_increment_by_float(input: &str) -> Result<Command, CommandError> {
-    let usage = "INCRBYFLOAT key amount";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let amount = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    let amount = amount
+fn parse_increment_by_float(args: &[&str]) -> Result<Command, CommandError> {
+    exact(args, 3, "INCRBYFLOAT key amount")?;
+    let amount = args[2]
         .parse::<f64>()
-        .map_err(|_| CommandError::InvalidFloat(amount.to_owned()))?;
-
+        .map_err(|_| CommandError::InvalidFloat(owned(args[2])))?;
     if !amount.is_finite() {
-        return Err(CommandError::InvalidFloat(amount.to_string()));
+        return Err(CommandError::InvalidFloat(owned(args[2])));
     }
-
     Ok(Command::IncrementByFloat {
-        key: key.to_owned(),
+        key: owned(args[1]),
         amount,
     })
 }
 
-fn parse_del(input: &str) -> Result<Command, CommandError> {
-    let keys = parse_keys_argument_command(input, "DEL key [key ...]")?;
-
-    Ok(Command::Delete { keys })
+fn parse_i64(value: &str) -> Result<i64, CommandError> {
+    value
+        .parse()
+        .map_err(|_| CommandError::InvalidInteger(owned(value)))
 }
 
-fn parse_exists(input: &str) -> Result<Command, CommandError> {
-    let keys = parse_keys_argument_command(input, "EXISTS key [key ...]")?;
-
-    Ok(Command::Exists { keys })
+fn parse_u64(value: &str) -> Result<u64, CommandError> {
+    value
+        .parse()
+        .map_err(|_| CommandError::InvalidInteger(owned(value)))
 }
 
-fn parse_rename(input: &str) -> Result<Command, CommandError> {
-    let usage = "RENAME old_key new_key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let old_key = required_argument(&mut parts, usage)?;
-    let new_key = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::Rename {
-        old_key: old_key.to_owned(),
-        new_key: new_key.to_owned(),
-    })
+fn parse_usize(value: &str) -> Result<usize, CommandError> {
+    value
+        .parse()
+        .map_err(|_| CommandError::InvalidInteger(owned(value)))
 }
 
-fn parse_expire(input: &str) -> Result<Command, CommandError> {
-    let usage = "EXPIRE key seconds";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let seconds = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    let seconds = seconds
-        .parse::<u64>()
-        .map_err(|_| CommandError::InvalidInteger(seconds.to_owned()))?;
-
-    Ok(Command::Expire {
-        key: key.to_owned(),
-        seconds,
-    })
-}
-
-fn parse_pexpire(input: &str) -> Result<Command, CommandError> {
-    let usage = "PEXPIRE key milliseconds";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let milliseconds = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    let milliseconds = milliseconds
-        .parse::<u64>()
-        .map_err(|_| CommandError::InvalidInteger(milliseconds.to_owned()))?;
-
-    Ok(Command::PExpire {
-        key: key.to_owned(),
-        milliseconds,
-    })
-}
-
-fn parse_ttl(input: &str) -> Result<Command, CommandError> {
-    let usage = "TTL key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-    Ok(Command::Ttl {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_pttl(input: &str) -> Result<Command, CommandError> {
-    let usage = "PTTL key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::PTtl {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_persist(input: &str) -> Result<Command, CommandError> {
-    let usage = "PERSIST key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-    Ok(Command::Persist {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_strlen(input: &str) -> Result<Command, CommandError> {
-    let usage = "STRLEN key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::StrLen {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_getrange(input: &str) -> Result<Command, CommandError> {
-    let usage = "GETRANGE key start end";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let start = required_argument(&mut parts, usage)?;
-    let end = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    let start = start
-        .parse::<i64>()
-        .map_err(|_| CommandError::InvalidInteger(start.to_owned()))?;
-
-    let end = end
-        .parse::<i64>()
-        .map_err(|_| CommandError::InvalidInteger(end.to_owned()))?;
-
-    Ok(Command::GetRange {
-        key: key.to_owned(),
-        start,
-        end,
-    })
-}
-
-fn parse_setrange(input: &str) -> Result<Command, CommandError> {
-    let usage = "SETRANGE key offset value";
-    let arguments = input
-        .split_once(char::is_whitespace)
-        .map(|(_, arguments)| arguments.trim_start())
-        .ok_or(CommandError::InvalidArguments(usage))?;
-    let (key, arguments) = arguments
-        .split_once(char::is_whitespace)
-        .map(|(key, arguments)| (key, arguments.trim_start()))
-        .ok_or(CommandError::InvalidArguments(usage))?;
-    let (offset, value) = arguments
-        .split_once(char::is_whitespace)
-        .map(|(offset, value)| (offset, value.trim_start()))
-        .ok_or(CommandError::InvalidArguments(usage))?;
-
-    if key.is_empty() || offset.is_empty() || value.is_empty() {
-        return Err(CommandError::InvalidArguments(usage));
-    }
-
-    let offset = offset
-        .parse::<usize>()
-        .map_err(|_| CommandError::InvalidInteger(offset.to_owned()))?;
-
-    Ok(Command::SetRange {
-        key: key.to_owned(),
-        offset,
-        value: value.to_owned(),
-    })
-}
-
-fn parse_lpush(input: &str) -> Result<Command, CommandError> {
-    let (key, value) = parse_key_value_command(input, "LPUSH key value")?;
-
-    Ok(Command::LPush {
-        key: key.to_owned(),
-        value: value.to_owned(),
-    })
-}
-
-fn parse_rpush(input: &str) -> Result<Command, CommandError> {
-    let (key, value) = parse_key_value_command(input, "RPUSH key value")?;
-
-    Ok(Command::RPush {
-        key: key.to_owned(),
-        value: value.to_owned(),
-    })
-}
-
-fn parse_llen(input: &str) -> Result<Command, CommandError> {
-    let usage = "LLEN key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::LLen {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_lpop(input: &str) -> Result<Command, CommandError> {
-    let usage = "LPOP key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::LPop {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_rpop(input: &str) -> Result<Command, CommandError> {
-    let usage = "RPOP key";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    Ok(Command::RPop {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_lrange(input: &str) -> Result<Command, CommandError> {
-    let usage = "LRANGE key start end";
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    let key = required_argument(&mut parts, usage)?;
-    let start = required_argument(&mut parts, usage)?;
-    let end = required_argument(&mut parts, usage)?;
-
-    ensure_no_extra_arguments(&mut parts, usage)?;
-
-    let start = start
-        .parse::<i64>()
-        .map_err(|_| CommandError::InvalidInteger(start.to_owned()))?;
-
-    let end = end
-        .parse::<i64>()
-        .map_err(|_| CommandError::InvalidInteger(end.to_owned()))?;
-
-    Ok(Command::LRange {
-        key: key.to_owned(),
-        start,
-        end,
-    })
-}
-
-fn parse_sadd(input: &str) -> Result<Command, CommandError> {
-    let (key, member) = parse_key_value_command(input, "SADD key member")?;
-    Ok(Command::SAdd {
-        key: key.to_owned(),
-        member: member.to_owned(),
-    })
-}
-
-fn parse_srem(input: &str) -> Result<Command, CommandError> {
-    let (key, member) = parse_key_value_command(input, "SREM key member")?;
-    Ok(Command::SRem {
-        key: key.to_owned(),
-        member: member.to_owned(),
-    })
-}
-
-fn parse_sismember(input: &str) -> Result<Command, CommandError> {
-    let (key, member) = parse_key_value_command(input, "SISMEMBER key member")?;
-    Ok(Command::SIsMember {
-        key: key.to_owned(),
-        member: member.to_owned(),
-    })
-}
-
-fn parse_smembers(input: &str) -> Result<Command, CommandError> {
-    let usage = "SMEMBERS key";
-    let mut parts = input.split_whitespace();
-    parts.next();
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-    Ok(Command::SMembers {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_scard(input: &str) -> Result<Command, CommandError> {
-    let usage = "SCARD key";
-    let mut parts = input.split_whitespace();
-    parts.next();
-    let key = required_argument(&mut parts, usage)?;
-    ensure_no_extra_arguments(&mut parts, usage)?;
-    Ok(Command::SCard {
-        key: key.to_owned(),
-    })
-}
-
-fn parse_keys(input: &str) -> Result<Command, CommandError> {
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    ensure_no_extra_arguments(&mut parts, "KEYS")?;
-    Ok(Command::Keys)
-}
-
-fn parse_len(input: &str) -> Result<Command, CommandError> {
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    ensure_no_extra_arguments(&mut parts, "LEN")?;
-    Ok(Command::Len)
-}
-
-fn parse_clear(input: &str) -> Result<Command, CommandError> {
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    ensure_no_extra_arguments(&mut parts, "CLEAR")?;
-    Ok(Command::Clear)
-}
-
-fn parse_help(input: &str) -> Result<Command, CommandError> {
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    ensure_no_extra_arguments(&mut parts, "HELP")?;
-    Ok(Command::Help)
-}
-
-fn parse_exit(input: &str) -> Result<Command, CommandError> {
-    let mut parts = input.split_whitespace();
-
-    parts.next();
-
-    ensure_no_extra_arguments(&mut parts, "EXIT")?;
-    Ok(Command::Exit)
+fn owned(value: &str) -> String {
+    value.to_owned()
 }

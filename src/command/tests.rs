@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn parses_exact_argument_vectors_without_retokenizing_values() {
+    assert_eq!(
+        Command::from_args(&["set", "key", "spaces\nnull\0byte"]),
+        Ok(Command::Set {
+            key: "key".to_owned(),
+            value: "spaces\nnull\0byte".to_owned(),
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["MSET", "first", "one two", "second", "three\nfour"]),
+        Ok(Command::MSet {
+            entries: vec![
+                ("first".to_owned(), "one two".to_owned()),
+                ("second".to_owned(), "three\nfour".to_owned()),
+            ],
+        })
+    );
+}
+
+#[test]
+fn argument_vectors_use_the_same_validation_as_text_commands() {
+    assert_eq!(Command::from_args(&[]), Err(CommandError::EmptyInput));
+    assert_eq!(
+        Command::from_args(&["GET", "key", "extra"]),
+        Err(CommandError::InvalidArguments("GET key"))
+    );
+    assert_eq!(
+        Command::from_args(&["EXPIRE", "key", "nope"]),
+        Err(CommandError::InvalidInteger("nope".to_owned()))
+    );
+    assert_eq!(
+        Command::from_args(&["unknown"]),
+        Err(CommandError::UnknownCommand("UNKNOWN".to_owned()))
+    );
+}
+
+#[test]
 fn parses_set() {
     let command = Command::parse("SET profile display-value");
 

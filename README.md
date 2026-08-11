@@ -144,8 +144,7 @@ src/
 ├── app.rs                 Interactive application loop
 ├── app/tests.rs           End-to-end CLI-loop tests
 ├── command/
-│   ├── arguments.rs       Shared argument parsing primitives
-│   ├── parser.rs          Text-to-command parser
+│   ├── parser.rs          Text and argument-vector command parser
 │   └── types.rs           Command and CommandError types
 ├── database/              Reusable stateful database service
 ├── executor/
