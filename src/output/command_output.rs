@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-const HELP_TEXT: &str = concat!(
+pub(crate) const HELP_TEXT: &str = concat!(
     "Available commands:\n",
     "  SET key value\n",
     "  MSET key value [key value ...]\n",
@@ -49,10 +49,10 @@ pub(crate) enum CommandOutput {
     Ok,
     Integer(i64),
     Float(f64),
-    Value(String),
-    OptionalValues(Vec<Option<String>>),
+    Value(Vec<u8>),
+    OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
-    KeyList(Vec<String>),
+    KeyList(Vec<Vec<u8>>),
     Error(String),
     Help,
     Exit,
@@ -64,11 +64,17 @@ impl CommandOutput {
             Self::Ok => writeln!(writer, "OK"),
             Self::Integer(value) => writeln!(writer, "{value}"),
             Self::Float(value) => writeln!(writer, "{value}"),
-            Self::Value(value) => writeln!(writer, "{value}"),
+            Self::Value(value) => {
+                writer.write_all(value)?;
+                writer.write_all(b"\n")
+            }
             Self::OptionalValues(values) => {
                 for value in values {
                     match value {
-                        Some(value) => writeln!(writer, "{value}")?,
+                        Some(value) => {
+                            writer.write_all(value)?;
+                            writer.write_all(b"\n")?;
+                        }
                         None => writeln!(writer, "(nil)")?,
                     }
                 }
@@ -78,7 +84,8 @@ impl CommandOutput {
             Self::KeyList(keys) if keys.is_empty() => writeln!(writer, "(nil)"),
             Self::KeyList(keys) => {
                 for key in keys {
-                    writeln!(writer, "{key}")?;
+                    writer.write_all(key)?;
+                    writer.write_all(b"\n")?;
                 }
                 Ok(())
             }

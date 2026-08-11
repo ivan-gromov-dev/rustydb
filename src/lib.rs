@@ -5,6 +5,8 @@ mod executor;
 mod line_protocol;
 mod line_session;
 mod output;
+mod resp;
+mod resp_session;
 mod server;
 mod storage;
 

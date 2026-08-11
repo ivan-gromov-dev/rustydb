@@ -12,44 +12,44 @@ fn wrong_type_error_has_a_stable_message() {
 
 #[test]
 fn new_entry_has_no_expiration() {
-    let entry = Entry::new("value".to_owned());
+    let entry = Entry::new("value".to_owned().into());
 
     assert_eq!(entry.expires_at(), None);
 }
 
 #[test]
 fn new_entry_exposes_its_string_value() {
-    let entry = Entry::new("value".to_owned());
+    let entry = Entry::new("value".to_owned().into());
 
-    assert_eq!(entry.value(), Ok("value"));
+    assert_eq!(entry.value(), Ok(b"value".as_slice()));
 }
 
 #[test]
 fn string_value_can_be_mutated_in_place() {
-    let mut entry = Entry::new("value".to_owned());
+    let mut entry = Entry::new("value".to_owned().into());
 
     entry
         .value_mut()
         .expect("a string entry should expose its mutable string")
-        .push_str(" appended");
+        .extend_from_slice(b" appended");
 
-    assert_eq!(entry.value(), Ok("value appended"));
+    assert_eq!(entry.value(), Ok(b"value appended".as_slice()));
 }
 
 #[test]
 fn string_value_can_be_replaced() {
-    let mut entry = Entry::new("old".to_owned());
+    let mut entry = Entry::new("old".to_owned().into());
 
-    entry.set_value("new".to_owned());
+    entry.set_value("new".to_owned().into());
 
-    assert_eq!(entry.value(), Ok("new"));
+    assert_eq!(entry.value(), Ok(b"new".as_slice()));
 }
 
 #[test]
 fn string_value_can_be_moved_out() {
-    let entry = Entry::new("value".to_owned());
+    let entry = Entry::new("value".to_owned().into());
 
-    assert_eq!(entry.into_value(), Ok("value".to_owned()));
+    assert_eq!(entry.into_value(), Ok("value".to_owned().into()));
 }
 
 #[test]
@@ -83,19 +83,19 @@ fn set_exposes_only_set_access() {
         entry
             .set_mut()
             .expect("a set entry should expose its set")
-            .insert("member".to_owned())
+            .insert("member".to_owned().into())
     );
     assert!(
         entry
             .set()
             .expect("a set entry should expose its set")
-            .contains("member")
+            .contains(b"member".as_slice())
     );
 }
 
 #[test]
 fn entry_without_expiration_is_not_expired() {
-    let entry = Entry::new("value".to_owned());
+    let entry = Entry::new("value".to_owned().into());
 
     assert!(!entry.is_expired(Instant::now()));
 }
@@ -104,7 +104,7 @@ fn entry_without_expiration_is_not_expired() {
 fn entry_is_expired_after_expiration_time() {
     let now = Instant::now();
 
-    let mut entry = Entry::new("value".to_owned());
+    let mut entry = Entry::new("value".to_owned().into());
     entry.set_expires_at(now);
 
     assert!(entry.is_expired(now));

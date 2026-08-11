@@ -48,6 +48,15 @@ def wait_until_connections_stop(address: tuple[str, int]) -> None:
     raise TimeoutError("server continued accepting connections after SIGINT")
 
 
+def resp_command(*arguments: bytes) -> bytes:
+    request = bytearray(f"*{len(arguments)}\r\n".encode())
+    for argument in arguments:
+        request.extend(f"${len(argument)}\r\n".encode())
+        request.extend(argument)
+        request.extend(b"\r\n")
+    return bytes(request)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(f"usage: {Path(sys.argv[0]).name} RUSTYDB_BINARY", file=sys.stderr)
@@ -71,17 +80,20 @@ def main() -> int:
         client = connect_when_ready(process, address)
         client.settimeout(5)
         stream = client.makefile("rwb")
-        stream.write(b"SET shutdown-test value\n")
+        stream.write(resp_command(b"SET", b"shutdown-test", b"value"))
         stream.flush()
-        assert stream.readline() == b"OK\n"
+        assert stream.readline() == b"+OK\r\n"
 
         process.send_signal(signal.SIGINT)
         wait_until_connections_stop(address)
 
-        stream.write(b"GET shutdown-test\nEXIT\n")
+        stream.write(
+            resp_command(b"GET", b"shutdown-test") + resp_command(b"QUIT")
+        )
         stream.flush()
-        assert stream.readline() == b"value\n"
-        assert stream.readline() == b"Bye!\n"
+        assert stream.readline() == b"$5\r\n"
+        assert stream.readline() == b"value\r\n"
+        assert stream.readline() == b"+OK\r\n"
         stream.close()
         stream = None
         client.close()

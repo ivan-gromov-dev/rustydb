@@ -3,130 +3,130 @@ use std::fmt;
 #[derive(Debug, PartialEq)]
 pub(crate) enum Command {
     Set {
-        key: String,
-        value: String,
+        key: Vec<u8>,
+        value: Vec<u8>,
     },
     MSet {
-        entries: Vec<(String, String)>,
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
     },
     SetNx {
-        key: String,
-        value: String,
+        key: Vec<u8>,
+        value: Vec<u8>,
     },
     Get {
-        key: String,
+        key: Vec<u8>,
     },
     MGet {
-        keys: Vec<String>,
+        keys: Vec<Vec<u8>>,
     },
     GetSet {
-        key: String,
-        value: String,
+        key: Vec<u8>,
+        value: Vec<u8>,
     },
     GetDel {
-        key: String,
+        key: Vec<u8>,
     },
     Append {
-        key: String,
-        append_value: String,
+        key: Vec<u8>,
+        append_value: Vec<u8>,
     },
     Increment {
-        key: String,
+        key: Vec<u8>,
     },
     IncrementBy {
-        key: String,
+        key: Vec<u8>,
         amount: i64,
     },
     Decrement {
-        key: String,
+        key: Vec<u8>,
     },
     DecrementBy {
-        key: String,
+        key: Vec<u8>,
         amount: i64,
     },
     IncrementByFloat {
-        key: String,
+        key: Vec<u8>,
         amount: f64,
     },
     Exists {
-        keys: Vec<String>,
+        keys: Vec<Vec<u8>>,
     },
     Delete {
-        keys: Vec<String>,
+        keys: Vec<Vec<u8>>,
     },
     Rename {
-        old_key: String,
-        new_key: String,
+        old_key: Vec<u8>,
+        new_key: Vec<u8>,
     },
     Expire {
-        key: String,
+        key: Vec<u8>,
         seconds: u64,
     },
     PExpire {
-        key: String,
+        key: Vec<u8>,
         milliseconds: u64,
     },
     Ttl {
-        key: String,
+        key: Vec<u8>,
     },
     PTtl {
-        key: String,
+        key: Vec<u8>,
     },
     Persist {
-        key: String,
+        key: Vec<u8>,
     },
     StrLen {
-        key: String,
+        key: Vec<u8>,
     },
     GetRange {
-        key: String,
+        key: Vec<u8>,
         start: i64,
         end: i64,
     },
     SetRange {
-        key: String,
+        key: Vec<u8>,
         offset: usize,
-        value: String,
+        value: Vec<u8>,
     },
     LPush {
-        key: String,
-        value: String,
+        key: Vec<u8>,
+        value: Vec<u8>,
     },
     RPush {
-        key: String,
-        value: String,
+        key: Vec<u8>,
+        value: Vec<u8>,
     },
     LLen {
-        key: String,
+        key: Vec<u8>,
     },
     LPop {
-        key: String,
+        key: Vec<u8>,
     },
     RPop {
-        key: String,
+        key: Vec<u8>,
     },
     LRange {
-        key: String,
+        key: Vec<u8>,
         start: i64,
         end: i64,
     },
     SAdd {
-        key: String,
-        member: String,
+        key: Vec<u8>,
+        member: Vec<u8>,
     },
     SRem {
-        key: String,
-        member: String,
+        key: Vec<u8>,
+        member: Vec<u8>,
     },
     SIsMember {
-        key: String,
-        member: String,
+        key: Vec<u8>,
+        member: Vec<u8>,
     },
     SMembers {
-        key: String,
+        key: Vec<u8>,
     },
     SCard {
-        key: String,
+        key: Vec<u8>,
     },
     Keys,
     Len,

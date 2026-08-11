@@ -53,6 +53,21 @@ jobs:
       - name: Test graceful Ctrl+C shutdown
         run: python3 scripts/test_ctrl_c.py target/debug/rustydb
 
+  redis_cli:
+    name: redis-cli RESP2 compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install redis-cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes redis-tools
+      - name: Run redis-cli smoke test
+        run: python3 scripts/redis_cli_smoke.py
+
   coverage:
     name: Per-module coverage
     runs-on: ubuntu-latest
@@ -84,6 +99,7 @@ jobs:
       - quality
       - tests
       - ctrl_c
+      - redis_cli
       - coverage
     runs-on: ubuntu-latest
     steps:
@@ -92,10 +108,12 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
           CTRL_C_RESULT: ${{ needs.ctrl_c.result }}
+          REDIS_CLI_RESULT: ${{ needs.redis_cli.result }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
         run: |
           test "$QUALITY_RESULT" = "success"
           test "$TESTS_RESULT" = "success"
           test "$CTRL_C_RESULT" = "success"
+          test "$REDIS_CLI_RESULT" = "success"
           test "$COVERAGE_RESULT" = "success"
           echo "CI Success: true"

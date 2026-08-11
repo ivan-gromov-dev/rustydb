@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -41,23 +41,20 @@ fn shutdown_waits_for_an_active_client_to_finish() {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    stream
+        .write_all(b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n")
+        .unwrap();
+    let mut response = [0; 5];
+    stream.read_exact(&mut response).unwrap();
+    assert_eq!(&response, b"+OK\r\n");
 
-    stream.write_all(b"SET key value\n").unwrap();
-    let mut response = String::new();
-    reader.read_line(&mut response).unwrap();
-    assert_eq!(response, "OK\n");
-
-    stream.write_all(b"GET key").unwrap();
+    stream.write_all(b"*2\r\n$3\r\nGET\r\n$3\r\nke").unwrap();
     shutdown.request();
 
-    stream.write_all(b"\nEXIT\n").unwrap();
-    response.clear();
-    reader.read_line(&mut response).unwrap();
-    assert_eq!(response, "value\n");
-    response.clear();
-    reader.read_line(&mut response).unwrap();
-    assert_eq!(response, "Bye!\n");
+    stream.write_all(b"y\r\n*1\r\n$4\r\nQUIT\r\n").unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).unwrap();
+    assert_eq!(response, b"$5\r\nvalue\r\n+OK\r\n");
 
     assert!(server.join().unwrap().is_ok());
 }

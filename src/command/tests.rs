@@ -1,14 +1,62 @@
 use super::*;
 
 #[test]
+fn parses_exact_argument_vectors_without_retokenizing_values() {
+    assert_eq!(
+        Command::from_args(&["set", "key", "spaces\nnull\0byte"]),
+        Ok(Command::Set {
+            key: "key".to_owned().into(),
+            value: "spaces\nnull\0byte".to_owned().into(),
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["MSET", "first", "one two", "second", "three\nfour"]),
+        Ok(Command::MSet {
+            entries: vec![
+                ("first".to_owned().into(), "one two".to_owned().into()),
+                ("second".to_owned().into(), "three\nfour".to_owned().into()),
+            ],
+        })
+    );
+}
+
+#[test]
+fn parses_binary_argument_vectors_without_utf8_conversion() {
+    assert_eq!(
+        Command::from_bytes(&[b"SET", b"\xff-key", b"a\0\x80"]),
+        Ok(Command::Set {
+            key: b"\xff-key".to_vec(),
+            value: b"a\0\x80".to_vec(),
+        })
+    );
+}
+
+#[test]
+fn argument_vectors_use_the_same_validation_as_text_commands() {
+    assert_eq!(Command::from_args(&[]), Err(CommandError::EmptyInput));
+    assert_eq!(
+        Command::from_args(&["GET", "key", "extra"]),
+        Err(CommandError::InvalidArguments("GET key"))
+    );
+    assert_eq!(
+        Command::from_args(&["EXPIRE", "key", "nope"]),
+        Err(CommandError::InvalidInteger("nope".to_owned()))
+    );
+    assert_eq!(
+        Command::from_args(&["unknown"]),
+        Err(CommandError::UnknownCommand("UNKNOWN".to_owned()))
+    );
+}
+
+#[test]
 fn parses_set() {
     let command = Command::parse("SET profile display-value");
 
     assert_eq!(
         command,
         Ok(Command::Set {
-            key: "profile".to_owned(),
-            value: "display-value".to_owned(),
+            key: "profile".to_owned().into(),
+            value: "display-value".to_owned().into(),
         })
     );
 }
@@ -20,8 +68,8 @@ fn parses_complex_string_set() {
     assert_eq!(
         command,
         Ok(Command::Set {
-            key: "message".to_owned(),
-            value: "sample text".to_owned(),
+            key: "message".to_owned().into(),
+            value: "sample text".to_owned().into(),
         })
     );
 }
@@ -33,7 +81,7 @@ fn commands_are_case_insensitive() {
     assert_eq!(
         command,
         Ok(Command::Get {
-            key: "profile".to_owned(),
+            key: "profile".to_owned().into(),
         })
     );
 }
@@ -62,7 +110,7 @@ fn parses_expire() {
     assert_eq!(
         result,
         Ok(Command::Expire {
-            key: "key".to_owned(),
+            key: "key".to_owned().into(),
             seconds: 60,
         })
     );
@@ -112,7 +160,7 @@ fn parses_increment_by_float() {
     assert_eq!(
         result,
         Ok(Command::IncrementByFloat {
-            key: "counter".to_owned(),
+            key: "counter".to_owned().into(),
             amount: 1.5,
         })
     );
@@ -125,7 +173,7 @@ fn parses_increment_by_float_with_negative_amount() {
     assert_eq!(
         result,
         Ok(Command::IncrementByFloat {
-            key: "counter".to_owned(),
+            key: "counter".to_owned().into(),
             amount: -2.25,
         })
     );
@@ -138,7 +186,7 @@ fn parses_increment_by_float_case_insensitively() {
     assert_eq!(
         result,
         Ok(Command::IncrementByFloat {
-            key: "counter".to_owned(),
+            key: "counter".to_owned().into(),
             amount: 1.5,
         })
     );
@@ -200,8 +248,8 @@ fn key_value_commands_accept_repeated_whitespace() {
     assert_eq!(
         Command::parse("SET   profile   sample value"),
         Ok(Command::Set {
-            key: "profile".to_owned(),
-            value: "sample value".to_owned(),
+            key: "profile".to_owned().into(),
+            value: "sample value".to_owned().into(),
         })
     );
 }
@@ -211,9 +259,9 @@ fn set_range_accepts_repeated_whitespace() {
     assert_eq!(
         Command::parse("SETRANGE   key   2   sample value"),
         Ok(Command::SetRange {
-            key: "key".to_owned(),
+            key: "key".to_owned().into(),
             offset: 2,
-            value: "sample value".to_owned(),
+            value: "sample value".to_owned().into(),
         })
     );
 }
@@ -223,39 +271,39 @@ fn parses_list_commands() {
     assert_eq!(
         Command::parse("lpush queue first item"),
         Ok(Command::LPush {
-            key: "queue".to_owned(),
-            value: "first item".to_owned(),
+            key: "queue".to_owned().into(),
+            value: "first item".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("RPUSH queue last item"),
         Ok(Command::RPush {
-            key: "queue".to_owned(),
-            value: "last item".to_owned(),
+            key: "queue".to_owned().into(),
+            value: "last item".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("LLEN queue"),
         Ok(Command::LLen {
-            key: "queue".to_owned(),
+            key: "queue".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("lpop queue"),
         Ok(Command::LPop {
-            key: "queue".to_owned(),
+            key: "queue".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("RPOP queue"),
         Ok(Command::RPop {
-            key: "queue".to_owned(),
+            key: "queue".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("LRANGE queue -2 -1"),
         Ok(Command::LRange {
-            key: "queue".to_owned(),
+            key: "queue".to_owned().into(),
             start: -2,
             end: -1,
         })
@@ -316,34 +364,34 @@ fn parses_set_collection_commands() {
     assert_eq!(
         Command::parse("sadd tags first member"),
         Ok(Command::SAdd {
-            key: "tags".to_owned(),
-            member: "first member".to_owned(),
+            key: "tags".to_owned().into(),
+            member: "first member".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("SREM tags first member"),
         Ok(Command::SRem {
-            key: "tags".to_owned(),
-            member: "first member".to_owned(),
+            key: "tags".to_owned().into(),
+            member: "first member".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("SISMEMBER tags first member"),
         Ok(Command::SIsMember {
-            key: "tags".to_owned(),
-            member: "first member".to_owned(),
+            key: "tags".to_owned().into(),
+            member: "first member".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("SMEMBERS tags"),
         Ok(Command::SMembers {
-            key: "tags".to_owned(),
+            key: "tags".to_owned().into(),
         })
     );
     assert_eq!(
         Command::parse("SCARD tags"),
         Ok(Command::SCard {
-            key: "tags".to_owned(),
+            key: "tags".to_owned().into(),
         })
     );
 }
@@ -504,7 +552,7 @@ fn parses_delete_with_single_key() {
     assert_eq!(
         result,
         Ok(Command::Delete {
-            keys: vec!["a".to_owned()],
+            keys: vec!["a".to_owned().into()],
         })
     );
 }
@@ -516,7 +564,11 @@ fn parses_delete_with_multiple_keys() {
     assert_eq!(
         result,
         Ok(Command::Delete {
-            keys: vec!["a".to_owned(), "b".to_owned(), "c".to_owned(),],
+            keys: vec![
+                "a".to_owned().into(),
+                "b".to_owned().into(),
+                "c".to_owned().into(),
+            ],
         })
     );
 }
@@ -538,7 +590,7 @@ fn parses_exists_with_single_key() {
     assert_eq!(
         result,
         Ok(Command::Exists {
-            keys: vec!["a".to_owned()],
+            keys: vec!["a".to_owned().into()],
         })
     );
 }
@@ -550,7 +602,11 @@ fn parses_exists_with_multiple_keys() {
     assert_eq!(
         result,
         Ok(Command::Exists {
-            keys: vec!["a".to_owned(), "b".to_owned(), "c".to_owned(),],
+            keys: vec![
+                "a".to_owned().into(),
+                "b".to_owned().into(),
+                "c".to_owned().into(),
+            ],
         })
     );
 }

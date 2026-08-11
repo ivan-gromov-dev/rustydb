@@ -7,6 +7,39 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-11
+
+### Added
+
+- A dependency-free RESP2 frame model, encoder, and incremental decoder for
+  simple strings, errors, integers, bulk strings, arrays, and null values.
+- Defensive RESP limits for frame size, array length, and nesting depth.
+- Binary-safe RESP request and response adapters for the supported command set.
+- A buffered RESP session supporting fragmented reads and pipelined commands in
+  request order.
+- TCP integration coverage for binary values, pipelining, fragmented frames,
+  shared state, graceful shutdown, and malformed-client isolation.
+- A real `redis-cli` compatibility smoke test, enforced as a required CI job.
+
+### Changed
+
+- The TCP server now speaks RESP2 arrays of bulk strings instead of the
+  line-delimited UTF-8 protocol introduced in 0.4.0.
+- Keys, string values, list elements, and set members are stored as arbitrary
+  bytes throughout parsing, execution, storage, and output.
+- `APPEND`, `STRLEN`, `GETRANGE`, and `SETRANGE` now use Redis-compatible byte
+  lengths and offsets.
+- Command parsing now shares one validation path between interactive text,
+  argument vectors, and RESP requests.
+- Protocol errors close only the offending client after an RESP error response;
+  valid command errors leave the connection available for later requests.
+
+### Known limitations
+
+- Network compatibility is limited to RESP2 and the documented RustyDB command
+  subset; RESP3, inline requests, Redis metadata commands, authentication, and
+  database selection are not implemented.
+
 ## [0.4.0] - 2026-08-10
 
 ### Added
@@ -86,7 +119,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Djunichi/rustydb/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Djunichi/rustydb/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Djunichi/rustydb/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Djunichi/rustydb/compare/v0.1.0...v0.2.0
