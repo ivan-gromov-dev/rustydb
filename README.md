@@ -156,7 +156,7 @@ src/
 ├── output/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
-├── resp/                  RESP2 frame model and encoder
+├── resp/                  RESP2 frame model, encoder, and incremental decoder
 ├── server/                Concurrent TCP listener and graceful shutdown
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
