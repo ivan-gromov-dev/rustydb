@@ -3,10 +3,11 @@ use super::stored_value::StoredValue;
 use crate::storage::clock::{Clock, SystemClock};
 use std::collections::{HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
+use std::str;
 use std::time::{Duration, Instant};
 
 pub(crate) struct InMemoryStore {
-    storage: HashMap<String, StoredValue>,
+    storage: HashMap<Vec<u8>, StoredValue>,
     clock: Box<dyn Clock>,
 }
 
@@ -60,23 +61,26 @@ impl InMemoryStore {
         }
     }
 
-    pub(crate) fn set(&mut self, key: String, value: String) {
+    pub(crate) fn set(&mut self, key: Vec<u8>, value: Vec<u8>) {
         self.storage.insert(key, StoredValue::new(value));
     }
 
-    pub(crate) fn get(&mut self, key: &str) -> Result<Option<&str>, StoreError> {
+    pub(crate) fn get(&mut self, key: impl AsRef<[u8]>) -> Result<Option<&[u8]>, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         self.storage.get(key).map(StoredValue::value).transpose()
     }
 
-    pub(crate) fn exists(&mut self, key: &str) -> bool {
+    pub(crate) fn exists(&mut self, key: impl AsRef<[u8]>) -> bool {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         self.storage.contains_key(key)
     }
 
-    pub(crate) fn delete(&mut self, key: &str) -> bool {
+    pub(crate) fn delete(&mut self, key: impl AsRef<[u8]>) -> bool {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         self.storage.remove(key).is_some()
@@ -92,7 +96,7 @@ impl InMemoryStore {
         self.storage.clear();
     }
 
-    pub(crate) fn keys(&mut self) -> Vec<String> {
+    pub(crate) fn keys(&mut self) -> Vec<Vec<u8>> {
         self.remove_expired();
 
         let mut keys: Vec<_> = self.storage.keys().cloned().collect();
@@ -101,7 +105,8 @@ impl InMemoryStore {
         keys
     }
 
-    pub(crate) fn rename(&mut self, old_key: &str, new_key: String) -> bool {
+    pub(crate) fn rename(&mut self, old_key: impl AsRef<[u8]>, new_key: Vec<u8>) -> bool {
+        let old_key = old_key.as_ref();
         self.remove_if_expired(old_key);
         self.remove_if_expired(&new_key);
 
@@ -115,31 +120,33 @@ impl InMemoryStore {
         }
     }
 
-    pub(crate) fn append(&mut self, key: &str, append_value: String) -> Result<usize, StoreError> {
+    pub(crate) fn append(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        append_value: Vec<u8>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let stored_value = self
             .storage
-            .entry(key.to_owned())
-            .or_insert_with(|| StoredValue::new(String::new()))
+            .entry(key.to_vec())
+            .or_insert_with(|| StoredValue::new(Vec::new()))
             .value_mut()?;
 
-        stored_value.push_str(&append_value);
-        Ok(stored_value.chars().count())
+        stored_value.extend(append_value);
+        Ok(stored_value.len())
     }
 
-    pub(crate) fn increment(&mut self, key: String) -> Result<i64, StoreError> {
+    pub(crate) fn increment(&mut self, key: Vec<u8>) -> Result<i64, StoreError> {
         self.increment_by(key, 1)
     }
 
-    pub(crate) fn increment_by(&mut self, key: String, amount: i64) -> Result<i64, StoreError> {
+    pub(crate) fn increment_by(&mut self, key: Vec<u8>, amount: i64) -> Result<i64, StoreError> {
         self.remove_if_expired(&key);
 
         let number = match self.storage.get(&key) {
-            Some(entry) => entry
-                .value()?
-                .parse::<i64>()
-                .map_err(|_| StoreError::ValueIsNotInteger)?,
+            Some(entry) => parse_integer(entry.value()?)?,
 
             None => 0,
         };
@@ -150,30 +157,27 @@ impl InMemoryStore {
 
         match self.storage.get_mut(&key) {
             Some(entry) => {
-                entry.set_value(incremented.to_string());
+                entry.set_value(incremented.to_string().into_bytes());
             }
 
             None => {
                 self.storage
-                    .insert(key, StoredValue::new(incremented.to_string()));
+                    .insert(key, StoredValue::new(incremented.to_string().into_bytes()));
             }
         }
 
         Ok(incremented)
     }
 
-    pub(crate) fn decrement(&mut self, key: String) -> Result<i64, StoreError> {
+    pub(crate) fn decrement(&mut self, key: Vec<u8>) -> Result<i64, StoreError> {
         self.decrement_by(key, 1)
     }
 
-    pub(crate) fn decrement_by(&mut self, key: String, amount: i64) -> Result<i64, StoreError> {
+    pub(crate) fn decrement_by(&mut self, key: Vec<u8>, amount: i64) -> Result<i64, StoreError> {
         self.remove_if_expired(&key);
 
         let number = match self.storage.get(&key) {
-            Some(entry) => entry
-                .value()?
-                .parse::<i64>()
-                .map_err(|_| StoreError::ValueIsNotInteger)?,
+            Some(entry) => parse_integer(entry.value()?)?,
 
             None => 0,
         };
@@ -184,12 +188,12 @@ impl InMemoryStore {
 
         match self.storage.get_mut(&key) {
             Some(entry) => {
-                entry.set_value(decremented.to_string());
+                entry.set_value(decremented.to_string().into_bytes());
             }
 
             None => {
                 self.storage
-                    .insert(key, StoredValue::new(decremented.to_string()));
+                    .insert(key, StoredValue::new(decremented.to_string().into_bytes()));
             }
         }
 
@@ -198,16 +202,13 @@ impl InMemoryStore {
 
     pub(crate) fn increment_by_float(
         &mut self,
-        key: String,
+        key: Vec<u8>,
         amount: f64,
     ) -> Result<f64, StoreError> {
         self.remove_if_expired(&key);
 
         let number = match self.storage.get(&key) {
-            Some(entry) => entry
-                .value()?
-                .parse::<f64>()
-                .map_err(|_| StoreError::ValueIsNotFloat)?,
+            Some(entry) => parse_float(entry.value()?)?,
 
             None => 0.0,
         };
@@ -224,19 +225,19 @@ impl InMemoryStore {
 
         match self.storage.get_mut(&key) {
             Some(entry) => {
-                entry.set_value(result.to_string());
+                entry.set_value(result.to_string().into_bytes());
             }
 
             None => {
                 self.storage
-                    .insert(key, StoredValue::new(result.to_string()));
+                    .insert(key, StoredValue::new(result.to_string().into_bytes()));
             }
         }
 
         Ok(result)
     }
 
-    pub(crate) fn set_if_absent(&mut self, key: String, value: String) -> bool {
+    pub(crate) fn set_if_absent(&mut self, key: Vec<u8>, value: Vec<u8>) -> bool {
         self.remove_if_expired(&key);
 
         match self.storage.entry(key) {
@@ -251,9 +252,9 @@ impl InMemoryStore {
 
     pub(crate) fn get_and_set(
         &mut self,
-        key: String,
-        value: String,
-    ) -> Result<Option<String>, StoreError> {
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
         self.remove_if_expired(&key);
 
         if let Some(entry) = self.storage.get(&key) {
@@ -266,7 +267,7 @@ impl InMemoryStore {
             .transpose()
     }
 
-    pub(crate) fn get_and_delete(&mut self, key: String) -> Result<Option<String>, StoreError> {
+    pub(crate) fn get_and_delete(&mut self, key: Vec<u8>) -> Result<Option<Vec<u8>>, StoreError> {
         self.remove_if_expired(&key);
 
         if let Some(entry) = self.storage.get(&key) {
@@ -279,7 +280,8 @@ impl InMemoryStore {
             .transpose()
     }
 
-    pub(crate) fn expire_at(&mut self, key: &str, expires_at: Instant) -> bool {
+    pub(crate) fn expire_at(&mut self, key: impl AsRef<[u8]>, expires_at: Instant) -> bool {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         match self.storage.get_mut(key) {
@@ -292,7 +294,7 @@ impl InMemoryStore {
         }
     }
 
-    fn remove_if_expired(&mut self, key: &str) -> bool {
+    fn remove_if_expired(&mut self, key: &[u8]) -> bool {
         let expired = self
             .storage
             .get(key)
@@ -310,7 +312,7 @@ impl InMemoryStore {
         self.storage.retain(|_, entry| !entry.is_expired(now));
     }
 
-    pub(crate) fn expire(&mut self, key: &str, seconds: u64) -> bool {
+    pub(crate) fn expire(&mut self, key: impl AsRef<[u8]>, seconds: u64) -> bool {
         let Some(expires_at) = self.clock.now().checked_add(Duration::from_secs(seconds)) else {
             return false;
         };
@@ -318,7 +320,8 @@ impl InMemoryStore {
         self.expire_at(key, expires_at)
     }
 
-    pub(crate) fn ttl(&mut self, key: &str) -> i64 {
+    pub(crate) fn ttl(&mut self, key: impl AsRef<[u8]>) -> i64 {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let Some(entry) = self.storage.get(key) else {
@@ -334,7 +337,8 @@ impl InMemoryStore {
             .as_secs() as i64
     }
 
-    pub(crate) fn persist(&mut self, key: &str) -> bool {
+    pub(crate) fn persist(&mut self, key: impl AsRef<[u8]>) -> bool {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let Some(entry) = self.storage.get_mut(key) else {
@@ -349,7 +353,7 @@ impl InMemoryStore {
         true
     }
 
-    pub(crate) fn pexpire(&mut self, key: &str, milliseconds: u64) -> bool {
+    pub(crate) fn pexpire(&mut self, key: impl AsRef<[u8]>, milliseconds: u64) -> bool {
         let Some(expires_at) = self
             .clock
             .now()
@@ -361,7 +365,8 @@ impl InMemoryStore {
         self.expire_at(key, expires_at)
     }
 
-    pub(crate) fn pttl(&mut self, key: &str) -> i64 {
+    pub(crate) fn pttl(&mut self, key: impl AsRef<[u8]>) -> i64 {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let Some(entry) = self.storage.get(key) else {
@@ -379,24 +384,23 @@ impl InMemoryStore {
         i64::try_from(milliseconds).unwrap_or(i64::MAX)
     }
 
-    pub(crate) fn string_length(&mut self, key: &str) -> Result<usize, StoreError> {
-        Ok(self.get(key)?.map_or(0, |value| value.chars().count()))
+    pub(crate) fn string_length(&mut self, key: impl AsRef<[u8]>) -> Result<usize, StoreError> {
+        Ok(self.get(key)?.map_or(0, <[u8]>::len))
     }
 
     pub(crate) fn get_range(
         &mut self,
-        key: &str,
+        key: impl AsRef<[u8]>,
         start: i64,
         end: i64,
-    ) -> Result<String, StoreError> {
+    ) -> Result<Vec<u8>, StoreError> {
         let Some(value) = self.get(key)? else {
-            return Ok(String::new());
+            return Ok(Vec::new());
         };
-        let characters: Vec<char> = value.chars().collect();
-        let length = characters.len() as i64;
+        let length = value.len() as i64;
 
         if length == 0 {
-            return Ok(String::new());
+            return Ok(Vec::new());
         }
 
         let mut start = normalize_index(start, length);
@@ -406,62 +410,63 @@ impl InMemoryStore {
         end = end.min(length - 1);
 
         if start >= length || end < 0 || start > end {
-            return Ok(String::new());
+            return Ok(Vec::new());
         }
 
-        Ok(characters[start as usize..=end as usize].iter().collect())
+        Ok(value[start as usize..=end as usize].to_vec())
     }
 
     pub(crate) fn set_range(
         &mut self,
-        key: String,
+        key: Vec<u8>,
         offset: usize,
-        value: String,
+        value: Vec<u8>,
     ) -> Result<usize, StoreError> {
         self.remove_if_expired(&key);
 
         let entry = self
             .storage
             .entry(key)
-            .or_insert_with(|| StoredValue::new(String::new()));
+            .or_insert_with(|| StoredValue::new(Vec::new()));
 
-        let mut characters: Vec<char> = entry.value()?.chars().collect();
+        let bytes = entry.value_mut()?;
 
-        if characters.len() < offset {
-            characters.resize(offset, '\0');
+        if bytes.len() < offset {
+            bytes.resize(offset, 0);
         }
 
-        for (index, character) in value.chars().enumerate() {
+        for (index, byte) in value.into_iter().enumerate() {
             let position = offset + index;
 
-            if position < characters.len() {
-                characters[position] = character;
+            if position < bytes.len() {
+                bytes[position] = byte;
             } else {
-                characters.push(character);
+                bytes.push(byte);
             }
         }
 
-        let length = characters.len();
-
-        entry.set_value(characters.into_iter().collect());
-
-        Ok(length)
+        Ok(bytes.len())
     }
 
-    pub(crate) fn delete_many(&mut self, keys: &[String]) -> usize {
+    pub(crate) fn delete_many(&mut self, keys: &[Vec<u8>]) -> usize {
         keys.iter().filter(|key| self.delete(key)).count()
     }
 
-    pub(crate) fn exists_many(&mut self, keys: &[String]) -> usize {
+    pub(crate) fn exists_many(&mut self, keys: &[Vec<u8>]) -> usize {
         keys.iter().filter(|key| self.exists(key)).count()
     }
 
-    pub(crate) fn push_left(&mut self, key: &str, value: String) -> Result<usize, StoreError> {
+    pub(crate) fn push_left(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        value: Vec<u8>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let list = self
             .storage
-            .entry(key.to_owned())
+            .entry(key.to_vec())
             .or_insert_with(StoredValue::new_list)
             .list_mut()?;
 
@@ -469,12 +474,17 @@ impl InMemoryStore {
         Ok(list.len())
     }
 
-    pub(crate) fn push_right(&mut self, key: &str, value: String) -> Result<usize, StoreError> {
+    pub(crate) fn push_right(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        value: Vec<u8>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let list = self
             .storage
-            .entry(key.to_owned())
+            .entry(key.to_vec())
             .or_insert_with(StoredValue::new_list)
             .list_mut()?;
 
@@ -482,7 +492,8 @@ impl InMemoryStore {
         Ok(list.len())
     }
 
-    pub(crate) fn list_length(&mut self, key: &str) -> Result<usize, StoreError> {
+    pub(crate) fn list_length(&mut self, key: impl AsRef<[u8]>) -> Result<usize, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         match self.storage.get(key) {
@@ -491,7 +502,11 @@ impl InMemoryStore {
         }
     }
 
-    pub(crate) fn pop_left(&mut self, key: &str) -> Result<Option<String>, StoreError> {
+    pub(crate) fn pop_left(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let (value, became_empty) = {
@@ -511,7 +526,11 @@ impl InMemoryStore {
         Ok(value)
     }
 
-    pub(crate) fn pop_right(&mut self, key: &str) -> Result<Option<String>, StoreError> {
+    pub(crate) fn pop_right(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let (value, became_empty) = {
@@ -533,10 +552,11 @@ impl InMemoryStore {
 
     pub(crate) fn list_range(
         &mut self,
-        key: &str,
+        key: impl AsRef<[u8]>,
         start: i64,
         end: i64,
-    ) -> Result<Vec<String>, StoreError> {
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let Some(entry) = self.storage.get(key) else {
@@ -567,17 +587,28 @@ impl InMemoryStore {
             .collect())
     }
 
-    pub(crate) fn set_add(&mut self, key: &str, member: String) -> Result<bool, StoreError> {
+    pub(crate) fn set_add(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        member: Vec<u8>,
+    ) -> Result<bool, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         self.storage
-            .entry(key.to_owned())
+            .entry(key.to_vec())
             .or_insert_with(StoredValue::new_set)
             .set_mut()
             .map(|set| set.insert(member))
     }
 
-    pub(crate) fn set_remove(&mut self, key: &str, member: &str) -> Result<bool, StoreError> {
+    pub(crate) fn set_remove(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        member: impl AsRef<[u8]>,
+    ) -> Result<bool, StoreError> {
+        let key = key.as_ref();
+        let member = member.as_ref();
         self.remove_if_expired(key);
 
         let (removed, became_empty) = {
@@ -597,7 +628,13 @@ impl InMemoryStore {
         Ok(removed)
     }
 
-    pub(crate) fn set_contains(&mut self, key: &str, member: &str) -> Result<bool, StoreError> {
+    pub(crate) fn set_contains(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        member: impl AsRef<[u8]>,
+    ) -> Result<bool, StoreError> {
+        let key = key.as_ref();
+        let member = member.as_ref();
         self.remove_if_expired(key);
 
         match self.storage.get(key) {
@@ -606,7 +643,11 @@ impl InMemoryStore {
         }
     }
 
-    pub(crate) fn set_members(&mut self, key: &str) -> Result<Vec<String>, StoreError> {
+    pub(crate) fn set_members(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         let Some(entry) = self.storage.get(key) else {
@@ -618,7 +659,8 @@ impl InMemoryStore {
         Ok(members)
     }
 
-    pub(crate) fn set_cardinality(&mut self, key: &str) -> Result<usize, StoreError> {
+    pub(crate) fn set_cardinality(&mut self, key: impl AsRef<[u8]>) -> Result<usize, StoreError> {
+        let key = key.as_ref();
         self.remove_if_expired(key);
 
         match self.storage.get(key) {
@@ -628,12 +670,14 @@ impl InMemoryStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn expiration(&self, key: &str) -> Option<Instant> {
-        self.storage.get(key).and_then(StoredValue::expires_at)
+    pub(crate) fn expiration(&self, key: impl AsRef<[u8]>) -> Option<Instant> {
+        self.storage
+            .get(key.as_ref())
+            .and_then(StoredValue::expires_at)
     }
 
     #[cfg(test)]
-    pub(crate) fn set_list(&mut self, key: String, values: Vec<String>) {
+    pub(crate) fn set_list(&mut self, key: Vec<u8>, values: Vec<Vec<u8>>) {
         let mut entry = StoredValue::new_list();
         entry
             .list_mut()
@@ -643,15 +687,18 @@ impl InMemoryStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn list_values(&self, key: &str) -> Result<Option<Vec<String>>, StoreError> {
+    pub(crate) fn list_values(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Option<Vec<Vec<u8>>>, StoreError> {
         self.storage
-            .get(key)
+            .get(key.as_ref())
             .map(|entry| entry.list().map(|values| values.iter().cloned().collect()))
             .transpose()
     }
 
     #[cfg(test)]
-    pub(crate) fn set_set(&mut self, key: String, members: Vec<String>) {
+    pub(crate) fn set_set(&mut self, key: Vec<u8>, members: Vec<Vec<u8>>) {
         let mut entry = StoredValue::new_set();
         entry
             .set_mut()
@@ -659,4 +706,18 @@ impl InMemoryStore {
             .extend(members);
         self.storage.insert(key, entry);
     }
+}
+
+fn parse_integer(value: &[u8]) -> Result<i64, StoreError> {
+    str::from_utf8(value)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .ok_or(StoreError::ValueIsNotInteger)
+}
+
+fn parse_float(value: &[u8]) -> Result<f64, StoreError> {
+    str::from_utf8(value)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .ok_or(StoreError::ValueIsNotFloat)
 }

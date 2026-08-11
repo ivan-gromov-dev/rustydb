@@ -26,15 +26,15 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
         }
 
         Command::Get { key } => match store.get(&key) {
-            Ok(Some(value)) => CommandOutput::Value(value.to_owned()),
+            Ok(Some(value)) => CommandOutput::Value(value.to_vec()),
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
         Command::MGet { keys } => {
-            let values: Result<Vec<Option<String>>, _> = keys
+            let values: Result<Vec<Option<Vec<u8>>>, _> = keys
                 .into_iter()
-                .map(|key| store.get(&key).map(|value| value.map(str::to_owned)))
+                .map(|key| store.get(&key).map(|value| value.map(<[u8]>::to_vec)))
                 .collect();
 
             match values {

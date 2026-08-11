@@ -7,8 +7,8 @@ fn parses_valid_commands_without_executing_them() {
     assert_eq!(
         parse_line("SET key value\n"),
         ParsedLine::Command(Command::Set {
-            key: "key".to_owned(),
-            value: "value".to_owned(),
+            key: "key".to_owned().into(),
+            value: "value".to_owned().into(),
         })
     );
 }

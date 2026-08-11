@@ -151,8 +151,8 @@ fn poisoned_database_lock_is_recovered() {
         execute_shared(
             &database,
             Command::Set {
-                key: "key".to_owned(),
-                value: "value".to_owned(),
+                key: "key".to_owned().into(),
+                value: "value".to_owned().into(),
             }
         ),
         CommandOutput::Ok
@@ -161,10 +161,10 @@ fn poisoned_database_lock_is_recovered() {
         execute_shared(
             &database,
             Command::Get {
-                key: "key".to_owned(),
+                key: "key".to_owned().into(),
             }
         ),
-        CommandOutput::Value("value".to_owned())
+        CommandOutput::Value("value".to_owned().into())
     );
 }
 

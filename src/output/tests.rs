@@ -12,7 +12,7 @@ fn renders_scalar_outputs() {
     assert_eq!(render(CommandOutput::Integer(-2)), "-2\n");
     assert_eq!(render(CommandOutput::Float(1.5)), "1.5\n");
     assert_eq!(
-        render(CommandOutput::Value("sample".to_owned())),
+        render(CommandOutput::Value("sample".to_owned().into())),
         "sample\n"
     );
     assert_eq!(render(CommandOutput::Nil), "(nil)\n");
@@ -24,20 +24,30 @@ fn renders_scalar_outputs() {
 }
 
 #[test]
+fn renders_binary_values_without_utf8_conversion() {
+    let mut bytes = Vec::new();
+    CommandOutput::Value(b"a\0\xff".to_vec())
+        .write_to(&mut bytes)
+        .unwrap();
+
+    assert_eq!(bytes, b"a\0\xff\n");
+}
+
+#[test]
 fn renders_optional_values_and_keys() {
     assert_eq!(
         render(CommandOutput::OptionalValues(vec![
-            Some("first".to_owned()),
+            Some("first".to_owned().into()),
             None,
-            Some("third".to_owned()),
+            Some("third".to_owned().into()),
         ])),
         "first\n(nil)\nthird\n"
     );
     assert_eq!(render(CommandOutput::KeyList(Vec::new())), "(nil)\n");
     assert_eq!(
         render(CommandOutput::KeyList(vec![
-            "first".to_owned(),
-            "second".to_owned()
+            "first".to_owned().into(),
+            "second".to_owned().into()
         ])),
         "first\nsecond\n"
     );

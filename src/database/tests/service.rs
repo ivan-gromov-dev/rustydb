@@ -8,16 +8,16 @@ fn preserves_state_between_commands() {
 
     assert_eq!(
         database.execute(Command::Set {
-            key: "key".to_owned(),
-            value: "value".to_owned(),
+            key: "key".to_owned().into(),
+            value: "value".to_owned().into(),
         }),
         CommandOutput::Ok
     );
     assert_eq!(
         database.execute(Command::Get {
-            key: "key".to_owned(),
+            key: "key".to_owned().into(),
         }),
-        CommandOutput::Value("value".to_owned())
+        CommandOutput::Value("value".to_owned().into())
     );
 }
 
@@ -27,14 +27,14 @@ fn propagates_wrong_type_errors() {
 
     assert_eq!(
         database.execute(Command::LPush {
-            key: "key".to_owned(),
-            value: "value".to_owned(),
+            key: "key".to_owned().into(),
+            value: "value".to_owned().into(),
         }),
         CommandOutput::Integer(1)
     );
     assert_eq!(
         database.execute(Command::Get {
-            key: "key".to_owned(),
+            key: "key".to_owned().into(),
         }),
         CommandOutput::Error("operation against a key holding the wrong kind of value".to_owned())
     );
@@ -46,13 +46,13 @@ fn instances_have_independent_state() {
     let mut second = Database::default();
 
     first.execute(Command::Set {
-        key: "key".to_owned(),
-        value: "value".to_owned(),
+        key: "key".to_owned().into(),
+        value: "value".to_owned().into(),
     });
 
     assert_eq!(
         second.execute(Command::Get {
-            key: "key".to_owned(),
+            key: "key".to_owned().into(),
         }),
         CommandOutput::Nil
     );

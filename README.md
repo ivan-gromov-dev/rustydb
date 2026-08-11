@@ -80,7 +80,7 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `MGET key [key ...]` | Read multiple values in request order | One value or `(nil)` per line |
 | `GETSET key value` | Replace a value and return the previous value | Previous value or `(nil)` |
 | `GETDEL key` | Delete a key and return its value | Previous value or `(nil)` |
-| `APPEND key value` | Append to a string, creating the key if necessary | New character length |
+| `APPEND key value` | Append to a string, creating the key if necessary | New byte length |
 | `INCR key` | Increment an integer by one | Updated integer |
 | `INCRBY key amount` | Increment an integer by `amount` | Updated integer |
 | `DECR key` | Decrement an integer by one | Updated integer |
@@ -94,9 +94,9 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 | `TTL key` | Read remaining lifetime in seconds | Remaining TTL, `-1`, or `-2` |
 | `PTTL key` | Read remaining lifetime in milliseconds | Remaining TTL, `-1`, or `-2` |
 | `PERSIST key` | Remove an expiration | `1` if removed, otherwise `0` |
-| `STRLEN key` | Count Unicode scalar values in a string | Character count |
-| `GETRANGE key start end` | Read an inclusive character range | String, possibly empty |
-| `SETRANGE key offset value` | Replace characters starting at an offset | New character length |
+| `STRLEN key` | Count bytes in a string | Byte count |
+| `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
+| `SETRANGE key offset value` | Replace bytes starting at an offset | New byte length |
 | `LPUSH key value` | Prepend a value to a list, creating it if necessary | New list length |
 | `RPUSH key value` | Append a value to a list, creating it if necessary | New list length |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
@@ -116,7 +116,9 @@ Command names are case-insensitive. Keys cannot contain whitespace. Commands acc
 
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
 
-String offsets and lengths are measured in Unicode scalar values, not UTF-8 bytes. Negative `GETRANGE` indexes count backward from the end. When `SETRANGE` starts beyond the current end, the gap is padded with null characters (`\0`).
+String offsets and lengths are measured in bytes. Negative `GETRANGE` indexes
+count backward from the end. When `SETRANGE` starts beyond the current end, the
+gap is padded with null bytes (`\0`).
 
 RustyDB stores string, list, and set values. `LPUSH` and `RPUSH` accept the remainder
 of the command line as one list element, so an element may contain spaces.
@@ -179,9 +181,10 @@ The layers have deliberately narrow responsibilities:
    shares one database between their sessions.
 
 Storage values use an internal enum so new data structures can be added without
-changing expiration metadata. Commands currently create string, list, and set values;
-operations reject incompatible value kinds without changing the value or its
-TTL.
+changing expiration metadata. Keys, string values, list elements, and set
+members are stored as bytes. Commands currently create string, list, and set
+values; operations reject incompatible value kinds without changing the value
+or its TTL.
 
 ## Development
 

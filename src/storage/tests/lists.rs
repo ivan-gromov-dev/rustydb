@@ -5,12 +5,12 @@ use std::time::{Duration, Instant};
 fn push_left_creates_a_list_and_prepends_values() {
     let mut database = Database::new();
 
-    assert_eq!(database.push_left("key", "one".to_owned()), Ok(1));
-    assert_eq!(database.push_left("key", "two".to_owned()), Ok(2));
+    assert_eq!(database.push_left("key", "one".to_owned().into()), Ok(1));
+    assert_eq!(database.push_left("key", "two".to_owned().into()), Ok(2));
 
     assert_eq!(
         database.list_values("key"),
-        Ok(Some(vec!["two".to_owned(), "one".to_owned()]))
+        Ok(Some(vec!["two".to_owned().into(), "one".to_owned().into()]))
     );
 }
 
@@ -18,12 +18,12 @@ fn push_left_creates_a_list_and_prepends_values() {
 fn push_right_creates_a_list_and_appends_values() {
     let mut database = Database::new();
 
-    assert_eq!(database.push_right("key", "one".to_owned()), Ok(1));
-    assert_eq!(database.push_right("key", "two".to_owned()), Ok(2));
+    assert_eq!(database.push_right("key", "one".to_owned().into()), Ok(1));
+    assert_eq!(database.push_right("key", "two".to_owned().into()), Ok(2));
 
     assert_eq!(
         database.list_values("key"),
-        Ok(Some(vec!["one".to_owned(), "two".to_owned()]))
+        Ok(Some(vec!["one".to_owned().into(), "two".to_owned().into()]))
     );
 }
 
@@ -31,16 +31,22 @@ fn push_right_creates_a_list_and_appends_values() {
 fn pushes_at_opposite_ends_preserve_list_order() {
     let mut database = Database::new();
 
-    database.push_right("key", "middle".to_owned()).unwrap();
-    database.push_left("key", "first".to_owned()).unwrap();
-    database.push_right("key", "last".to_owned()).unwrap();
+    database
+        .push_right("key", "middle".to_owned().into())
+        .unwrap();
+    database
+        .push_left("key", "first".to_owned().into())
+        .unwrap();
+    database
+        .push_right("key", "last".to_owned().into())
+        .unwrap();
 
     assert_eq!(
         database.list_values("key"),
         Ok(Some(vec![
-            "first".to_owned(),
-            "middle".to_owned(),
-            "last".to_owned(),
+            "first".to_owned().into(),
+            "middle".to_owned().into(),
+            "last".to_owned().into(),
         ]))
     );
 }
@@ -51,8 +57,8 @@ fn list_length_handles_existing_and_missing_lists() {
 
     assert_eq!(database.list_length("missing"), Ok(0));
 
-    database.push_right("key", "one".to_owned()).unwrap();
-    database.push_right("key", "two".to_owned()).unwrap();
+    database.push_right("key", "one".to_owned().into()).unwrap();
+    database.push_right("key", "two".to_owned().into()).unwrap();
 
     assert_eq!(database.list_length("key"), Ok(2));
 }
@@ -61,20 +67,20 @@ fn list_length_handles_existing_and_missing_lists() {
 fn list_commands_reject_strings_without_mutating_them() {
     let mut database = Database::new();
     let expires_at = Instant::now() + Duration::from_secs(60);
-    database.set("key".to_owned(), "value".to_owned());
+    database.set("key".to_owned().into(), "value".to_owned().into());
     assert!(database.expire_at("key", expires_at));
 
     assert_eq!(
-        database.push_left("key", "left".to_owned()),
+        database.push_left("key", "left".to_owned().into()),
         Err(StoreError::WrongType)
     );
     assert_eq!(
-        database.push_right("key", "right".to_owned()),
+        database.push_right("key", "right".to_owned().into()),
         Err(StoreError::WrongType)
     );
     assert_eq!(database.list_length("key"), Err(StoreError::WrongType));
 
-    assert_eq!(database.get("key"), Ok(Some("value")));
+    assert_eq!(database.get("key"), Ok(Some(b"value".as_slice())));
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 
@@ -82,24 +88,24 @@ fn list_commands_reject_strings_without_mutating_them() {
 fn pushing_to_an_existing_list_preserves_expiration() {
     let mut database = Database::new();
     let expires_at = Instant::now() + Duration::from_secs(60);
-    database.push_right("key", "one".to_owned()).unwrap();
+    database.push_right("key", "one".to_owned().into()).unwrap();
     assert!(database.expire_at("key", expires_at));
 
-    assert_eq!(database.push_left("key", "zero".to_owned()), Ok(2));
+    assert_eq!(database.push_left("key", "zero".to_owned().into()), Ok(2));
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 
 #[test]
 fn list_commands_treat_expired_keys_as_missing() {
     let mut database = Database::new();
-    database.push_right("key", "old".to_owned()).unwrap();
+    database.push_right("key", "old".to_owned().into()).unwrap();
     assert!(database.expire("key", 0));
 
     assert_eq!(database.list_length("key"), Ok(0));
-    assert_eq!(database.push_left("key", "new".to_owned()), Ok(1));
+    assert_eq!(database.push_left("key", "new".to_owned().into()), Ok(1));
     assert_eq!(
         database.list_values("key"),
-        Ok(Some(vec!["new".to_owned()]))
+        Ok(Some(vec!["new".to_owned().into()]))
     );
     assert_eq!(database.ttl("key"), -1);
 }
@@ -108,15 +114,25 @@ fn list_commands_treat_expired_keys_as_missing() {
 fn pop_left_and_right_remove_values_from_opposite_ends() {
     let mut database = Database::new();
     database.set_list(
-        "key".to_owned(),
-        vec!["first".to_owned(), "middle".to_owned(), "last".to_owned()],
+        "key".to_owned().into(),
+        vec![
+            "first".to_owned().into(),
+            "middle".to_owned().into(),
+            "last".to_owned().into(),
+        ],
     );
 
-    assert_eq!(database.pop_left("key"), Ok(Some("first".to_owned())));
-    assert_eq!(database.pop_right("key"), Ok(Some("last".to_owned())));
+    assert_eq!(
+        database.pop_left("key"),
+        Ok(Some("first".to_owned().into()))
+    );
+    assert_eq!(
+        database.pop_right("key"),
+        Ok(Some("last".to_owned().into()))
+    );
     assert_eq!(
         database.list_values("key"),
-        Ok(Some(vec!["middle".to_owned()]))
+        Ok(Some(vec!["middle".to_owned().into()]))
     );
 }
 
@@ -127,7 +143,7 @@ fn pop_returns_none_for_missing_and_expired_keys() {
     assert_eq!(database.pop_left("missing"), Ok(None));
     assert_eq!(database.pop_right("missing"), Ok(None));
 
-    database.set_list("expired".to_owned(), vec!["value".to_owned()]);
+    database.set_list("expired".to_owned().into(), vec!["value".to_owned().into()]);
     assert!(database.expire("expired", 0));
 
     assert_eq!(database.pop_left("expired"), Ok(None));
@@ -138,12 +154,12 @@ fn pop_returns_none_for_missing_and_expired_keys() {
 fn pop_rejects_strings_without_changing_value_or_expiration() {
     let mut database = Database::new();
     let expires_at = Instant::now() + Duration::from_secs(60);
-    database.set("key".to_owned(), "value".to_owned());
+    database.set("key".to_owned().into(), "value".to_owned().into());
     assert!(database.expire_at("key", expires_at));
 
     assert_eq!(database.pop_left("key"), Err(StoreError::WrongType));
     assert_eq!(database.pop_right("key"), Err(StoreError::WrongType));
-    assert_eq!(database.get("key"), Ok(Some("value")));
+    assert_eq!(database.get("key"), Ok(Some(b"value".as_slice())));
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 
@@ -152,22 +168,28 @@ fn pop_preserves_expiration_while_the_list_is_not_empty() {
     let mut database = Database::new();
     let expires_at = Instant::now() + Duration::from_secs(60);
     database.set_list(
-        "key".to_owned(),
-        vec!["first".to_owned(), "last".to_owned()],
+        "key".to_owned().into(),
+        vec!["first".to_owned().into(), "last".to_owned().into()],
     );
     assert!(database.expire_at("key", expires_at));
 
-    assert_eq!(database.pop_left("key"), Ok(Some("first".to_owned())));
+    assert_eq!(
+        database.pop_left("key"),
+        Ok(Some("first".to_owned().into()))
+    );
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 
 #[test]
 fn pop_removes_the_key_after_the_last_value() {
     let mut database = Database::new();
-    database.set_list("key".to_owned(), vec!["only".to_owned()]);
+    database.set_list("key".to_owned().into(), vec!["only".to_owned().into()]);
     assert!(database.expire("key", 60));
 
-    assert_eq!(database.pop_right("key"), Ok(Some("only".to_owned())));
+    assert_eq!(
+        database.pop_right("key"),
+        Ok(Some("only".to_owned().into()))
+    );
     assert!(!database.exists("key"));
     assert_eq!(database.ttl("key"), -2);
 }
@@ -175,12 +197,12 @@ fn pop_removes_the_key_after_the_last_value() {
 fn database_with_range_values() -> Database {
     let mut database = Database::new();
     database.set_list(
-        "key".to_owned(),
+        "key".to_owned().into(),
         vec![
-            "zero".to_owned(),
-            "one".to_owned(),
-            "two".to_owned(),
-            "three".to_owned(),
+            "zero".to_owned().into(),
+            "one".to_owned().into(),
+            "two".to_owned().into(),
+            "three".to_owned().into(),
         ],
     );
     database
@@ -192,7 +214,7 @@ fn list_range_uses_inclusive_indices_and_preserves_order() {
 
     assert_eq!(
         database.list_range("key", 1, 2),
-        Ok(vec!["one".to_owned(), "two".to_owned()])
+        Ok(vec!["one".to_owned().into(), "two".to_owned().into()])
     );
 }
 
@@ -202,15 +224,15 @@ fn list_range_supports_negative_and_out_of_bounds_indices() {
 
     assert_eq!(
         database.list_range("key", -2, -1),
-        Ok(vec!["two".to_owned(), "three".to_owned()])
+        Ok(vec!["two".to_owned().into(), "three".to_owned().into()])
     );
     assert_eq!(
         database.list_range("key", -100, 1),
-        Ok(vec!["zero".to_owned(), "one".to_owned()])
+        Ok(vec!["zero".to_owned().into(), "one".to_owned().into()])
     );
     assert_eq!(
         database.list_range("key", 2, 100),
-        Ok(vec!["two".to_owned(), "three".to_owned()])
+        Ok(vec!["two".to_owned().into(), "three".to_owned().into()])
     );
 }
 
@@ -233,7 +255,7 @@ fn list_range_returns_empty_for_missing_and_expired_keys() {
 
     assert_eq!(database.list_range("missing", 0, -1), Ok(Vec::new()));
 
-    database.set_list("expired".to_owned(), vec!["value".to_owned()]);
+    database.set_list("expired".to_owned().into(), vec!["value".to_owned().into()]);
     assert!(database.expire("expired", 0));
     assert_eq!(database.list_range("expired", 0, -1), Ok(Vec::new()));
 }
@@ -242,14 +264,14 @@ fn list_range_returns_empty_for_missing_and_expired_keys() {
 fn list_range_rejects_strings_without_changing_value_or_expiration() {
     let mut database = Database::new();
     let expires_at = Instant::now() + Duration::from_secs(60);
-    database.set("key".to_owned(), "value".to_owned());
+    database.set("key".to_owned().into(), "value".to_owned().into());
     assert!(database.expire_at("key", expires_at));
 
     assert_eq!(
         database.list_range("key", 0, -1),
         Err(StoreError::WrongType)
     );
-    assert_eq!(database.get("key"), Ok(Some("value")));
+    assert_eq!(database.get("key"), Ok(Some(b"value".as_slice())));
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
 

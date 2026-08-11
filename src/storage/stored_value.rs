@@ -9,32 +9,32 @@ pub(crate) struct StoredValue {
 }
 
 impl StoredValue {
-    pub(crate) fn new(value: String) -> Self {
+    pub(crate) fn new(value: Vec<u8>) -> Self {
         Self {
             value: Value::String(value),
             expires_at: None,
         }
     }
 
-    pub(crate) fn value(&self) -> Result<&str, StoreError> {
+    pub(crate) fn value(&self) -> Result<&[u8], StoreError> {
         match &self.value {
             Value::String(value) => Ok(value),
             Value::List(_) | Value::Set(_) => Err(StoreError::WrongType),
         }
     }
 
-    pub(crate) fn value_mut(&mut self) -> Result<&mut String, StoreError> {
+    pub(crate) fn value_mut(&mut self) -> Result<&mut Vec<u8>, StoreError> {
         match &mut self.value {
             Value::String(value) => Ok(value),
             Value::List(_) | Value::Set(_) => Err(StoreError::WrongType),
         }
     }
 
-    pub(crate) fn set_value(&mut self, value: String) {
+    pub(crate) fn set_value(&mut self, value: Vec<u8>) {
         self.value = Value::String(value);
     }
 
-    pub(crate) fn into_value(self) -> Result<String, StoreError> {
+    pub(crate) fn into_value(self) -> Result<Vec<u8>, StoreError> {
         match self.value {
             Value::String(value) => Ok(value),
             Value::List(_) | Value::Set(_) => Err(StoreError::WrongType),
@@ -70,14 +70,14 @@ impl StoredValue {
         }
     }
 
-    pub(crate) fn list(&self) -> Result<&VecDeque<String>, StoreError> {
+    pub(crate) fn list(&self) -> Result<&VecDeque<Vec<u8>>, StoreError> {
         match &self.value {
             Value::List(values) => Ok(values),
             Value::String(_) | Value::Set(_) => Err(StoreError::WrongType),
         }
     }
 
-    pub(crate) fn list_mut(&mut self) -> Result<&mut VecDeque<String>, StoreError> {
+    pub(crate) fn list_mut(&mut self) -> Result<&mut VecDeque<Vec<u8>>, StoreError> {
         match &mut self.value {
             Value::List(values) => Ok(values),
             Value::String(_) | Value::Set(_) => Err(StoreError::WrongType),
@@ -91,14 +91,14 @@ impl StoredValue {
         }
     }
 
-    pub(crate) fn set(&self) -> Result<&HashSet<String>, StoreError> {
+    pub(crate) fn set(&self) -> Result<&HashSet<Vec<u8>>, StoreError> {
         match &self.value {
             Value::Set(values) => Ok(values),
             Value::String(_) | Value::List(_) => Err(StoreError::WrongType),
         }
     }
 
-    pub(crate) fn set_mut(&mut self) -> Result<&mut HashSet<String>, StoreError> {
+    pub(crate) fn set_mut(&mut self) -> Result<&mut HashSet<Vec<u8>>, StoreError> {
         match &mut self.value {
             Value::Set(values) => Ok(values),
             Value::String(_) | Value::List(_) => Err(StoreError::WrongType),

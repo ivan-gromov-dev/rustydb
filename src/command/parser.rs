@@ -23,10 +23,15 @@ impl Command {
     }
 
     pub(crate) fn from_args(args: &[&str]) -> Result<Self, CommandError> {
+        let args: Vec<&[u8]> = args.iter().map(|argument| argument.as_bytes()).collect();
+        Self::from_bytes(&args)
+    }
+
+    pub(crate) fn from_bytes(args: &[&[u8]]) -> Result<Self, CommandError> {
         let Some(command) = args.first() else {
             return Err(CommandError::EmptyInput);
         };
-        let command = command.to_ascii_uppercase();
+        let command = String::from_utf8_lossy(command).to_ascii_uppercase();
 
         match command.as_str() {
             "SET" => {
@@ -217,7 +222,7 @@ fn split_with_tail(input: &str, head_len: usize) -> Vec<&str> {
     args
 }
 
-fn exact(args: &[&str], length: usize, usage: &'static str) -> Result<(), CommandError> {
+fn exact(args: &[&[u8]], length: usize, usage: &'static str) -> Result<(), CommandError> {
     if args.len() == length {
         Ok(())
     } else {
@@ -225,24 +230,24 @@ fn exact(args: &[&str], length: usize, usage: &'static str) -> Result<(), Comman
     }
 }
 
-fn no_args(args: &[&str], usage: &'static str, command: Command) -> Result<Command, CommandError> {
+fn no_args(args: &[&[u8]], usage: &'static str, command: Command) -> Result<Command, CommandError> {
     exact(args, 1, usage)?;
     Ok(command)
 }
 
-fn one(args: &[&str], usage: &'static str) -> Result<String, CommandError> {
+fn one(args: &[&[u8]], usage: &'static str) -> Result<Vec<u8>, CommandError> {
     exact(args, 2, usage)?;
     Ok(owned(args[1]))
 }
 
-fn many(args: &[&str], usage: &'static str) -> Result<Vec<String>, CommandError> {
+fn many(args: &[&[u8]], usage: &'static str) -> Result<Vec<Vec<u8>>, CommandError> {
     if args.len() < 2 {
         return Err(CommandError::InvalidArguments(usage));
     }
     Ok(args[1..].iter().map(|value| owned(value)).collect())
 }
 
-fn parse_mset(args: &[&str]) -> Result<Command, CommandError> {
+fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
     let usage = "MSET key value [key value ...]";
     if args.len() < 3 || args.len() % 2 == 0 {
         return Err(CommandError::InvalidArguments(usage));
@@ -255,28 +260,29 @@ fn parse_mset(args: &[&str]) -> Result<Command, CommandError> {
     Ok(Command::MSet { entries })
 }
 
-fn key_i64(args: &[&str], usage: &'static str) -> Result<(String, i64), CommandError> {
+fn key_i64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64), CommandError> {
     exact(args, 3, usage)?;
     Ok((owned(args[1]), parse_i64(args[2])?))
 }
 
-fn key_u64(args: &[&str], usage: &'static str) -> Result<(String, u64), CommandError> {
+fn key_u64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, u64), CommandError> {
     exact(args, 3, usage)?;
     Ok((owned(args[1]), parse_u64(args[2])?))
 }
 
-fn range_args(args: &[&str], usage: &'static str) -> Result<(String, i64, i64), CommandError> {
+fn range_args(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64, i64), CommandError> {
     exact(args, 4, usage)?;
     Ok((owned(args[1]), parse_i64(args[2])?, parse_i64(args[3])?))
 }
 
-fn parse_increment_by_float(args: &[&str]) -> Result<Command, CommandError> {
+fn parse_increment_by_float(args: &[&[u8]]) -> Result<Command, CommandError> {
     exact(args, 3, "INCRBYFLOAT key amount")?;
-    let amount = args[2]
+    let amount_text = String::from_utf8_lossy(args[2]);
+    let amount = amount_text
         .parse::<f64>()
-        .map_err(|_| CommandError::InvalidFloat(owned(args[2])))?;
+        .map_err(|_| CommandError::InvalidFloat(amount_text.to_string()))?;
     if !amount.is_finite() {
-        return Err(CommandError::InvalidFloat(owned(args[2])));
+        return Err(CommandError::InvalidFloat(amount_text.to_string()));
     }
     Ok(Command::IncrementByFloat {
         key: owned(args[1]),
@@ -284,24 +290,24 @@ fn parse_increment_by_float(args: &[&str]) -> Result<Command, CommandError> {
     })
 }
 
-fn parse_i64(value: &str) -> Result<i64, CommandError> {
-    value
-        .parse()
-        .map_err(|_| CommandError::InvalidInteger(owned(value)))
+fn parse_i64(value: &[u8]) -> Result<i64, CommandError> {
+    let text = String::from_utf8_lossy(value);
+    text.parse()
+        .map_err(|_| CommandError::InvalidInteger(text.to_string()))
 }
 
-fn parse_u64(value: &str) -> Result<u64, CommandError> {
-    value
-        .parse()
-        .map_err(|_| CommandError::InvalidInteger(owned(value)))
+fn parse_u64(value: &[u8]) -> Result<u64, CommandError> {
+    let text = String::from_utf8_lossy(value);
+    text.parse()
+        .map_err(|_| CommandError::InvalidInteger(text.to_string()))
 }
 
-fn parse_usize(value: &str) -> Result<usize, CommandError> {
-    value
-        .parse()
-        .map_err(|_| CommandError::InvalidInteger(owned(value)))
+fn parse_usize(value: &[u8]) -> Result<usize, CommandError> {
+    let text = String::from_utf8_lossy(value);
+    text.parse()
+        .map_err(|_| CommandError::InvalidInteger(text.to_string()))
 }
 
-fn owned(value: &str) -> String {
-    value.to_owned()
+fn owned(value: &[u8]) -> Vec<u8> {
+    value.to_vec()
 }
