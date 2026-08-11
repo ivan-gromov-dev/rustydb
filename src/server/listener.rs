@@ -1,4 +1,4 @@
-use std::io::{self, BufReader};
+use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::command::Command;
 use crate::database::Database;
-use crate::line_session::run_session;
 use crate::output::CommandOutput;
+use crate::resp_session::run_session;
 
 use super::shutdown::Shutdown;
 
@@ -107,10 +107,9 @@ fn join_all(workers: Vec<JoinHandle<()>>) {
 fn handle_client(mut stream: TcpStream, database: SharedDatabase) -> io::Result<()> {
     stream.set_nonblocking(false)?;
 
-    let reader_stream = stream.try_clone()?;
-    let mut reader = BufReader::new(reader_stream);
+    let mut reader = stream.try_clone()?;
 
-    run_session(&mut reader, &mut stream, None, move |command| {
+    run_session(&mut reader, &mut stream, move |command| {
         execute_shared(&database, command)
     })
 }

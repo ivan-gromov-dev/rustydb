@@ -3,7 +3,7 @@ use std::io::{self, Cursor, Read, Write};
 use crate::command::Command;
 use crate::output::CommandOutput;
 
-use super::super::session::run_session;
+use super::super::run_session;
 
 fn run(input: &[u8], execute: impl FnMut(Command) -> CommandOutput) -> Vec<u8> {
     let mut reader = Cursor::new(input);

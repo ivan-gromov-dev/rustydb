@@ -41,14 +41,15 @@ Or provide an explicit bind address:
 rustydb server 127.0.0.1:6380
 ```
 
-The server accepts one line-delimited command per line and shares one database
-between connected clients. Press Ctrl+C to stop accepting new connections and
-wait for active client sessions to finish cleanly.
+The server accepts RESP2 arrays of bulk strings and shares one database between
+connected clients. It supports fragmented requests, pipelining, and binary keys
+and values. Press Ctrl+C to stop accepting new connections and wait for active
+client sessions to finish cleanly.
 
 Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
-command executes atomically under the database lock. The protocol accepts
-UTF-8 text only; RESP and binary-safe values are planned for a later release.
+command executes atomically under the database lock. A malformed RESP frame
+closes only its client connection after a protocol error response.
 
 Example session:
 
@@ -247,8 +248,7 @@ succeeds only when all four jobs succeed.
 - RustyDB is experimental and does not yet provide production durability,
   security, availability, or compatibility guarantees.
 - No persistence, transactions, authentication, or transport encryption.
-- The TCP line protocol is experimental and is not binary-safe or compatible
-  with Redis clients.
+- RESP2 compatibility currently covers only the documented command subset.
 - Values and keys are held entirely in memory.
 - Expiration uses the process monotonic clock and does not survive restarts.
 
