@@ -7,6 +7,36 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-17
+
+### Added
+
+- A versioned, checksummed binary snapshot format for string, list, and set
+  values, binary keys and data, and absolute expiration timestamps.
+- The `SAVE` command for interactive and RESP2 clients.
+- Automatic loading from `rustydb.snapshot`, with `--snapshot path` for an
+  explicit location and `--save-on-shutdown` for clean CLI and server exits.
+- Round-trip, restart, expiration, corruption, failed-replacement, and server
+  shutdown coverage using isolated temporary paths.
+
+### Changed
+
+- Snapshot saves now write and synchronize a temporary file in the destination
+  directory before atomically replacing the last valid snapshot.
+- Snapshot loading recreates monotonic deadlines from wall-clock timestamps and
+  omits keys that expired while the process was stopped.
+- Corrupt, truncated, unsupported, oversized, and structurally invalid
+  snapshots fail startup with explicit errors without partially replacing
+  in-memory state.
+- Package metadata now reports version 0.6.0.
+
+### Known limitations
+
+- Durability is point-in-time only: acknowledged mutations after the latest
+  completed snapshot can be lost after a crash.
+- `SAVE` is synchronous and holds the shared database lock while writing, so
+  concurrent clients wait for it to finish.
+
 ## [0.5.0] - 2026-08-11
 
 ### Added
@@ -119,7 +149,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Djunichi/rustydb/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Djunichi/rustydb/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Djunichi/rustydb/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Djunichi/rustydb/compare/v0.2.0...v0.3.0

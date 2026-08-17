@@ -131,6 +131,7 @@ pub(crate) enum Command {
     Keys,
     Len,
     Clear,
+    Save,
     Help,
     Exit,
 }

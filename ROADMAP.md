@@ -18,29 +18,6 @@ experimental until the production-readiness work is complete.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.6` — Snapshots
-
-**Goal:** preserve state across clean restarts.
-
-### Work
-
-- Define a versioned snapshot format.
-- Add `SAVE` and optional save-on-shutdown behavior.
-- Save through a temporary file and atomic replacement.
-- Load a snapshot at startup.
-- Persist expiration as wall-clock timestamps and recreate runtime deadlines.
-- Report corrupt, truncated, and unsupported snapshots clearly.
-
-### Done when
-
-- Values, types, and unexpired TTLs survive a restart.
-- Keys that expire while stopped are absent after loading.
-- A failed save does not destroy the last valid snapshot.
-- Round-trip and corruption tests use temporary directories.
-
-**Learning focus:** serialization, filesystem durability, format versioning,
-recovery, and monotonic versus wall-clock time.
-
 ## `0.7` — Append-only file and recovery
 
 **Goal:** reduce potential data loss and explore write-ahead logging.

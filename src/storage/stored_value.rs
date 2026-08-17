@@ -44,6 +44,14 @@ impl StoredValue {
         self.expires_at
     }
 
+    pub(crate) fn typed_value(&self) -> &Value {
+        &self.value
+    }
+
+    pub(crate) fn from_parts(value: Value, expires_at: Option<Instant>) -> Self {
+        Self { value, expires_at }
+    }
+
     pub(crate) fn set_expires_at(&mut self, expires_at: Instant) {
         self.expires_at = Some(expires_at);
     }

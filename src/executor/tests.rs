@@ -4,6 +4,16 @@ use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
 #[test]
+fn save_reports_when_persistence_is_not_configured() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(Command::Save, &mut database),
+        Response::Error("snapshot path is not configured".to_owned())
+    );
+}
+
+#[test]
 fn execute_set_stores_value() {
     let mut database = Database::new();
 

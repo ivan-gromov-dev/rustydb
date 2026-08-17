@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn save_accepts_no_arguments() {
+    assert_eq!(Command::parse("SAVE"), Ok(Command::Save));
+    assert_eq!(
+        Command::parse("SAVE extra"),
+        Err(CommandError::InvalidArguments("SAVE"))
+    );
+}
+
+#[test]
 fn parses_exact_argument_vectors_without_retokenizing_values() {
     assert_eq!(
         Command::from_args(&["set", "key", "spaces\nnull\0byte"]),
@@ -480,6 +489,7 @@ fn parses_every_supported_command_form() {
         "KEYS",
         "LEN",
         "CLEAR",
+        "SAVE",
         "HELP",
         "EXIT",
         "QUIT",

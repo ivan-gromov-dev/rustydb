@@ -2,12 +2,12 @@
 
 RustyDB is a small in-memory key-value database written in Rust. It provides an
 interactive command-line interface and a concurrent TCP server inspired by a
-focused subset of Redis string, list, set, and expiration commands.
+focused subset of Redis string, list, set, expiration, and snapshot commands.
 
 RustyDB begins as a learning-oriented implementation of database internals and
 is intended to evolve toward a production-capable system through explicit,
-tested guarantees. Current releases remain experimental: data lives only in
-process memory and is lost when the application exits.
+tested guarantees. Current releases remain experimental, but versioned
+snapshots can now preserve data across clean restarts.
 
 ## Requirements
 
@@ -21,6 +21,24 @@ Run directly from a source checkout:
 ```console
 cargo run
 ```
+
+RustyDB loads `rustydb.snapshot` from the current directory when that file
+exists. A missing snapshot starts an empty database. Use an explicit path when
+separate instances should keep separate state:
+
+```console
+rustydb --snapshot data/example.snapshot
+```
+
+Run `SAVE` to write the current state, or request a save after a clean `EXIT` or
+end of input:
+
+```console
+rustydb --snapshot data/example.snapshot --save-on-shutdown
+```
+
+Corrupt, truncated, and unsupported snapshots stop startup with an error rather
+than silently starting with incomplete data.
 
 Or install the binary from a source checkout:
 
@@ -41,6 +59,13 @@ Or provide an explicit bind address:
 rustydb server 127.0.0.1:6380
 ```
 
+Server mode accepts the same persistence options after the optional bind
+address:
+
+```console
+rustydb server 127.0.0.1:6380 --snapshot data/server.snapshot --save-on-shutdown
+```
+
 The server accepts RESP2 arrays of bulk strings and shares one database between
 connected clients. It supports fragmented requests, pipelining, and binary keys
 and values. Press Ctrl+C to stop accepting new connections and wait for active
@@ -50,6 +75,9 @@ Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
 command executes atomically under the database lock. A malformed RESP frame
 closes only its client connection after a protocol error response.
+`SAVE` also runs under that lock, so other clients wait until the snapshot has
+been replaced. With `--save-on-shutdown`, the server first stops accepting
+connections, waits for active sessions, and then saves.
 
 ### Using `redis-cli`
 
@@ -156,10 +184,18 @@ bulk strings, null bulk strings, or arrays.
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
+| `SAVE` | Atomically write the configured snapshot | `OK` or an error |
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
+
+Snapshots store expirations as Unix-time millisecond timestamps. Loading turns
+future timestamps back into monotonic runtime deadlines and omits keys that
+expired while RustyDB was stopped. Snapshot records are ordered for
+deterministic output and include a format version and checksum. `SAVE` writes a
+temporary file in the destination directory, flushes it, and atomically
+replaces the previous snapshot only after the new file is complete.
 
 String offsets and lengths are measured in bytes. Negative `GETRANGE` indexes
 count backward from the end. When `SETRANGE` starts beyond the current end, the
@@ -208,10 +244,12 @@ src/
 ├── resp/                  RESP2 frames, codec, and command/output adapters
 ├── resp_session/          Buffered RESP2 request/response session loop
 ├── server/                Concurrent TCP listener and graceful shutdown
+├── snapshot.rs            Versioned snapshot codec and atomic file replacement
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
     ├── in_memory.rs       InMemoryStore and StoreError
     ├── indexing.rs        Range-index normalization
+    ├── snapshot.rs        Snapshot data conversion and TTL restoration
     ├── stored_value.rs    StoredValue and expiration metadata
     ├── value.rs           Typed value representation
     └── tests/              Tests grouped by keys, numbers, strings, lists, sets, TTL, and values
@@ -227,7 +265,9 @@ The layers have deliberately narrow responsibilities:
 6. `output` renders results to any `Write` implementation.
 7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
 8. `resp_session` coordinates buffered RESP2 request and response processing.
-9. `app` provides the interactive loop, while `server` accepts TCP clients and
+9. `snapshot` owns persistence encoding, validation, loading, and atomic file
+   replacement while `storage` converts runtime values and expirations.
+10. `app` provides the interactive loop, while `server` accepts TCP clients and
    shares one database between their sessions.
 
 Storage values use an internal enum so new data structures can be added without
@@ -275,9 +315,9 @@ python scripts/check_module_coverage.py coverage.json --threshold 70
 
 Coverage is aggregated separately for the logical modules `app`, `command`,
 `database`, `executor`, `line_protocol`, `line_session`, `output`, `resp`,
-`resp_session`, `server`, and `storage`. Every module must have more than 70%
-line coverage. Test sources and crate bootstrap files are excluded from the
-per-module calculation.
+`resp_session`, `server`, `snapshot`, and `storage`. Every module must have more
+than 70% line coverage. Test sources and crate bootstrap files are excluded
+from the per-module calculation.
 
 ## Roadmap
 
@@ -295,10 +335,13 @@ succeed.
 
 - RustyDB is experimental and does not yet provide production durability,
   security, availability, or compatibility guarantees.
-- No persistence, transactions, authentication, or transport encryption.
+- Persistence is snapshot-only: mutations after the latest successful `SAVE`
+  are lost after a crash unless save-on-shutdown completes.
+- No append-only log, transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
-- Values and keys are held entirely in memory.
-- Expiration uses the process monotonic clock and does not survive restarts.
+- Live values and keys are held entirely in memory between snapshots.
+- Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
+  set to 1,000,000 elements, and each binary field to 512 MiB.
 
 ## License
 

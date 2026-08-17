@@ -40,6 +40,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  KEYS\n",
     "  LEN\n",
     "  CLEAR\n",
+    "  SAVE\n",
     "  HELP\n",
     "  EXIT\n",
 );

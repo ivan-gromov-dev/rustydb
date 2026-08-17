@@ -1,9 +1,25 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use crate::command::Command;
+use crate::database::Database;
+use crate::output::CommandOutput;
+use crate::server::listener::run_server_on_listener_with_database;
 use crate::server::{Shutdown, run_server_on_listener};
+
+static NEXT_SNAPSHOT: AtomicU64 = AtomicU64::new(0);
+
+fn snapshot_path() -> PathBuf {
+    let sequence = NEXT_SNAPSHOT.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "rustydb-server-test-{}-{sequence}.snapshot",
+        std::process::id()
+    ))
+}
 
 fn start_server() -> (SocketAddr, Shutdown, JoinHandle<std::io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -57,4 +73,31 @@ fn shutdown_waits_for_an_active_client_to_finish() {
     assert_eq!(response, b"$5\r\nvalue\r\n+OK\r\n");
 
     assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn save_on_shutdown_persists_server_state() {
+    let snapshot = snapshot_path();
+    let mut database = Database::open(&snapshot).unwrap();
+    assert_eq!(
+        database.execute(Command::Set {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        }),
+        CommandOutput::Ok
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let shutdown = Shutdown::default();
+    shutdown.request();
+
+    run_server_on_listener_with_database(listener, shutdown, database, true).unwrap();
+
+    let mut restored = Database::open(&snapshot).unwrap();
+    assert_eq!(
+        restored.execute(Command::Get {
+            key: b"key".to_vec(),
+        }),
+        CommandOutput::Value(b"value".to_vec())
+    );
+    std::fs::remove_file(snapshot).unwrap();
 }

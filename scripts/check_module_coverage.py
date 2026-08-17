@@ -21,6 +21,7 @@ MODULES = (
     "resp",
     "resp_session",
     "server",
+    "snapshot",
     "storage",
 )
 

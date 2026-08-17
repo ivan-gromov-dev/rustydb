@@ -1,7 +1,9 @@
 mod listener;
 mod shutdown;
 
-pub use listener::{run_server, run_server_on_listener, run_server_until};
+pub use listener::{
+    run_server, run_server_on_listener, run_server_until, run_server_until_with_snapshot,
+};
 pub use shutdown::Shutdown;
 
 #[cfg(test)]
