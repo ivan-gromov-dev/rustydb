@@ -1,5 +1,6 @@
 use std::io;
 use std::net::{TcpListener, TcpStream};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -23,10 +24,31 @@ pub fn run_server_until(bind_address: &str, shutdown: Shutdown) -> io::Result<()
     run_server_on_listener(listener, shutdown)
 }
 
+pub fn run_server_until_with_snapshot(
+    bind_address: &str,
+    shutdown: Shutdown,
+    snapshot_path: impl AsRef<Path>,
+    save_on_shutdown: bool,
+) -> io::Result<()> {
+    let database = Database::open(snapshot_path).map_err(io::Error::other)?;
+    let listener = TcpListener::bind(bind_address)?;
+
+    run_server_on_listener_with_database(listener, shutdown, database, save_on_shutdown)
+}
+
 pub fn run_server_on_listener(listener: TcpListener, shutdown: Shutdown) -> io::Result<()> {
+    run_server_on_listener_with_database(listener, shutdown, Database::default(), false)
+}
+
+pub(crate) fn run_server_on_listener_with_database(
+    listener: TcpListener,
+    shutdown: Shutdown,
+    database: Database,
+    save_on_shutdown: bool,
+) -> io::Result<()> {
     listener.set_nonblocking(true)?;
 
-    let database = Arc::new(Mutex::new(Database::default()));
+    let database = Arc::new(Mutex::new(database));
     let mut workers = Vec::new();
 
     let result = loop {
@@ -48,6 +70,14 @@ pub fn run_server_on_listener(listener: TcpListener, shutdown: Shutdown) -> io::
 
     drop(listener);
     join_all(workers);
+
+    if result.is_ok() && save_on_shutdown {
+        let mut database = match database.lock() {
+            Ok(database) => database,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        database.save().map_err(io::Error::other)?;
+    }
 
     result
 }

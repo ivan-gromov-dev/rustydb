@@ -7,8 +7,8 @@ use std::str;
 use std::time::{Duration, Instant};
 
 pub(crate) struct InMemoryStore {
-    storage: HashMap<Vec<u8>, StoredValue>,
-    clock: Box<dyn Clock>,
+    pub(super) storage: HashMap<Vec<u8>, StoredValue>,
+    pub(super) clock: Box<dyn Clock>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -307,7 +307,7 @@ impl InMemoryStore {
         expired
     }
 
-    fn remove_expired(&mut self) {
+    pub(super) fn remove_expired(&mut self) {
         let now = self.clock.now();
         self.storage.retain(|_, entry| !entry.is_expired(now));
     }

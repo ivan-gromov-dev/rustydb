@@ -190,6 +190,7 @@ impl Command {
             "KEYS" => no_args(args, "KEYS", Self::Keys),
             "LEN" => no_args(args, "LEN", Self::Len),
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
+            "SAVE" => no_args(args, "SAVE", Self::Save),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),
             _ => Err(CommandError::UnknownCommand(command)),

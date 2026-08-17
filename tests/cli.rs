@@ -1,8 +1,38 @@
+use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+struct TestDirectory(PathBuf);
+
+impl TestDirectory {
+    fn new() -> Self {
+        let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "rustydb-cli-test-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+
+    fn snapshot(&self) -> PathBuf {
+        self.0.join("database.snapshot")
+    }
+}
+
+impl Drop for TestDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 fn run_cli(input: &str) -> Output {
-    run_cli_with_args(&[], input)
+    let directory = TestDirectory::new();
+    run_cli_with_snapshot(&directory.snapshot(), &[], input)
 }
 
 fn run_cli_with_args(arguments: &[&str], input: &str) -> Output {
@@ -24,6 +54,14 @@ fn run_cli_with_args(arguments: &[&str], input: &str) -> Output {
     child
         .wait_with_output()
         .expect("failed to wait for rustydb")
+}
+
+fn run_cli_with_snapshot(snapshot: &Path, arguments: &[&str], input: &str) -> Output {
+    let snapshot = snapshot.to_str().unwrap();
+    let mut all_arguments = Vec::with_capacity(arguments.len() + 2);
+    all_arguments.extend_from_slice(arguments);
+    all_arguments.extend_from_slice(&["--snapshot", snapshot]);
+    run_cli_with_args(&all_arguments, input)
 }
 
 #[test]
@@ -137,7 +175,11 @@ fn unknown_mode_reports_usage_and_returns_exit_code_two() {
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "Usage:\n  rustydb\n  rustydb server [bind-address]\n"
+        concat!(
+            "Usage:\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown]\n",
+        )
     );
 }
 
@@ -149,7 +191,11 @@ fn extra_server_arguments_report_usage_and_return_exit_code_two() {
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "Usage:\n  rustydb\n  rustydb server [bind-address]\n"
+        concat!(
+            "Usage:\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown]\n",
+        )
     );
 }
 
@@ -163,5 +209,85 @@ fn invalid_bind_address_returns_exit_code_one() {
         String::from_utf8(output.stderr)
             .unwrap()
             .starts_with("Error: ")
+    );
+}
+
+#[test]
+fn save_persists_values_types_and_ttl_across_restarts() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    let first = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        concat!(
+            "SET greeting hello\n",
+            "RPUSH tasks first\n",
+            "RPUSH tasks second\n",
+            "SADD tags zeta\n",
+            "SADD tags alpha\n",
+            "PEXPIRE greeting 600000\n",
+            "SAVE\n",
+            "EXIT\n",
+        ),
+    );
+
+    assert!(first.status.success());
+    assert!(snapshot.is_file());
+    assert!(
+        String::from_utf8(first.stdout)
+            .unwrap()
+            .contains("db> OK\ndb> Bye!\n")
+    );
+
+    let second = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        "GET greeting\nLRANGE tasks 0 -1\nSMEMBERS tags\nPTTL greeting\nEXIT\n",
+    );
+    let output = String::from_utf8(second.stdout).unwrap();
+
+    assert!(second.status.success());
+    assert_eq!(String::from_utf8(second.stderr).unwrap(), "");
+    assert!(output.contains("db> hello\n"));
+    assert!(output.contains("db> first\nsecond\n"));
+    assert!(output.contains("db> alpha\nzeta\n"));
+    let ttl = output
+        .lines()
+        .find_map(|line| line.strip_prefix("db> ")?.parse::<i64>().ok())
+        .unwrap();
+    assert!((1..=600_000).contains(&ttl));
+}
+
+#[test]
+fn save_on_shutdown_persists_without_save_command() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    let first = run_cli_with_snapshot(&snapshot, &["--save-on-shutdown"], "SET key value\nEXIT\n");
+
+    assert!(first.status.success());
+    assert!(snapshot.is_file());
+
+    let second = run_cli_with_snapshot(&snapshot, &[], "GET key\nEXIT\n");
+    assert!(second.status.success());
+    assert!(
+        String::from_utf8(second.stdout)
+            .unwrap()
+            .contains("db> value\n")
+    );
+}
+
+#[test]
+fn corrupt_snapshot_stops_startup_with_a_clear_error() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    fs::write(&snapshot, b"bad").unwrap();
+
+    let output = run_cli_with_snapshot(&snapshot, &[], "");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "Error: snapshot is truncated\n"
     );
 }

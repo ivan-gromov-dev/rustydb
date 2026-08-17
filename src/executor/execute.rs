@@ -1,8 +1,19 @@
 use crate::command::Command;
 use crate::output::CommandOutput;
+use crate::snapshot;
 use crate::storage::InMemoryStore;
+use std::path::Path;
 
+#[cfg(test)]
 pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOutput {
+    execute_with_snapshot(command, store, None)
+}
+
+pub(crate) fn execute_with_snapshot(
+    command: Command,
+    store: &mut InMemoryStore,
+    snapshot_path: Option<&Path>,
+) -> CommandOutput {
     match command {
         Command::Set { key, value } => {
             store.set(key, value);
@@ -201,6 +212,14 @@ pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOut
             store.clear();
             CommandOutput::Ok
         }
+
+        Command::Save => match snapshot_path {
+            Some(path) => match snapshot::save(path, store) {
+                Ok(()) => CommandOutput::Ok,
+                Err(error) => CommandOutput::Error(format!("snapshot save failed: {error}")),
+            },
+            None => CommandOutput::Error("snapshot path is not configured".to_owned()),
+        },
 
         Command::Help => CommandOutput::Help,
 

@@ -21,6 +21,10 @@ fn converts_bulk_string_arrays_to_typed_commands() {
             value: b"line one\r\nline two\0\xff".to_vec(),
         })
     );
+    assert_eq!(
+        command_from_frame(RespFrame::Array(vec![bulk(b"SAVE")])),
+        Ok(Command::Save)
+    );
 }
 
 #[test]
