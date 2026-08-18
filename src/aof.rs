@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::SystemTime;
 use std::{fmt, mem};
@@ -64,8 +64,9 @@ impl Aof {
     pub(crate) fn open(path: &Path) -> Result<(Self, Vec<Command>), AofError> {
         let mut file = OpenOptions::new()
             .read(true)
-            .append(true)
+            .write(true)
             .create(true)
+            .truncate(false)
             .open(path)?;
         let length = file.metadata()?.len();
         let commands = if length == 0 {
@@ -74,8 +75,15 @@ impl Aof {
             file.sync_all()?;
             Vec::new()
         } else {
-            read_commands(&mut file, SystemTime::now())?
+            file.seek(SeekFrom::Start(0))?;
+            let replay = read_commands(&mut file, SystemTime::now())?;
+            if replay.truncated_tail {
+                file.set_len(replay.valid_length)?;
+                file.sync_all()?;
+            }
+            replay.commands
         };
+        file.seek(SeekFrom::End(0))?;
         Ok((Self { file }, commands))
     }
 
@@ -91,7 +99,13 @@ impl Aof {
     }
 }
 
-fn read_commands(reader: &mut impl Read, now: SystemTime) -> Result<Vec<Command>, AofError> {
+struct Replay {
+    commands: Vec<Command>,
+    valid_length: u64,
+    truncated_tail: bool,
+}
+
+fn read_commands(reader: &mut (impl Read + Seek), now: SystemTime) -> Result<Replay, AofError> {
     let mut magic = [0; MAGIC.len()];
     read_exact(reader, &mut magic)?;
     if &magic != MAGIC {
@@ -104,20 +118,42 @@ fn read_commands(reader: &mut impl Read, now: SystemTime) -> Result<Vec<Command>
 
     let now_millis = unix_millis(now)?;
     let mut commands = Vec::new();
-    while let Some(length) = read_optional_u64(reader)? {
+    loop {
+        let record_start = reader.stream_position()?;
+        let Some(length) = read_record_length(reader)? else {
+            let end = reader.stream_position()?;
+            return Ok(Replay {
+                commands,
+                valid_length: record_start,
+                truncated_tail: end != record_start,
+            });
+        };
         let length = usize::try_from(length).map_err(|_| AofError::LimitExceeded)?;
         if length > MAX_RECORD_LENGTH {
             return Err(AofError::LimitExceeded);
         }
         let mut payload = vec![0; length];
-        read_exact(reader, &mut payload)?;
-        let expected = read_u64(reader)?;
+        if !read_record_part(reader, &mut payload)? {
+            return Ok(Replay {
+                commands,
+                valid_length: record_start,
+                truncated_tail: true,
+            });
+        }
+        let mut checksum_bytes = [0; size_of::<u64>()];
+        if !read_record_part(reader, &mut checksum_bytes)? {
+            return Ok(Replay {
+                commands,
+                valid_length: record_start,
+                truncated_tail: true,
+            });
+        }
+        let expected = u64::from_le_bytes(checksum_bytes);
         if checksum(&payload) != expected {
             return Err(AofError::ChecksumMismatch);
         }
         commands.push(decode_payload(&payload, now_millis)?);
     }
-    Ok(commands)
 }
 
 fn encode_payload(timestamp: u64, arguments: &[Vec<u8>]) -> Result<Vec<u8>, AofError> {
@@ -207,28 +243,31 @@ fn checksum(bytes: &[u8]) -> u64 {
     value
 }
 
-fn read_optional_u64(reader: &mut impl Read) -> Result<Option<u64>, AofError> {
+fn read_record_length(reader: &mut impl Read) -> Result<Option<u64>, AofError> {
     let mut bytes = [0; size_of::<u64>()];
     let mut read = 0;
     while read < bytes.len() {
         match reader.read(&mut bytes[read..])? {
             0 if read == 0 => return Ok(None),
-            0 => return Err(AofError::Truncated),
+            0 => return Ok(None),
             count => read += count,
         }
     }
     Ok(Some(u64::from_le_bytes(bytes)))
 }
 
+fn read_record_part(reader: &mut impl Read, bytes: &mut [u8]) -> Result<bool, AofError> {
+    match reader.read_exact(bytes) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(AofError::Io(error)),
+    }
+}
+
 fn read_u16(reader: &mut impl Read) -> Result<u16, AofError> {
     let mut bytes = [0; size_of::<u16>()];
     read_exact(reader, &mut bytes)?;
     Ok(u16::from_le_bytes(bytes))
-}
-fn read_u64(reader: &mut impl Read) -> Result<u64, AofError> {
-    let mut bytes = [0; size_of::<u64>()];
-    read_exact(reader, &mut bytes)?;
-    Ok(u64::from_le_bytes(bytes))
 }
 fn take_u64(bytes: &mut &[u8]) -> Result<u64, AofError> {
     if bytes.len() < size_of::<u64>() {
@@ -252,7 +291,27 @@ fn read_exact(reader: &mut impl Read, bytes: &mut [u8]) -> Result<(), AofError> 
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
+
+    fn record(timestamp: u64, arguments: &[Vec<u8>]) -> Vec<u8> {
+        let payload = encode_payload(timestamp, arguments).unwrap();
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        bytes.extend_from_slice(&checksum(&payload).to_le_bytes());
+        bytes
+    }
+
+    fn log(records: &[Vec<u8>]) -> Vec<u8> {
+        let mut bytes = MAGIC.to_vec();
+        bytes.extend_from_slice(&VERSION.to_le_bytes());
+        for record in records {
+            bytes.extend_from_slice(record);
+        }
+        bytes
+    }
 
     #[test]
     fn payload_round_trip_preserves_binary_arguments() {
@@ -284,5 +343,36 @@ mod tests {
                 milliseconds: 300
             }
         );
+    }
+
+    #[test]
+    fn every_partial_final_record_is_ignored_at_the_previous_boundary() {
+        let first = record(1_000, &[b"SET".to_vec(), b"one".to_vec(), b"1".to_vec()]);
+        let second = record(1_000, &[b"SET".to_vec(), b"two".to_vec(), b"2".to_vec()]);
+        let complete = log(&[first.clone(), second]);
+        let second_start = MAGIC.len() + size_of::<u16>() + first.len();
+
+        for cut in second_start + 1..complete.len() {
+            let mut cursor = Cursor::new(&complete[..cut]);
+            let replay = read_commands(&mut cursor, SystemTime::UNIX_EPOCH).unwrap();
+            assert!(replay.truncated_tail, "cut at byte {cut}");
+            assert_eq!(replay.valid_length, second_start as u64);
+            assert_eq!(replay.commands.len(), 1);
+        }
+    }
+
+    #[test]
+    fn checksum_corruption_is_not_treated_as_a_truncated_tail() {
+        let mut bytes = log(&[record(
+            1_000,
+            &[b"SET".to_vec(), b"key".to_vec(), b"value".to_vec()],
+        )]);
+        let last = bytes.len() - 1;
+        bytes[last] ^= 1;
+
+        assert!(matches!(
+            read_commands(&mut Cursor::new(bytes), SystemTime::UNIX_EPOCH),
+            Err(AofError::ChecksumMismatch)
+        ));
     }
 }

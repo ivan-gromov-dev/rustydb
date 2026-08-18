@@ -52,7 +52,9 @@ replays those records at startup without appending them again. Failed commands
 and read-only commands are not recorded. AOF records retain their execution
 time, so replay reduces `EXPIRE` and `PEXPIRE` lifetimes by the time elapsed
 while RustyDB was stopped. Snapshot options and `--aof` are currently mutually
-exclusive.
+exclusive. If a crash leaves the final AOF record incomplete, startup discards
+that tail at the previous valid record boundary and continues. A checksum
+mismatch or malformed complete record remains a startup error.
 
 Or install the binary from a source checkout:
 
@@ -352,8 +354,7 @@ succeed.
   security, availability, or compatibility guarantees.
 - Snapshot mode can lose mutations after the latest successful `SAVE` unless
   save-on-shutdown completes. AOF mode instead synchronizes each successful
-  mutation, but does not yet repair a truncated final record or support
-  compaction.
+  mutation, but does not yet support compaction.
 - No AOF compaction, transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
 - Live values and keys are held entirely in memory between snapshots.

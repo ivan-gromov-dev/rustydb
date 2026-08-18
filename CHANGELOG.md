@@ -18,6 +18,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - AOF mode synchronizes every successful mutation before acknowledging it and
   never records read-only, failed, or replayed commands.
+- Startup truncates an incomplete final AOF record back to the previous valid
+  boundary while continuing to reject checksum failures and malformed complete
+  records.
 
 ## [0.6.0] - 2026-08-17
 

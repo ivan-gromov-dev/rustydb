@@ -98,6 +98,37 @@ fn aof_replays_successful_mutations_without_recording_failed_ones() {
 }
 
 #[test]
+fn aof_discards_a_truncated_final_record_and_remains_appendable() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "SET lost value\nEXIT\n")
+            .status
+            .success()
+    );
+
+    let file = fs::OpenOptions::new().write(true).open(&aof).unwrap();
+    file.set_len(file.metadata().unwrap().len() - 3).unwrap();
+    drop(file);
+
+    let recovery = run_cli_with_aof(&aof, "GET lost\nSET kept value\nEXIT\n");
+    assert!(recovery.status.success(), "{recovery:?}");
+    assert!(
+        String::from_utf8(recovery.stdout)
+            .unwrap()
+            .contains("db> (nil)\n")
+    );
+
+    let replay = run_cli_with_aof(&aof, "GET kept\nEXIT\n");
+    assert!(replay.status.success());
+    assert!(
+        String::from_utf8(replay.stdout)
+            .unwrap()
+            .contains("db> value\n")
+    );
+}
+
+#[test]
 fn executes_a_script_and_exits_successfully() {
     let output = run_cli("SET greeting Привет мир\nGET greeting\nEXIT\n");
 
