@@ -1,10 +1,11 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::{fmt, mem};
+use std::{fmt, mem, process};
 
 use crate::command::Command;
+use crate::storage::{SnapshotEntry, SnapshotValue};
 
 const MAGIC: &[u8; 8] = b"RUSTAOF\0";
 const VERSION: u16 = 1;
@@ -24,6 +25,7 @@ pub(crate) enum AofError {
     InvalidCommand(String),
     LimitExceeded,
     TimeOutOfRange,
+    InvalidPath,
 }
 
 impl fmt::Display for AofError {
@@ -44,6 +46,7 @@ impl fmt::Display for AofError {
             Self::TimeOutOfRange => {
                 write!(formatter, "system time is outside the supported AOF range")
             }
+            Self::InvalidPath => write!(formatter, "AOF path must name a file"),
         }
     }
 }
@@ -57,7 +60,8 @@ impl From<io::Error> for AofError {
 }
 
 pub(crate) struct Aof {
-    file: File,
+    file: Option<File>,
+    path: PathBuf,
 }
 
 impl Aof {
@@ -84,19 +88,168 @@ impl Aof {
             replay.commands
         };
         file.seek(SeekFrom::End(0))?;
-        Ok((Self { file }, commands))
+        Ok((
+            Self {
+                file: Some(file),
+                path: path.to_owned(),
+            },
+            commands,
+        ))
     }
 
     pub(crate) fn append(&mut self, arguments: &[Vec<u8>]) -> Result<(), AofError> {
         let timestamp = unix_millis(SystemTime::now())?;
-        let payload = encode_payload(timestamp, arguments)?;
-        let length = u64::try_from(payload.len()).map_err(|_| AofError::LimitExceeded)?;
-        self.file.write_all(&length.to_le_bytes())?;
-        self.file.write_all(&payload)?;
-        self.file.write_all(&checksum(&payload).to_le_bytes())?;
-        self.file.sync_all()?;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| AofError::Io(io::Error::other("AOF file is temporarily unavailable")))?;
+        write_record(file, timestamp, arguments)?;
+        file.sync_all()?;
         Ok(())
     }
+
+    pub(crate) fn rewrite(
+        &mut self,
+        entries: &[SnapshotEntry],
+        wall_now: SystemTime,
+    ) -> Result<(), AofError> {
+        let timestamp = unix_millis(wall_now)?;
+        let (temporary_path, mut temporary) = create_temporary_file(&self.path)?;
+        let result = (|| {
+            temporary.write_all(MAGIC)?;
+            temporary.write_all(&VERSION.to_le_bytes())?;
+            for entry in entries {
+                write_entry(&mut temporary, entry, timestamp)?;
+            }
+            temporary.sync_all()?;
+            drop(temporary);
+
+            drop(self.file.take());
+            if let Err(error) = fs::rename(&temporary_path, &self.path) {
+                self.file = Some(open_existing(&self.path)?);
+                return Err(AofError::Io(error));
+            }
+            sync_parent(&self.path)?;
+            self.file = Some(open_existing(&self.path)?);
+            Ok(())
+        })();
+
+        if result.is_err() {
+            let _ = fs::remove_file(temporary_path);
+            if self.file.is_none() {
+                self.file = open_existing(&self.path).ok();
+            }
+        }
+        result
+    }
+}
+
+fn write_record(
+    writer: &mut impl Write,
+    timestamp: u64,
+    arguments: &[Vec<u8>],
+) -> Result<(), AofError> {
+    let payload = encode_payload(timestamp, arguments)?;
+    let length = u64::try_from(payload.len()).map_err(|_| AofError::LimitExceeded)?;
+    writer.write_all(&length.to_le_bytes())?;
+    writer.write_all(&payload)?;
+    writer.write_all(&checksum(&payload).to_le_bytes())?;
+    Ok(())
+}
+
+fn write_entry(
+    writer: &mut impl Write,
+    entry: &SnapshotEntry,
+    timestamp: u64,
+) -> Result<(), AofError> {
+    match &entry.value {
+        SnapshotValue::String(value) => write_record(
+            writer,
+            timestamp,
+            &[b"SET".to_vec(), entry.key.clone(), value.clone()],
+        )?,
+        SnapshotValue::List(values) => {
+            for value in values {
+                write_record(
+                    writer,
+                    timestamp,
+                    &[b"RPUSH".to_vec(), entry.key.clone(), value.clone()],
+                )?;
+            }
+        }
+        SnapshotValue::Set(values) => {
+            for value in values {
+                write_record(
+                    writer,
+                    timestamp,
+                    &[b"SADD".to_vec(), entry.key.clone(), value.clone()],
+                )?;
+            }
+        }
+    }
+
+    if let Some(expires_at) = entry.expires_at_unix_millis {
+        let remaining = expires_at.saturating_sub(timestamp);
+        write_record(
+            writer,
+            timestamp,
+            &[
+                b"PEXPIRE".to_vec(),
+                entry.key.clone(),
+                remaining.to_string().into_bytes(),
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+fn create_temporary_file(path: &Path) -> Result<(PathBuf, File), AofError> {
+    let Some(file_name) = path.file_name() else {
+        return Err(AofError::InvalidPath);
+    };
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    for attempt in 0..1_000_u16 {
+        let mut name = file_name.to_os_string();
+        name.push(format!(".rewrite.{}.{attempt}", process::id()));
+        let temporary_path = parent.join(name);
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => return Ok((temporary_path, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(AofError::Io(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate a temporary AOF file",
+    )))
+}
+
+fn open_existing(path: &Path) -> Result<File, AofError> {
+    let mut file = OpenOptions::new().read(true).write(true).open(path)?;
+    file.seek(SeekFrom::End(0))?;
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn sync_parent(path: &Path) -> Result<(), AofError> {
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> Result<(), AofError> {
+    Ok(())
 }
 
 struct Replay {

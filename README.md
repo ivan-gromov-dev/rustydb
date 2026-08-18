@@ -56,6 +56,12 @@ exclusive. If a crash leaves the final AOF record incomplete, startup discards
 that tail at the previous valid record boundary and continues. A checksum
 mismatch or malformed complete record remains a startup error.
 
+Run `AOFREWRITE` in AOF mode to compact command history into the minimum
+canonical sequence needed to reproduce the current strings, lists, sets, and
+expirations. The replacement is written and synchronized as a temporary file
+before it atomically replaces the previous AOF. Rewriting is synchronous and
+holds the shared database lock, so other clients wait until it completes.
+
 Or install the binary from a source checkout:
 
 ```console
@@ -201,6 +207,7 @@ bulk strings, null bulk strings, or arrays.
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
 | `SAVE` | Atomically write the configured snapshot | `OK` or an error |
+| `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
@@ -354,8 +361,8 @@ succeed.
   security, availability, or compatibility guarantees.
 - Snapshot mode can lose mutations after the latest successful `SAVE` unless
   save-on-shutdown completes. AOF mode instead synchronizes each successful
-  mutation, but does not yet support compaction.
-- No AOF compaction, transactions, authentication, or transport encryption.
+  mutation before acknowledging it.
+- No transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
 - Live values and keys are held entirely in memory between snapshots.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or

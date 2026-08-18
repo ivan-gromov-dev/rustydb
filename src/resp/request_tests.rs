@@ -25,6 +25,10 @@ fn converts_bulk_string_arrays_to_typed_commands() {
         command_from_frame(RespFrame::Array(vec![bulk(b"SAVE")])),
         Ok(Command::Save)
     );
+    assert_eq!(
+        command_from_frame(RespFrame::Array(vec![bulk(b"AOFREWRITE")])),
+        Ok(Command::AofRewrite)
+    );
 }
 
 #[test]

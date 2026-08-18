@@ -13,6 +13,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   startup replay for interactive and server operation.
 - Per-record execution timestamps so replay preserves expiration across
   downtime instead of extending TTLs.
+- The `AOFREWRITE` command for atomically compacting history while preserving
+  strings, lists, sets, deterministic ordering, and expiration deadlines.
 
 ### Changed
 

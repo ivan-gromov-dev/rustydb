@@ -129,6 +129,44 @@ fn aof_discards_a_truncated_final_record_and_remains_appendable() {
 }
 
 #[test]
+fn aof_rewrite_compacts_history_and_preserves_types_and_ttl() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        concat!(
+            "SET value old\n",
+            "SET value newer\n",
+            "SET value final\n",
+            "RPUSH list first\n",
+            "RPUSH list second\n",
+            "SADD set zeta\n",
+            "SADD set alpha\n",
+            "PEXPIRE value 60000\n",
+            "EXIT\n",
+        ),
+    );
+    assert!(first.status.success());
+    let length_before = fs::metadata(&aof).unwrap().len();
+
+    let rewrite = run_cli_with_aof(&aof, "AOFREWRITE\nSET appended yes\nEXIT\n");
+    assert!(rewrite.status.success(), "{rewrite:?}");
+    assert!(fs::metadata(&aof).unwrap().len() < length_before);
+
+    let replay = run_cli_with_aof(
+        &aof,
+        "GET value\nLRANGE list 0 -1\nSMEMBERS set\nPTTL value\nGET appended\nEXIT\n",
+    );
+    assert!(replay.status.success(), "{replay:?}");
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> final\n"));
+    assert!(stdout.contains("db> first\nsecond\n"));
+    assert!(stdout.contains("db> alpha\nzeta\n"));
+    assert!(!stdout.contains("db> -2\n"));
+    assert!(stdout.contains("db> yes\n"));
+}
+
+#[test]
 fn executes_a_script_and_exits_successfully() {
     let output = run_cli("SET greeting Привет мир\nGET greeting\nEXIT\n");
 

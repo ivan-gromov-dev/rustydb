@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use crate::aof::{Aof, AofError};
 use crate::command::Command;
@@ -15,6 +16,9 @@ pub(crate) struct Database {
 
 impl Database {
     pub(crate) fn execute(&mut self, command: Command) -> CommandOutput {
+        if command == Command::AofRewrite {
+            return self.rewrite_aof();
+        }
         let aof_arguments = command.aof_arguments();
         let output = execute_with_snapshot(command, &mut self.store, self.snapshot_path.as_deref());
         if !output.is_error()
@@ -24,6 +28,21 @@ impl Database {
             return CommandOutput::Error(format!("AOF append failed: {error}"));
         }
         output
+    }
+
+    fn rewrite_aof(&mut self) -> CommandOutput {
+        let Some(aof) = &mut self.aof else {
+            return CommandOutput::Error("AOF is not configured".to_owned());
+        };
+        let wall_now = SystemTime::now();
+        let entries = match self.store.snapshot_entries(wall_now) {
+            Ok(entries) => entries,
+            Err(error) => return CommandOutput::Error(format!("AOF rewrite failed: {error}")),
+        };
+        match aof.rewrite(&entries, wall_now) {
+            Ok(()) => CommandOutput::Ok,
+            Err(error) => CommandOutput::Error(format!("AOF rewrite failed: {error}")),
+        }
     }
 
     pub(crate) fn open(snapshot_path: impl AsRef<Path>) -> Result<Self, SnapshotError> {

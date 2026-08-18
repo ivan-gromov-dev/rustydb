@@ -132,6 +132,7 @@ pub(crate) enum Command {
     Len,
     Clear,
     Save,
+    AofRewrite,
     Help,
     Exit,
 }
@@ -213,6 +214,7 @@ impl Command {
             | Self::Keys
             | Self::Len
             | Self::Save
+            | Self::AofRewrite
             | Self::Help
             | Self::Exit => return None,
         };
