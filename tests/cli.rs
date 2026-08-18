@@ -162,8 +162,51 @@ fn aof_rewrite_compacts_history_and_preserves_types_and_ttl() {
     assert!(stdout.contains("db> final\n"));
     assert!(stdout.contains("db> first\nsecond\n"));
     assert!(stdout.contains("db> alpha\nzeta\n"));
-    assert!(!stdout.contains("db> -2\n"));
+    let ttl = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("db> "))
+        .find_map(|value| value.parse::<i64>().ok())
+        .unwrap();
+    assert!((1..=60_000).contains(&ttl));
     assert!(stdout.contains("db> yes\n"));
+}
+
+#[test]
+fn aof_rewrite_of_empty_state_leaves_only_the_header() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let rewrite = run_cli_with_aof(&aof, "SET key value\nCLEAR\nAOFREWRITE\nEXIT\n");
+    assert!(rewrite.status.success(), "{rewrite:?}");
+    assert_eq!(fs::metadata(&aof).unwrap().len(), 10);
+
+    let replay = run_cli_with_aof(&aof, "LEN\nEXIT\n");
+    assert!(replay.status.success());
+    assert!(
+        String::from_utf8(replay.stdout)
+            .unwrap()
+            .contains("db> 0\n")
+    );
+}
+
+#[test]
+fn corrupt_complete_aof_record_stops_startup() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "SET key value\nEXIT\n")
+            .status
+            .success()
+    );
+    let mut bytes = fs::read(&aof).unwrap();
+    bytes[18] ^= 1;
+    fs::write(&aof, bytes).unwrap();
+
+    let output = run_cli_with_aof(&aof, "");
+    assert!(!output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "Error: AOF record checksum does not match\n"
+    );
 }
 
 #[test]

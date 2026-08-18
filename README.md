@@ -2,12 +2,13 @@
 
 RustyDB is a small in-memory key-value database written in Rust. It provides an
 interactive command-line interface and a concurrent TCP server inspired by a
-focused subset of Redis string, list, set, expiration, and snapshot commands.
+focused subset of Redis string, list, set, and expiration operations, with
+snapshot and append-only persistence.
 
 RustyDB begins as a learning-oriented implementation of database internals and
 is intended to evolve toward a production-capable system through explicit,
-tested guarantees. Current releases remain experimental, but versioned
-snapshots can now preserve data across clean restarts.
+tested guarantees. Current releases remain experimental, with snapshot and
+append-only persistence available as separate operating modes.
 
 ## Requirements
 
@@ -88,6 +89,13 @@ address:
 rustydb server 127.0.0.1:6380 --snapshot data/server.snapshot --save-on-shutdown
 ```
 
+Use AOF persistence instead by passing `--aof` (snapshot flags cannot be mixed
+with it):
+
+```console
+rustydb server 127.0.0.1:6380 --aof data/server.aof
+```
+
 The server accepts RESP2 arrays of bulk strings and shares one database between
 connected clients. It supports fragmented requests, pipelining, and binary keys
 and values. Press Ctrl+C to stop accepting new connections and wait for active
@@ -97,9 +105,10 @@ Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
 command executes atomically under the database lock. A malformed RESP frame
 closes only its client connection after a protocol error response.
-`SAVE` also runs under that lock, so other clients wait until the snapshot has
-been replaced. With `--save-on-shutdown`, the server first stops accepting
-connections, waits for active sessions, and then saves.
+`SAVE` and `AOFREWRITE` also run under that lock, so other clients wait until
+the configured persistence operation completes. With `--save-on-shutdown`, the
+server first stops accepting connections, waits for active sessions, and then
+saves its snapshot.
 
 ### Using `redis-cli`
 
@@ -364,9 +373,10 @@ succeed.
   mutation before acknowledging it.
 - No transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
-- Live values and keys are held entirely in memory between snapshots.
+- Live values and keys are held entirely in memory while the process runs.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
   set to 1,000,000 elements, and each binary field to 512 MiB.
+- AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
 
 ## License
 

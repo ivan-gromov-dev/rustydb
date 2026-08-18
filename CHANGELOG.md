@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-18
+
 ### Added
 
 - An opt-in `--aof path` mode with binary-safe, checksummed mutation records and
@@ -23,6 +25,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Startup truncates an incomplete final AOF record back to the previous valid
   boundary while continuing to reject checksum failures and malformed complete
   records.
+- Package metadata now reports version 0.7.0.
+
+### Known limitations
+
+- Snapshot and AOF modes are mutually exclusive.
+- AOF synchronization and `AOFREWRITE` are synchronous; rewrite holds the
+  shared database lock, and the per-command `fsync` policy favors durability
+  over write throughput.
 
 ## [0.6.0] - 2026-08-17
 
@@ -166,7 +176,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Djunichi/rustydb/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Djunichi/rustydb/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Djunichi/rustydb/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Djunichi/rustydb/compare/v0.3.0...v0.4.0

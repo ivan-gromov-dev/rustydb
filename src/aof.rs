@@ -450,10 +450,14 @@ mod tests {
 
     fn record(timestamp: u64, arguments: &[Vec<u8>]) -> Vec<u8> {
         let payload = encode_payload(timestamp, arguments).unwrap();
+        raw_record(&payload)
+    }
+
+    fn raw_record(payload: &[u8]) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&payload);
-        bytes.extend_from_slice(&checksum(&payload).to_le_bytes());
+        bytes.extend_from_slice(payload);
+        bytes.extend_from_slice(&checksum(payload).to_le_bytes());
         bytes
     }
 
@@ -526,6 +530,49 @@ mod tests {
         assert!(matches!(
             read_commands(&mut Cursor::new(bytes), SystemTime::UNIX_EPOCH),
             Err(AofError::ChecksumMismatch)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_and_truncated_headers() {
+        let mut invalid_magic = log(&[]);
+        invalid_magic[0] ^= 1;
+        assert!(matches!(
+            read_commands(&mut Cursor::new(invalid_magic), SystemTime::UNIX_EPOCH),
+            Err(AofError::InvalidMagic)
+        ));
+
+        let mut unsupported = log(&[]);
+        unsupported[MAGIC.len()..MAGIC.len() + size_of::<u16>()]
+            .copy_from_slice(&2_u16.to_le_bytes());
+        assert!(matches!(
+            read_commands(&mut Cursor::new(unsupported), SystemTime::UNIX_EPOCH),
+            Err(AofError::UnsupportedVersion(2))
+        ));
+
+        assert!(matches!(
+            read_commands(
+                &mut Cursor::new(&MAGIC[..MAGIC.len() - 1]),
+                SystemTime::UNIX_EPOCH
+            ),
+            Err(AofError::Truncated)
+        ));
+    }
+
+    #[test]
+    fn rejects_complete_malformed_and_unknown_command_records() {
+        let mut payload = 1_000_u64.to_le_bytes().to_vec();
+        payload.extend_from_slice(&0_u64.to_le_bytes());
+        let malformed = log(&[raw_record(&payload)]);
+        assert!(matches!(
+            read_commands(&mut Cursor::new(malformed), SystemTime::UNIX_EPOCH),
+            Err(AofError::LimitExceeded)
+        ));
+
+        let unknown = log(&[record(1_000, &[b"UNKNOWN".to_vec()])]);
+        assert!(matches!(
+            read_commands(&mut Cursor::new(unknown), SystemTime::UNIX_EPOCH),
+            Err(AofError::InvalidCommand(_))
         ));
     }
 }

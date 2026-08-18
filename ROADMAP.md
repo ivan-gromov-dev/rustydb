@@ -18,28 +18,6 @@ experimental until the production-readiness work is complete.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.7` — Append-only file and recovery
-
-**Goal:** reduce potential data loss and explore write-ahead logging.
-
-### Work
-
-- Append successful mutations to an AOF and replay it at startup.
-- Define and document an `fsync` policy.
-- Recover safely from a truncated final record.
-- Add AOF rewrite/compaction.
-- Never record failed commands as successful mutations.
-
-### Done when
-
-- Restart reproduces acknowledged state according to the durability policy.
-- Replay does not append replayed commands back into the log.
-- Crash and truncation tests cover record boundaries and malformed records.
-- Compaction preserves values and TTLs while removing redundant history.
-
-**Learning focus:** write-ahead logs, durability trade-offs, crash recovery, and
-log compaction.
-
 ## `0.8` — Expiration and memory management
 
 **Goal:** reclaim inaccessible data and control memory growth.
