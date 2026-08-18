@@ -40,6 +40,20 @@ rustydb --snapshot data/example.snapshot --save-on-shutdown
 Corrupt, truncated, and unsupported snapshots stop startup with an error rather
 than silently starting with incomplete data.
 
+Alternatively, enable the append-only file with an explicit path:
+
+```console
+rustydb --aof data/example.aof
+```
+
+Every successfully executed mutating command is appended as a binary-safe,
+checksummed record and synchronized before its result is acknowledged. RustyDB
+replays those records at startup without appending them again. Failed commands
+and read-only commands are not recorded. AOF records retain their execution
+time, so replay reduces `EXPIRE` and `PEXPIRE` lifetimes by the time elapsed
+while RustyDB was stopped. Snapshot options and `--aof` are currently mutually
+exclusive.
+
 Or install the binary from a source checkout:
 
 ```console
@@ -228,6 +242,7 @@ removes the key. Set commands reject strings and lists without mutation.
 ```text
 src/
 ├── app.rs                 Interactive application loop
+├── aof.rs                 Append-only record codec, writer, and replay
 ├── app/tests.rs           End-to-end CLI-loop tests
 ├── command/
 │   ├── parser.rs          Text and argument-vector command parser
@@ -265,8 +280,8 @@ The layers have deliberately narrow responsibilities:
 6. `output` renders results to any `Write` implementation.
 7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
 8. `resp_session` coordinates buffered RESP2 request and response processing.
-9. `snapshot` owns persistence encoding, validation, loading, and atomic file
-   replacement while `storage` converts runtime values and expirations.
+9. `snapshot` owns point-in-time persistence, while `aof` owns mutation records
+   and replay; `storage` converts runtime values and expirations.
 10. `app` provides the interactive loop, while `server` accepts TCP clients and
    shares one database between their sessions.
 
@@ -313,7 +328,7 @@ cargo llvm-cov --workspace --all-features --json --output-path coverage.json
 python scripts/check_module_coverage.py coverage.json --threshold 70
 ```
 
-Coverage is aggregated separately for the logical modules `app`, `command`,
+Coverage is aggregated separately for the logical modules `aof`, `app`, `command`,
 `database`, `executor`, `line_protocol`, `line_session`, `output`, `resp`,
 `resp_session`, `server`, `snapshot`, and `storage`. Every module must have more
 than 70% line coverage. Test sources and crate bootstrap files are excluded
@@ -335,9 +350,11 @@ succeed.
 
 - RustyDB is experimental and does not yet provide production durability,
   security, availability, or compatibility guarantees.
-- Persistence is snapshot-only: mutations after the latest successful `SAVE`
-  are lost after a crash unless save-on-shutdown completes.
-- No append-only log, transactions, authentication, or transport encryption.
+- Snapshot mode can lose mutations after the latest successful `SAVE` unless
+  save-on-shutdown completes. AOF mode instead synchronizes each successful
+  mutation, but does not yet repair a truncated final record or support
+  compaction.
+- No AOF compaction, transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
 - Live values and keys are held entirely in memory between snapshots.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or

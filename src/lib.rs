@@ -1,3 +1,4 @@
+mod aof;
 mod app;
 mod command;
 mod database;
@@ -11,9 +12,10 @@ mod server;
 mod snapshot;
 mod storage;
 
-pub use app::{run, run_with_snapshot};
+pub use app::{run, run_with_aof, run_with_snapshot};
 pub use server::{
-    Shutdown, run_server, run_server_on_listener, run_server_until, run_server_until_with_snapshot,
+    Shutdown, run_server, run_server_on_listener, run_server_until, run_server_until_with_aof,
+    run_server_until_with_snapshot,
 };
 
 pub const DEFAULT_SNAPSHOT_PATH: &str = "rustydb.snapshot";

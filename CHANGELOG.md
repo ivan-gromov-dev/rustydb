@@ -7,6 +7,18 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- An opt-in `--aof path` mode with binary-safe, checksummed mutation records and
+  startup replay for interactive and server operation.
+- Per-record execution timestamps so replay preserves expiration across
+  downtime instead of extending TTLs.
+
+### Changed
+
+- AOF mode synchronizes every successful mutation before acknowledging it and
+  never records read-only, failed, or replayed commands.
+
 ## [0.6.0] - 2026-08-17
 
 ### Added

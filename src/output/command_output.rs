@@ -60,6 +60,10 @@ pub(crate) enum CommandOutput {
 }
 
 impl CommandOutput {
+    pub(crate) fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
+
     pub(crate) fn write_to(&self, writer: &mut impl Write) -> io::Result<()> {
         match self {
             Self::Ok => writeln!(writer, "OK"),
