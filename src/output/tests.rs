@@ -96,6 +96,8 @@ fn help_lists_every_supported_command() {
         "KEYS",
         "LEN",
         "CLEAR",
+        "SAVE",
+        "AOFREWRITE",
         "HELP",
         "EXIT",
     ] {

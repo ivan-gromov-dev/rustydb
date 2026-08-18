@@ -14,6 +14,15 @@ fn save_reports_when_persistence_is_not_configured() {
 }
 
 #[test]
+fn aof_rewrite_reports_when_persistence_is_not_configured() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(Command::AofRewrite, &mut database),
+        Response::Error("AOF is not configured".to_owned())
+    );
+}
+
+#[test]
 fn execute_set_stores_value() {
     let mut database = Database::new();
 

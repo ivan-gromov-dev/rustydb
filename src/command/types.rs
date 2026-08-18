@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Command {
     Set {
         key: Vec<u8>,
@@ -132,8 +132,102 @@ pub(crate) enum Command {
     Len,
     Clear,
     Save,
+    AofRewrite,
     Help,
     Exit,
+}
+
+impl Command {
+    pub(crate) fn aof_arguments(&self) -> Option<Vec<Vec<u8>>> {
+        let number = |value: i64| value.to_string().into_bytes();
+        let unsigned = |value: u64| value.to_string().into_bytes();
+        let offset = |value: usize| value.to_string().into_bytes();
+        let mut arguments = match self {
+            Self::Set { key, value } => vec![b"SET".to_vec(), key.clone(), value.clone()],
+            Self::MSet { entries } => {
+                let mut values = vec![b"MSET".to_vec()];
+                for (key, value) in entries {
+                    values.push(key.clone());
+                    values.push(value.clone());
+                }
+                values
+            }
+            Self::SetNx { key, value } => vec![b"SETNX".to_vec(), key.clone(), value.clone()],
+            Self::GetSet { key, value } => vec![b"GETSET".to_vec(), key.clone(), value.clone()],
+            Self::GetDel { key } => vec![b"GETDEL".to_vec(), key.clone()],
+            Self::Append { key, append_value } => {
+                vec![b"APPEND".to_vec(), key.clone(), append_value.clone()]
+            }
+            Self::Increment { key } => vec![b"INCR".to_vec(), key.clone()],
+            Self::IncrementBy { key, amount } => {
+                vec![b"INCRBY".to_vec(), key.clone(), number(*amount)]
+            }
+            Self::Decrement { key } => vec![b"DECR".to_vec(), key.clone()],
+            Self::DecrementBy { key, amount } => {
+                vec![b"DECRBY".to_vec(), key.clone(), number(*amount)]
+            }
+            Self::IncrementByFloat { key, amount } => vec![
+                b"INCRBYFLOAT".to_vec(),
+                key.clone(),
+                amount.to_string().into_bytes(),
+            ],
+            Self::Delete { keys } => with_keys(b"DEL", keys),
+            Self::Rename { old_key, new_key } => {
+                vec![b"RENAME".to_vec(), old_key.clone(), new_key.clone()]
+            }
+            Self::Expire { key, seconds } => {
+                vec![b"EXPIRE".to_vec(), key.clone(), unsigned(*seconds)]
+            }
+            Self::PExpire { key, milliseconds } => {
+                vec![b"PEXPIRE".to_vec(), key.clone(), unsigned(*milliseconds)]
+            }
+            Self::Persist { key } => vec![b"PERSIST".to_vec(), key.clone()],
+            Self::SetRange {
+                key,
+                offset: at,
+                value,
+            } => vec![
+                b"SETRANGE".to_vec(),
+                key.clone(),
+                offset(*at),
+                value.clone(),
+            ],
+            Self::LPush { key, value } => vec![b"LPUSH".to_vec(), key.clone(), value.clone()],
+            Self::RPush { key, value } => vec![b"RPUSH".to_vec(), key.clone(), value.clone()],
+            Self::LPop { key } => vec![b"LPOP".to_vec(), key.clone()],
+            Self::RPop { key } => vec![b"RPOP".to_vec(), key.clone()],
+            Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
+            Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
+            Self::Clear => vec![b"CLEAR".to_vec()],
+            Self::Get { .. }
+            | Self::MGet { .. }
+            | Self::Exists { .. }
+            | Self::Ttl { .. }
+            | Self::PTtl { .. }
+            | Self::StrLen { .. }
+            | Self::GetRange { .. }
+            | Self::LLen { .. }
+            | Self::LRange { .. }
+            | Self::SIsMember { .. }
+            | Self::SMembers { .. }
+            | Self::SCard { .. }
+            | Self::Keys
+            | Self::Len
+            | Self::Save
+            | Self::AofRewrite
+            | Self::Help
+            | Self::Exit => return None,
+        };
+        arguments.shrink_to_fit();
+        Some(arguments)
+    }
+}
+
+fn with_keys(name: &[u8], keys: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut arguments = Vec::with_capacity(keys.len() + 1);
+    arguments.push(name.to_vec());
+    arguments.extend(keys.iter().cloned());
+    arguments
 }
 
 #[derive(Debug, PartialEq, Eq)]

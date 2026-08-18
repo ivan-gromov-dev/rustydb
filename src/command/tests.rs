@@ -10,6 +10,15 @@ fn save_accepts_no_arguments() {
 }
 
 #[test]
+fn aof_rewrite_accepts_no_arguments() {
+    assert_eq!(Command::parse("AOFREWRITE"), Ok(Command::AofRewrite));
+    assert_eq!(
+        Command::parse("AOFREWRITE extra"),
+        Err(CommandError::InvalidArguments("AOFREWRITE"))
+    );
+}
+
+#[test]
 fn parses_exact_argument_vectors_without_retokenizing_values() {
     assert_eq!(
         Command::from_args(&["set", "key", "spaces\nnull\0byte"]),
@@ -490,6 +499,7 @@ fn parses_every_supported_command_form() {
         "LEN",
         "CLEAR",
         "SAVE",
+        "AOFREWRITE",
         "HELP",
         "EXIT",
         "QUIT",

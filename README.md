@@ -2,12 +2,13 @@
 
 RustyDB is a small in-memory key-value database written in Rust. It provides an
 interactive command-line interface and a concurrent TCP server inspired by a
-focused subset of Redis string, list, set, expiration, and snapshot commands.
+focused subset of Redis string, list, set, and expiration operations, with
+snapshot and append-only persistence.
 
 RustyDB begins as a learning-oriented implementation of database internals and
 is intended to evolve toward a production-capable system through explicit,
-tested guarantees. Current releases remain experimental, but versioned
-snapshots can now preserve data across clean restarts.
+tested guarantees. Current releases remain experimental, with snapshot and
+append-only persistence available as separate operating modes.
 
 ## Requirements
 
@@ -40,6 +41,28 @@ rustydb --snapshot data/example.snapshot --save-on-shutdown
 Corrupt, truncated, and unsupported snapshots stop startup with an error rather
 than silently starting with incomplete data.
 
+Alternatively, enable the append-only file with an explicit path:
+
+```console
+rustydb --aof data/example.aof
+```
+
+Every successfully executed mutating command is appended as a binary-safe,
+checksummed record and synchronized before its result is acknowledged. RustyDB
+replays those records at startup without appending them again. Failed commands
+and read-only commands are not recorded. AOF records retain their execution
+time, so replay reduces `EXPIRE` and `PEXPIRE` lifetimes by the time elapsed
+while RustyDB was stopped. Snapshot options and `--aof` are currently mutually
+exclusive. If a crash leaves the final AOF record incomplete, startup discards
+that tail at the previous valid record boundary and continues. A checksum
+mismatch or malformed complete record remains a startup error.
+
+Run `AOFREWRITE` in AOF mode to compact command history into the minimum
+canonical sequence needed to reproduce the current strings, lists, sets, and
+expirations. The replacement is written and synchronized as a temporary file
+before it atomically replaces the previous AOF. Rewriting is synchronous and
+holds the shared database lock, so other clients wait until it completes.
+
 Or install the binary from a source checkout:
 
 ```console
@@ -66,6 +89,13 @@ address:
 rustydb server 127.0.0.1:6380 --snapshot data/server.snapshot --save-on-shutdown
 ```
 
+Use AOF persistence instead by passing `--aof` (snapshot flags cannot be mixed
+with it):
+
+```console
+rustydb server 127.0.0.1:6380 --aof data/server.aof
+```
+
 The server accepts RESP2 arrays of bulk strings and shares one database between
 connected clients. It supports fragmented requests, pipelining, and binary keys
 and values. Press Ctrl+C to stop accepting new connections and wait for active
@@ -75,9 +105,10 @@ Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
 command executes atomically under the database lock. A malformed RESP frame
 closes only its client connection after a protocol error response.
-`SAVE` also runs under that lock, so other clients wait until the snapshot has
-been replaced. With `--save-on-shutdown`, the server first stops accepting
-connections, waits for active sessions, and then saves.
+`SAVE` and `AOFREWRITE` also run under that lock, so other clients wait until
+the configured persistence operation completes. With `--save-on-shutdown`, the
+server first stops accepting connections, waits for active sessions, and then
+saves its snapshot.
 
 ### Using `redis-cli`
 
@@ -185,6 +216,7 @@ bulk strings, null bulk strings, or arrays.
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
 | `SAVE` | Atomically write the configured snapshot | `OK` or an error |
+| `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
@@ -228,6 +260,7 @@ removes the key. Set commands reject strings and lists without mutation.
 ```text
 src/
 ├── app.rs                 Interactive application loop
+├── aof.rs                 Append-only record codec, writer, and replay
 ├── app/tests.rs           End-to-end CLI-loop tests
 ├── command/
 │   ├── parser.rs          Text and argument-vector command parser
@@ -265,8 +298,8 @@ The layers have deliberately narrow responsibilities:
 6. `output` renders results to any `Write` implementation.
 7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
 8. `resp_session` coordinates buffered RESP2 request and response processing.
-9. `snapshot` owns persistence encoding, validation, loading, and atomic file
-   replacement while `storage` converts runtime values and expirations.
+9. `snapshot` owns point-in-time persistence, while `aof` owns mutation records
+   and replay; `storage` converts runtime values and expirations.
 10. `app` provides the interactive loop, while `server` accepts TCP clients and
    shares one database between their sessions.
 
@@ -313,7 +346,7 @@ cargo llvm-cov --workspace --all-features --json --output-path coverage.json
 python scripts/check_module_coverage.py coverage.json --threshold 70
 ```
 
-Coverage is aggregated separately for the logical modules `app`, `command`,
+Coverage is aggregated separately for the logical modules `aof`, `app`, `command`,
 `database`, `executor`, `line_protocol`, `line_session`, `output`, `resp`,
 `resp_session`, `server`, `snapshot`, and `storage`. Every module must have more
 than 70% line coverage. Test sources and crate bootstrap files are excluded
@@ -335,13 +368,15 @@ succeed.
 
 - RustyDB is experimental and does not yet provide production durability,
   security, availability, or compatibility guarantees.
-- Persistence is snapshot-only: mutations after the latest successful `SAVE`
-  are lost after a crash unless save-on-shutdown completes.
-- No append-only log, transactions, authentication, or transport encryption.
+- Snapshot mode can lose mutations after the latest successful `SAVE` unless
+  save-on-shutdown completes. AOF mode instead synchronizes each successful
+  mutation before acknowledging it.
+- No transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
-- Live values and keys are held entirely in memory between snapshots.
+- Live values and keys are held entirely in memory while the process runs.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
   set to 1,000,000 elements, and each binary field to 512 MiB.
+- AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
 
 ## License
 

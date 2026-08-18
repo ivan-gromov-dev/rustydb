@@ -20,6 +20,13 @@ pub fn run_with_snapshot(
     run_with_database(stdin.lock(), stdout.lock(), database, save_on_shutdown)
 }
 
+pub fn run_with_aof(aof_path: impl AsRef<Path>) -> io::Result<()> {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let database = Database::open_aof(aof_path).map_err(io::Error::other)?;
+    run_with_database(stdin.lock(), stdout.lock(), database, false)
+}
+
 #[cfg(test)]
 fn run_with(reader: impl BufRead, writer: impl Write) -> io::Result<()> {
     run_with_database(reader, writer, Database::default(), false)

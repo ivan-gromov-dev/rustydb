@@ -36,6 +36,16 @@ pub fn run_server_until_with_snapshot(
     run_server_on_listener_with_database(listener, shutdown, database, save_on_shutdown)
 }
 
+pub fn run_server_until_with_aof(
+    bind_address: &str,
+    shutdown: Shutdown,
+    aof_path: impl AsRef<Path>,
+) -> io::Result<()> {
+    let database = Database::open_aof(aof_path).map_err(io::Error::other)?;
+    let listener = TcpListener::bind(bind_address)?;
+    run_server_on_listener_with_database(listener, shutdown, database, false)
+}
+
 pub fn run_server_on_listener(listener: TcpListener, shutdown: Shutdown) -> io::Result<()> {
     run_server_on_listener_with_database(listener, shutdown, Database::default(), false)
 }

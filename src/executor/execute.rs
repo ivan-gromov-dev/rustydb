@@ -221,6 +221,8 @@ pub(crate) fn execute_with_snapshot(
             None => CommandOutput::Error("snapshot path is not configured".to_owned()),
         },
 
+        Command::AofRewrite => CommandOutput::Error("AOF is not configured".to_owned()),
+
         Command::Help => CommandOutput::Help,
 
         Command::Exit => CommandOutput::Exit,

@@ -22,6 +22,10 @@ impl TestDirectory {
     fn snapshot(&self) -> PathBuf {
         self.0.join("database.snapshot")
     }
+
+    fn aof(&self) -> PathBuf {
+        self.0.join("database.aof")
+    }
 }
 
 impl Drop for TestDirectory {
@@ -62,6 +66,147 @@ fn run_cli_with_snapshot(snapshot: &Path, arguments: &[&str], input: &str) -> Ou
     all_arguments.extend_from_slice(arguments);
     all_arguments.extend_from_slice(&["--snapshot", snapshot]);
     run_cli_with_args(&all_arguments, input)
+}
+
+fn run_cli_with_aof(aof: &Path, input: &str) -> Output {
+    run_cli_with_args(&["--aof", aof.to_str().unwrap()], input)
+}
+
+#[test]
+fn aof_replays_successful_mutations_without_recording_failed_ones() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+
+    let first = run_cli_with_aof(
+        &aof,
+        "SET greeting hello\nLPUSH items first\nAPPEND items invalid\nEXIT\n",
+    );
+    assert!(first.status.success());
+    assert!(
+        String::from_utf8(first.stdout)
+            .unwrap()
+            .contains("ERR operation against a key holding the wrong kind of value")
+    );
+    let length_before_replay = fs::metadata(&aof).unwrap().len();
+
+    let second = run_cli_with_aof(&aof, "GET greeting\nLRANGE items 0 -1\nEXIT\n");
+    assert!(second.status.success());
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> hello\n"));
+    assert!(stdout.contains("db> first\n"));
+    assert_eq!(fs::metadata(&aof).unwrap().len(), length_before_replay);
+}
+
+#[test]
+fn aof_discards_a_truncated_final_record_and_remains_appendable() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "SET lost value\nEXIT\n")
+            .status
+            .success()
+    );
+
+    let file = fs::OpenOptions::new().write(true).open(&aof).unwrap();
+    file.set_len(file.metadata().unwrap().len() - 3).unwrap();
+    drop(file);
+
+    let recovery = run_cli_with_aof(&aof, "GET lost\nSET kept value\nEXIT\n");
+    assert!(recovery.status.success(), "{recovery:?}");
+    assert!(
+        String::from_utf8(recovery.stdout)
+            .unwrap()
+            .contains("db> (nil)\n")
+    );
+
+    let replay = run_cli_with_aof(&aof, "GET kept\nEXIT\n");
+    assert!(replay.status.success());
+    assert!(
+        String::from_utf8(replay.stdout)
+            .unwrap()
+            .contains("db> value\n")
+    );
+}
+
+#[test]
+fn aof_rewrite_compacts_history_and_preserves_types_and_ttl() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        concat!(
+            "SET value old\n",
+            "SET value newer\n",
+            "SET value final\n",
+            "RPUSH list first\n",
+            "RPUSH list second\n",
+            "SADD set zeta\n",
+            "SADD set alpha\n",
+            "PEXPIRE value 60000\n",
+            "EXIT\n",
+        ),
+    );
+    assert!(first.status.success());
+    let length_before = fs::metadata(&aof).unwrap().len();
+
+    let rewrite = run_cli_with_aof(&aof, "AOFREWRITE\nSET appended yes\nEXIT\n");
+    assert!(rewrite.status.success(), "{rewrite:?}");
+    assert!(fs::metadata(&aof).unwrap().len() < length_before);
+
+    let replay = run_cli_with_aof(
+        &aof,
+        "GET value\nLRANGE list 0 -1\nSMEMBERS set\nPTTL value\nGET appended\nEXIT\n",
+    );
+    assert!(replay.status.success(), "{replay:?}");
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> final\n"));
+    assert!(stdout.contains("db> first\nsecond\n"));
+    assert!(stdout.contains("db> alpha\nzeta\n"));
+    let ttl = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("db> "))
+        .find_map(|value| value.parse::<i64>().ok())
+        .unwrap();
+    assert!((1..=60_000).contains(&ttl));
+    assert!(stdout.contains("db> yes\n"));
+}
+
+#[test]
+fn aof_rewrite_of_empty_state_leaves_only_the_header() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let rewrite = run_cli_with_aof(&aof, "SET key value\nCLEAR\nAOFREWRITE\nEXIT\n");
+    assert!(rewrite.status.success(), "{rewrite:?}");
+    assert_eq!(fs::metadata(&aof).unwrap().len(), 10);
+
+    let replay = run_cli_with_aof(&aof, "LEN\nEXIT\n");
+    assert!(replay.status.success());
+    assert!(
+        String::from_utf8(replay.stdout)
+            .unwrap()
+            .contains("db> 0\n")
+    );
+}
+
+#[test]
+fn corrupt_complete_aof_record_stops_startup() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "SET key value\nEXIT\n")
+            .status
+            .success()
+    );
+    let mut bytes = fs::read(&aof).unwrap();
+    bytes[18] ^= 1;
+    fs::write(&aof, bytes).unwrap();
+
+    let output = run_cli_with_aof(&aof, "");
+    assert!(!output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "Error: AOF record checksum does not match\n"
+    );
 }
 
 #[test]
@@ -177,8 +322,8 @@ fn unknown_mode_reports_usage_and_returns_exit_code_two() {
         String::from_utf8(output.stderr).unwrap(),
         concat!(
             "Usage:\n",
-            "  rustydb [--snapshot path] [--save-on-shutdown]\n",
-            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown]\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path]\n",
         )
     );
 }
@@ -193,8 +338,8 @@ fn extra_server_arguments_report_usage_and_return_exit_code_two() {
         String::from_utf8(output.stderr).unwrap(),
         concat!(
             "Usage:\n",
-            "  rustydb [--snapshot path] [--save-on-shutdown]\n",
-            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown]\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path]\n",
         )
     );
 }
