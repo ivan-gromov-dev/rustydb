@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 pub(crate) struct InMemoryStore {
     pub(super) storage: HashMap<Vec<u8>, StoredValue>,
     pub(super) expirations: BinaryHeap<Reverse<(Instant, Vec<u8>)>>,
+    max_keys: Option<usize>,
+    evicted_keys: u64,
+    pending_evictions: Vec<Vec<u8>>,
     pub(super) clock: Box<dyn Clock>,
 }
 
@@ -53,18 +56,32 @@ impl fmt::Display for StoreError {
 
 impl InMemoryStore {
     pub(crate) fn new() -> Self {
-        Self::with_clock(Box::new(SystemClock))
+        Self::with_max_keys(None)
     }
 
+    pub(crate) fn with_max_keys(max_keys: Option<usize>) -> Self {
+        Self::with_clock_and_max_keys(Box::new(SystemClock), max_keys)
+    }
+
+    #[cfg(test)]
     pub(crate) fn with_clock(clock: Box<dyn Clock>) -> Self {
+        Self::with_clock_and_max_keys(clock, None)
+    }
+
+    pub(crate) fn with_clock_and_max_keys(clock: Box<dyn Clock>, max_keys: Option<usize>) -> Self {
         Self {
             storage: HashMap::new(),
             expirations: BinaryHeap::new(),
+            max_keys,
+            evicted_keys: 0,
+            pending_evictions: Vec::new(),
             clock,
         }
     }
 
     pub(crate) fn set(&mut self, key: Vec<u8>, value: Vec<u8>) {
+        self.remove_if_expired(&key);
+        self.ensure_capacity_for(&key);
         self.storage.insert(key, StoredValue::new(value));
     }
 
@@ -135,6 +152,7 @@ impl InMemoryStore {
     ) -> Result<usize, StoreError> {
         let key = key.as_ref();
         self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
 
         let stored_value = self
             .storage
@@ -169,6 +187,7 @@ impl InMemoryStore {
             }
 
             None => {
+                self.ensure_capacity_for(&key);
                 self.storage
                     .insert(key, StoredValue::new(incremented.to_string().into_bytes()));
             }
@@ -200,6 +219,7 @@ impl InMemoryStore {
             }
 
             None => {
+                self.ensure_capacity_for(&key);
                 self.storage
                     .insert(key, StoredValue::new(decremented.to_string().into_bytes()));
             }
@@ -237,6 +257,7 @@ impl InMemoryStore {
             }
 
             None => {
+                self.ensure_capacity_for(&key);
                 self.storage
                     .insert(key, StoredValue::new(result.to_string().into_bytes()));
             }
@@ -247,6 +268,11 @@ impl InMemoryStore {
 
     pub(crate) fn set_if_absent(&mut self, key: Vec<u8>, value: Vec<u8>) -> bool {
         self.remove_if_expired(&key);
+
+        if self.storage.contains_key(&key) {
+            return false;
+        }
+        self.ensure_capacity_for(&key);
 
         match self.storage.entry(key) {
             HashMapEntry::Vacant(entry) => {
@@ -268,6 +294,8 @@ impl InMemoryStore {
         if let Some(entry) = self.storage.get(&key) {
             entry.value()?;
         }
+
+        self.ensure_capacity_for(&key);
 
         self.storage
             .insert(key, StoredValue::new(value))
@@ -350,6 +378,54 @@ impl InMemoryStore {
         }
 
         removed
+    }
+
+    pub(crate) fn enforce_key_limit(&mut self) {
+        let Some(max_keys) = self.max_keys else {
+            return;
+        };
+
+        while self.storage.len() > max_keys {
+            self.evict_one();
+        }
+    }
+
+    fn ensure_capacity_for(&mut self, key: &[u8]) {
+        let Some(max_keys) = self.max_keys else {
+            return;
+        };
+        if !self.storage.contains_key(key) && self.storage.len() >= max_keys {
+            self.evict_one();
+        }
+    }
+
+    fn evict_one(&mut self) {
+        let now = self.clock.now();
+        let expired = self
+            .storage
+            .iter()
+            .filter(|(_, entry)| entry.is_expired(now))
+            .map(|(key, _)| key)
+            .min()
+            .cloned();
+        if let Some(key) = expired {
+            self.storage.remove(&key);
+            return;
+        }
+
+        if let Some(key) = self.storage.keys().min().cloned() {
+            self.storage.remove(&key);
+            self.evicted_keys = self.evicted_keys.saturating_add(1);
+            self.pending_evictions.push(key);
+        }
+    }
+
+    pub(crate) fn take_evicted_keys(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.pending_evictions)
+    }
+
+    pub(crate) fn contains_stored_key(&self, key: &[u8]) -> bool {
+        self.storage.contains_key(key)
     }
 
     pub(crate) fn expire(&mut self, key: impl AsRef<[u8]>, seconds: u64) -> bool {
@@ -463,6 +539,7 @@ impl InMemoryStore {
         value: Vec<u8>,
     ) -> Result<usize, StoreError> {
         self.remove_if_expired(&key);
+        self.ensure_capacity_for(&key);
 
         let entry = self
             .storage
@@ -503,6 +580,7 @@ impl InMemoryStore {
     ) -> Result<usize, StoreError> {
         let key = key.as_ref();
         self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
 
         let list = self
             .storage
@@ -521,6 +599,7 @@ impl InMemoryStore {
     ) -> Result<usize, StoreError> {
         let key = key.as_ref();
         self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
 
         let list = self
             .storage
@@ -634,6 +713,7 @@ impl InMemoryStore {
     ) -> Result<bool, StoreError> {
         let key = key.as_ref();
         self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
 
         self.storage
             .entry(key.to_vec())
@@ -745,6 +825,11 @@ impl InMemoryStore {
             .expect("a new set entry should expose its set")
             .extend(members);
         self.storage.insert(key, entry);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn evicted_keys(&self) -> u64 {
+        self.evicted_keys
     }
 }
 

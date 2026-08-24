@@ -27,6 +27,71 @@ fn set_overwrites_value() {
 }
 
 #[test]
+fn key_limit_evicts_lexicographically_smallest_existing_key() {
+    let mut database = Database::with_max_keys(Some(2));
+    database.set(b"beta".to_vec(), b"2".to_vec());
+    database.set(b"alpha".to_vec(), b"1".to_vec());
+
+    database.set(b"gamma".to_vec(), b"3".to_vec());
+
+    assert!(!database.storage.contains_key(b"alpha".as_slice()));
+    assert!(database.storage.contains_key(b"beta".as_slice()));
+    assert!(database.storage.contains_key(b"gamma".as_slice()));
+    assert_eq!(database.evicted_keys(), 1);
+}
+
+#[test]
+fn overwriting_existing_key_does_not_trigger_eviction() {
+    let mut database = Database::with_max_keys(Some(2));
+    database.set(b"alpha".to_vec(), b"old".to_vec());
+    database.set(b"beta".to_vec(), b"2".to_vec());
+
+    database.set(b"alpha".to_vec(), b"new".to_vec());
+
+    assert_eq!(database.get(b"alpha"), Ok(Some(b"new".as_slice())));
+    assert!(database.storage.contains_key(b"beta".as_slice()));
+    assert_eq!(database.evicted_keys(), 0);
+}
+
+#[test]
+fn key_limit_reclaims_expired_key_before_evicting_live_key() {
+    let mut database = Database::with_max_keys(Some(2));
+    database.set(b"alpha".to_vec(), b"live".to_vec());
+    database.set(b"zeta".to_vec(), b"expired".to_vec());
+    assert!(database.expire(b"zeta", 0));
+
+    database.set(b"beta".to_vec(), b"new".to_vec());
+
+    assert!(database.storage.contains_key(b"alpha".as_slice()));
+    assert!(database.storage.contains_key(b"beta".as_slice()));
+    assert!(!database.storage.contains_key(b"zeta".as_slice()));
+    assert_eq!(database.evicted_keys(), 0);
+}
+
+#[test]
+fn every_key_creating_operation_obeys_the_limit() {
+    let mut database = Database::with_max_keys(Some(1));
+
+    assert_eq!(database.append(b"append", b"value".to_vec()), Ok(5));
+    assert_eq!(database.increment(b"counter".to_vec()), Ok(1));
+    assert_eq!(
+        database.set_range(b"range".to_vec(), 0, b"x".to_vec()),
+        Ok(1)
+    );
+    assert_eq!(database.push_left(b"list", b"item".to_vec()), Ok(1));
+    assert_eq!(database.set_add(b"set", b"member".to_vec()), Ok(true));
+    assert!(database.set_if_absent(b"setnx".to_vec(), b"value".to_vec()));
+    assert_eq!(
+        database.get_and_set(b"getset".to_vec(), b"value".to_vec()),
+        Ok(None)
+    );
+
+    assert_eq!(database.storage.len(), 1);
+    assert!(database.storage.contains_key(b"getset".as_slice()));
+    assert_eq!(database.evicted_keys(), 6);
+}
+
+#[test]
 fn delete_value() {
     let mut database = Database::new();
 

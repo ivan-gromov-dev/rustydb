@@ -1,16 +1,17 @@
 use std::io;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use rustydb::{
-    DEFAULT_SNAPSHOT_PATH, Shutdown, run_server_until_with_aof, run_server_until_with_snapshot,
-    run_with_aof, run_with_snapshot,
+    DEFAULT_SNAPSHOT_PATH, MemoryConfig, Shutdown, run_server_until_with_aof_config,
+    run_server_until_with_snapshot_config, run_with_aof_config, run_with_snapshot_config,
 };
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:6379";
 const USAGE: &str = concat!(
     "Usage:\n",
-    "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path]\n",
-    "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path]"
+    "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
+    "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]"
 );
 
 struct Configuration {
@@ -18,6 +19,7 @@ struct Configuration {
     snapshot_path: PathBuf,
     save_on_shutdown: bool,
     aof_path: Option<PathBuf>,
+    memory_config: MemoryConfig,
 }
 
 enum Mode {
@@ -40,15 +42,20 @@ fn main() {
         snapshot_path,
         save_on_shutdown,
         aof_path,
+        memory_config,
     } = configuration;
     let result = match mode {
         Mode::Interactive => match aof_path {
-            Some(path) => run_with_aof(path),
-            None => run_with_snapshot(snapshot_path, save_on_shutdown),
+            Some(path) => run_with_aof_config(path, memory_config),
+            None => run_with_snapshot_config(snapshot_path, save_on_shutdown, memory_config),
         },
-        Mode::Server(bind_address) => {
-            run_server_with_ctrl_c(&bind_address, snapshot_path, save_on_shutdown, aof_path)
-        }
+        Mode::Server(bind_address) => run_server_with_ctrl_c(
+            &bind_address,
+            snapshot_path,
+            save_on_shutdown,
+            aof_path,
+            memory_config,
+        ),
     };
 
     if let Err(err) = result {
@@ -80,6 +87,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Configuration, ()> {
     let mut snapshot_explicit = false;
     let mut save_on_shutdown = false;
     let mut aof_path = None;
+    let mut max_keys = None;
 
     while let Some(argument) = arguments.get(index) {
         match argument.as_str() {
@@ -101,6 +109,15 @@ fn parse_arguments(arguments: &[String]) -> Result<Configuration, ()> {
                     .ok_or(())?;
                 aof_path = Some(PathBuf::from(path));
             }
+            "--max-keys" => {
+                index += 1;
+                max_keys = Some(
+                    arguments
+                        .get(index)
+                        .and_then(|value| value.parse::<NonZeroUsize>().ok())
+                        .ok_or(())?,
+                );
+            }
             _ => return Err(()),
         }
         index += 1;
@@ -115,6 +132,9 @@ fn parse_arguments(arguments: &[String]) -> Result<Configuration, ()> {
         snapshot_path,
         save_on_shutdown,
         aof_path,
+        memory_config: max_keys
+            .map(MemoryConfig::with_max_keys)
+            .unwrap_or_default(),
     })
 }
 
@@ -123,6 +143,7 @@ fn run_server_with_ctrl_c(
     snapshot_path: PathBuf,
     save_on_shutdown: bool,
     aof_path: Option<PathBuf>,
+    memory_config: MemoryConfig,
 ) -> io::Result<()> {
     let shutdown = Shutdown::default();
     let signal_shutdown = shutdown.clone();
@@ -130,9 +151,13 @@ fn run_server_with_ctrl_c(
     ctrlc::set_handler(move || signal_shutdown.request()).map_err(io::Error::other)?;
 
     match aof_path {
-        Some(path) => run_server_until_with_aof(bind_address, shutdown, path),
-        None => {
-            run_server_until_with_snapshot(bind_address, shutdown, snapshot_path, save_on_shutdown)
-        }
+        Some(path) => run_server_until_with_aof_config(bind_address, shutdown, path, memory_config),
+        None => run_server_until_with_snapshot_config(
+            bind_address,
+            shutdown,
+            snapshot_path,
+            save_on_shutdown,
+            memory_config,
+        ),
     }
 }

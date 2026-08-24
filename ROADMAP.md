@@ -39,6 +39,16 @@ server-loop pass inspect a fixed number of due entries. TTL changes and renames
 append new deadlines; when an older entry reaches the front, storage compares
 it with the key's current deadline and safely discards it when stale.
 
+### Key-limit and eviction design
+
+The optional `--max-keys` setting bounds key count. Creating a key at the limit
+reclaims an expired key first, then falls back to evicting the lexicographically
+smallest existing binary key; overwrites do not evict. This policy costs a
+linear key scan but is deterministic, requires no access-history metadata, and
+keeps the first implementation focused on limit semantics rather than
+approximating LRU or LFU. AOF records each eviction as a `DEL`, including
+evictions performed while replay applies a newly configured limit.
+
 ### Done when
 
 - Unaccessed expired keys are eventually reclaimed.

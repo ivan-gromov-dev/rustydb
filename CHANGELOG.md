@@ -11,6 +11,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - Bounded active expiration in server mode, backed by a deadline heap that
   safely ignores stale entries after TTL changes, persistence, or renames.
+- An optional `--max-keys` limit for interactive and server modes with
+  deterministic lexicographic-key eviction, snapshot-load enforcement, and
+  AOF-persisted eviction records.
 
 ## [0.7.0] - 2026-08-18
 
