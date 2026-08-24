@@ -12,6 +12,8 @@ use crate::resp_session::run_session;
 
 use super::shutdown::Shutdown;
 
+const ACTIVE_EXPIRATION_LIMIT: usize = 20;
+
 pub(crate) type SharedDatabase = Arc<Mutex<Database>>;
 
 pub fn run_server(bind_address: &str) -> io::Result<()> {
@@ -64,6 +66,14 @@ pub(crate) fn run_server_on_listener_with_database(
     let result = loop {
         if shutdown.is_requested() {
             break Ok(());
+        }
+
+        {
+            let mut database = match database.lock() {
+                Ok(database) => database,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            database.active_expire(ACTIVE_EXPIRATION_LIMIT);
         }
 
         match listener.accept() {

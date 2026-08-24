@@ -15,6 +15,10 @@ pub(crate) struct Database {
 }
 
 impl Database {
+    pub(crate) fn active_expire(&mut self, limit: usize) -> usize {
+        self.store.active_expire(limit)
+    }
+
     pub(crate) fn execute(&mut self, command: Command) -> CommandOutput {
         if command == Command::AofRewrite {
             return self.rewrite_aof();

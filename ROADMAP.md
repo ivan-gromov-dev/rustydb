@@ -30,6 +30,15 @@ experimental until the production-readiness work is complete.
 - Add configurable key-count or approximate-memory limits.
 - Implement one simple eviction policy before considering LRU or LFU.
 
+### Active-expiration design
+
+RustyDB uses a deadline min-heap rather than sampling the key table. Sampling
+would keep TTL updates cheap, but it cannot guarantee prompt reclamation when
+expired keys are sparse. The heap puts the next deadline first and lets each
+server-loop pass inspect a fixed number of due entries. TTL changes and renames
+append new deadlines; when an older entry reaches the front, storage compares
+it with the key's current deadline and safely discards it when stale.
+
 ### Done when
 
 - Unaccessed expired keys are eventually reclaimed.

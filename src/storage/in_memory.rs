@@ -1,13 +1,15 @@
 use super::indexing::normalize_index;
 use super::stored_value::StoredValue;
 use crate::storage::clock::{Clock, SystemClock};
-use std::collections::{HashMap, hash_map::Entry as HashMapEntry};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::str;
 use std::time::{Duration, Instant};
 
 pub(crate) struct InMemoryStore {
     pub(super) storage: HashMap<Vec<u8>, StoredValue>,
+    pub(super) expirations: BinaryHeap<Reverse<(Instant, Vec<u8>)>>,
     pub(super) clock: Box<dyn Clock>,
 }
 
@@ -57,6 +59,7 @@ impl InMemoryStore {
     pub(crate) fn with_clock(clock: Box<dyn Clock>) -> Self {
         Self {
             storage: HashMap::new(),
+            expirations: BinaryHeap::new(),
             clock,
         }
     }
@@ -112,6 +115,11 @@ impl InMemoryStore {
 
         match self.storage.remove(old_key) {
             Some(entry) => {
+                let expires_at = entry.expires_at();
+                if let Some(expires_at) = expires_at {
+                    self.expirations
+                        .push(Reverse((expires_at, new_key.to_vec())));
+                }
                 self.storage.insert(new_key, entry);
                 true
             }
@@ -287,6 +295,7 @@ impl InMemoryStore {
         match self.storage.get_mut(key) {
             Some(entry) => {
                 entry.set_expires_at(expires_at);
+                self.expirations.push(Reverse((expires_at, key.to_vec())));
                 true
             }
 
@@ -310,6 +319,37 @@ impl InMemoryStore {
     pub(super) fn remove_expired(&mut self) {
         let now = self.clock.now();
         self.storage.retain(|_, entry| !entry.is_expired(now));
+    }
+
+    pub(crate) fn active_expire(&mut self, limit: usize) -> usize {
+        let now = self.clock.now();
+        let mut inspected = 0;
+        let mut removed = 0;
+
+        while inspected < limit {
+            let Some(Reverse((expires_at, _))) = self.expirations.peek() else {
+                break;
+            };
+            if *expires_at > now {
+                break;
+            }
+
+            let Some(Reverse((expires_at, key))) = self.expirations.pop() else {
+                break;
+            };
+            inspected += 1;
+
+            let is_current = self
+                .storage
+                .get(&key)
+                .is_some_and(|entry| entry.expires_at() == Some(expires_at));
+            if is_current {
+                self.storage.remove(&key);
+                removed += 1;
+            }
+        }
+
+        removed
     }
 
     pub(crate) fn expire(&mut self, key: impl AsRef<[u8]>, seconds: u64) -> bool {

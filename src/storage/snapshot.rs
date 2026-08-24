@@ -128,6 +128,13 @@ impl InMemoryStore {
             restored.insert(entry.key, StoredValue::from_parts(value, expires_at));
         }
 
+        self.expirations.clear();
+        for (key, entry) in &restored {
+            if let Some(expires_at) = entry.expires_at() {
+                self.expirations
+                    .push(std::cmp::Reverse((expires_at, key.clone())));
+            }
+        }
         self.storage = restored;
         Ok(())
     }

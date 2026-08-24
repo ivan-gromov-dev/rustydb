@@ -220,7 +220,11 @@ bulk strings, null bulk strings, or arrays.
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
-For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
+For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2`
+means it does not exist. Expired values are removed lazily when accessed or
+when collection-wide operations run. Server mode also performs bounded active-
+expiration work between connection accept attempts, reclaiming expired keys
+even when clients never access them.
 
 Snapshots store expirations as Unix-time millisecond timestamps. Loading turns
 future timestamps back into monotonic runtime deadlines and omits keys that

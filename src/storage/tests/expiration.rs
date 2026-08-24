@@ -411,3 +411,58 @@ fn pttl_returns_remaining_milliseconds() {
 
     assert_eq!(database.pttl("key"), 7655);
 }
+
+#[test]
+fn active_expiration_removes_unaccessed_expired_keys() {
+    let (mut database, clock) = database_with_clock();
+    database.set(b"expired".to_vec(), b"value".to_vec());
+    database.expire(b"expired", 1);
+
+    clock.advance(Duration::from_secs(1));
+
+    assert_eq!(database.active_expire(1), 1);
+    assert!(!database.storage.contains_key(b"expired".as_slice()));
+}
+
+#[test]
+fn active_expiration_is_bounded_by_inspected_entries() {
+    let (mut database, clock) = database_with_clock();
+    for key in [b"one".as_slice(), b"two", b"three"] {
+        database.set(key.to_vec(), b"value".to_vec());
+        database.expire(key, 1);
+    }
+    clock.advance(Duration::from_secs(1));
+
+    assert_eq!(database.active_expire(2), 2);
+    assert_eq!(database.storage.len(), 1);
+    assert_eq!(database.active_expire(2), 1);
+    assert!(database.storage.is_empty());
+}
+
+#[test]
+fn active_expiration_ignores_stale_deadlines_after_ttl_changes() {
+    let (mut database, clock) = database_with_clock();
+    database.set(b"key".to_vec(), b"value".to_vec());
+    database.expire(b"key", 1);
+    database.expire(b"key", 10);
+    clock.advance(Duration::from_secs(1));
+
+    assert_eq!(database.active_expire(1), 0);
+    assert!(database.storage.contains_key(b"key".as_slice()));
+
+    clock.advance(Duration::from_secs(9));
+    assert_eq!(database.active_expire(1), 1);
+    assert!(!database.storage.contains_key(b"key".as_slice()));
+}
+
+#[test]
+fn active_expiration_follows_renamed_key() {
+    let (mut database, clock) = database_with_clock();
+    database.set(b"old".to_vec(), b"value".to_vec());
+    database.expire(b"old", 1);
+    assert!(database.rename(b"old", b"new".to_vec()));
+    clock.advance(Duration::from_secs(1));
+
+    assert_eq!(database.active_expire(2), 1);
+    assert!(!database.storage.contains_key(b"new".as_slice()));
+}

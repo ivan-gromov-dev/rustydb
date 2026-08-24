@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Bounded active expiration in server mode, backed by a deadline heap that
+  safely ignores stale entries after TTL changes, persistence, or renames.
+
 ## [0.7.0] - 2026-08-18
 
 ### Added
