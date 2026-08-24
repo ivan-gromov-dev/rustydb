@@ -11,9 +11,16 @@ pub(crate) struct InMemoryStore {
     pub(super) storage: HashMap<Vec<u8>, StoredValue>,
     pub(super) expirations: BinaryHeap<Reverse<(Instant, Vec<u8>)>>,
     max_keys: Option<usize>,
-    evicted_keys: u64,
+    reclamation_metrics: ReclamationMetrics,
     pending_evictions: Vec<Vec<u8>>,
     pub(super) clock: Box<dyn Clock>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ReclamationMetrics {
+    pub(crate) deletions: u64,
+    pub(crate) expirations: u64,
+    pub(crate) evictions: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -73,7 +80,7 @@ impl InMemoryStore {
             storage: HashMap::new(),
             expirations: BinaryHeap::new(),
             max_keys,
-            evicted_keys: 0,
+            reclamation_metrics: ReclamationMetrics::default(),
             pending_evictions: Vec::new(),
             clock,
         }
@@ -103,7 +110,12 @@ impl InMemoryStore {
         let key = key.as_ref();
         self.remove_if_expired(key);
 
-        self.storage.remove(key).is_some()
+        let removed = self.storage.remove(key).is_some();
+        if removed {
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        removed
     }
 
     pub(crate) fn len(&mut self) -> usize {
@@ -113,7 +125,11 @@ impl InMemoryStore {
     }
 
     pub(crate) fn clear(&mut self) {
+        self.remove_expired();
+        let removed = u64::try_from(self.storage.len()).unwrap_or(u64::MAX);
         self.storage.clear();
+        self.reclamation_metrics.deletions =
+            self.reclamation_metrics.deletions.saturating_add(removed);
     }
 
     pub(crate) fn keys(&mut self) -> Vec<Vec<u8>> {
@@ -137,7 +153,10 @@ impl InMemoryStore {
                     self.expirations
                         .push(Reverse((expires_at, new_key.to_vec())));
                 }
-                self.storage.insert(new_key, entry);
+                if self.storage.insert(new_key, entry).is_some() {
+                    self.reclamation_metrics.deletions =
+                        self.reclamation_metrics.deletions.saturating_add(1);
+                }
                 true
             }
 
@@ -310,10 +329,16 @@ impl InMemoryStore {
             entry.value()?;
         }
 
-        self.storage
+        let removed = self
+            .storage
             .remove(&key)
             .map(StoredValue::into_value)
-            .transpose()
+            .transpose()?;
+        if removed.is_some() {
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(removed)
     }
 
     pub(crate) fn expire_at(&mut self, key: impl AsRef<[u8]>, expires_at: Instant) -> bool {
@@ -339,6 +364,8 @@ impl InMemoryStore {
 
         if expired {
             self.storage.remove(key);
+            self.reclamation_metrics.expirations =
+                self.reclamation_metrics.expirations.saturating_add(1);
         }
 
         expired
@@ -346,7 +373,11 @@ impl InMemoryStore {
 
     pub(super) fn remove_expired(&mut self) {
         let now = self.clock.now();
+        let before = self.storage.len();
         self.storage.retain(|_, entry| !entry.is_expired(now));
+        let removed = u64::try_from(before - self.storage.len()).unwrap_or(u64::MAX);
+        self.reclamation_metrics.expirations =
+            self.reclamation_metrics.expirations.saturating_add(removed);
     }
 
     pub(crate) fn active_expire(&mut self, limit: usize) -> usize {
@@ -374,6 +405,8 @@ impl InMemoryStore {
             if is_current {
                 self.storage.remove(&key);
                 removed += 1;
+                self.reclamation_metrics.expirations =
+                    self.reclamation_metrics.expirations.saturating_add(1);
             }
         }
 
@@ -410,12 +443,15 @@ impl InMemoryStore {
             .cloned();
         if let Some(key) = expired {
             self.storage.remove(&key);
+            self.reclamation_metrics.expirations =
+                self.reclamation_metrics.expirations.saturating_add(1);
             return;
         }
 
         if let Some(key) = self.storage.keys().min().cloned() {
             self.storage.remove(&key);
-            self.evicted_keys = self.evicted_keys.saturating_add(1);
+            self.reclamation_metrics.evictions =
+                self.reclamation_metrics.evictions.saturating_add(1);
             self.pending_evictions.push(key);
         }
     }
@@ -640,6 +676,8 @@ impl InMemoryStore {
 
         if became_empty {
             self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
         }
 
         Ok(value)
@@ -664,6 +702,8 @@ impl InMemoryStore {
 
         if became_empty {
             self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
         }
 
         Ok(value)
@@ -743,6 +783,8 @@ impl InMemoryStore {
 
         if became_empty {
             self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
         }
 
         Ok(removed)
@@ -829,7 +871,12 @@ impl InMemoryStore {
 
     #[cfg(test)]
     pub(crate) fn evicted_keys(&self) -> u64 {
-        self.evicted_keys
+        self.reclamation_metrics.evictions
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reclamation_metrics(&self) -> ReclamationMetrics {
+        self.reclamation_metrics
     }
 }
 

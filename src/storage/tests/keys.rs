@@ -92,6 +92,54 @@ fn every_key_creating_operation_obeys_the_limit() {
 }
 
 #[test]
+fn reclamation_metrics_distinguish_deletion_expiration_and_eviction() {
+    let mut database = Database::with_max_keys(Some(2));
+    database.set(b"deleted".to_vec(), b"value".to_vec());
+    assert!(database.delete(b"deleted"));
+
+    database.set(b"live".to_vec(), b"value".to_vec());
+    database.set(b"expired".to_vec(), b"value".to_vec());
+    assert!(database.expire(b"expired", 0));
+    database.set(b"replacement".to_vec(), b"value".to_vec());
+    database.set(b"new".to_vec(), b"value".to_vec());
+
+    let metrics = database.reclamation_metrics();
+    assert_eq!(metrics.deletions, 1);
+    assert_eq!(metrics.expirations, 1);
+    assert_eq!(metrics.evictions, 1);
+}
+
+#[test]
+fn deletion_metrics_cover_commands_that_remove_whole_keys() {
+    let mut database = Database::new();
+    database.push_right(b"list", b"item".to_vec()).unwrap();
+    assert_eq!(database.pop_left(b"list"), Ok(Some(b"item".to_vec())));
+    database.push_left(b"other-list", b"item".to_vec()).unwrap();
+    assert_eq!(
+        database.pop_right(b"other-list"),
+        Ok(Some(b"item".to_vec()))
+    );
+    database.set_add(b"set", b"member".to_vec()).unwrap();
+    assert_eq!(database.set_remove(b"set", b"member"), Ok(true));
+    database.set(b"source".to_vec(), b"value".to_vec());
+    database.set(b"target".to_vec(), b"value".to_vec());
+    assert!(database.rename(b"source", b"target".to_vec()));
+    database.set(b"getdel".to_vec(), b"value".to_vec());
+    assert_eq!(
+        database.get_and_delete(b"getdel".to_vec()),
+        Ok(Some(b"value".to_vec()))
+    );
+    database.set(b"clear-one".to_vec(), b"value".to_vec());
+    database.set(b"clear-two".to_vec(), b"value".to_vec());
+    database.clear();
+
+    let metrics = database.reclamation_metrics();
+    assert_eq!(metrics.deletions, 8);
+    assert_eq!(metrics.expirations, 0);
+    assert_eq!(metrics.evictions, 0);
+}
+
+#[test]
 fn delete_value() {
     let mut database = Database::new();
 

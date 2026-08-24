@@ -422,6 +422,7 @@ fn active_expiration_removes_unaccessed_expired_keys() {
 
     assert_eq!(database.active_expire(1), 1);
     assert!(!database.storage.contains_key(b"expired".as_slice()));
+    assert_eq!(database.reclamation_metrics().expirations, 1);
 }
 
 #[test]

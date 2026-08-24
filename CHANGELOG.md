@@ -14,6 +14,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - An optional `--max-keys` limit for interactive and server modes with
   deterministic lexicographic-key eviction, snapshot-load enforcement, and
   AOF-persisted eviction records.
+- Separate storage-level counters for explicit deletion, expiration
+  reclamation, and live-key eviction.
 
 ## [0.7.0] - 2026-08-18
 

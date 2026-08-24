@@ -49,6 +49,13 @@ keeps the first implementation focused on limit semantics rather than
 approximating LRU or LFU. AOF records each eviction as a `DEL`, including
 evictions performed while replay applies a newly configured limit.
 
+### Reclamation metrics
+
+Storage keeps separate saturating, process-local counters for explicit key
+deletions, expiration reclamation, and live-key eviction. A key is assigned to
+exactly one cause when it is physically removed. The `INFO` work planned for
+0.9 can expose these counters together with the broader operational metrics.
+
 ### Done when
 
 - Unaccessed expired keys are eventually reclaimed.
