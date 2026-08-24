@@ -322,8 +322,8 @@ fn unknown_mode_reports_usage_and_returns_exit_code_two() {
         String::from_utf8(output.stderr).unwrap(),
         concat!(
             "Usage:\n",
-            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path]\n",
-            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path]\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
         )
     );
 }
@@ -338,10 +338,104 @@ fn extra_server_arguments_report_usage_and_return_exit_code_two() {
         String::from_utf8(output.stderr).unwrap(),
         concat!(
             "Usage:\n",
-            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path]\n",
-            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path]\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
         )
     );
+}
+
+#[test]
+fn max_keys_evicts_the_smallest_key_and_rejects_invalid_limits() {
+    let output = run_cli_with_args(
+        &["--max-keys", "2"],
+        "SET beta 2\nSET alpha 1\nSET gamma 3\nKEYS\nEXIT\n",
+    );
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("db> beta\ngamma\n"));
+
+    for value in ["0", "invalid"] {
+        let output = run_cli_with_args(&["--max-keys", value], "");
+        assert_eq!(output.status.code(), Some(2));
+    }
+}
+
+#[test]
+fn max_keys_applies_during_snapshot_load_and_aof_replay() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    let first = run_cli_with_snapshot(
+        &snapshot,
+        &["--save-on-shutdown"],
+        "SET alpha 1\nSET beta 2\nEXIT\n",
+    );
+    assert!(first.status.success());
+
+    let restored = run_cli_with_snapshot(&snapshot, &["--max-keys", "1"], "KEYS\nEXIT\n");
+    assert!(restored.status.success(), "{restored:?}");
+    assert!(
+        String::from_utf8(restored.stdout)
+            .unwrap()
+            .contains("db> beta\n")
+    );
+
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "SET alpha 1\nSET beta 2\nEXIT\n")
+            .status
+            .success()
+    );
+    let limited = run_cli_with_args(
+        &["--aof", aof.to_str().unwrap(), "--max-keys", "1"],
+        "SET gamma 3\nEXIT\n",
+    );
+    assert!(limited.status.success(), "{limited:?}");
+
+    let replayed = run_cli_with_args(&["--aof", aof.to_str().unwrap()], "KEYS\nEXIT\n");
+    assert!(replayed.status.success(), "{replayed:?}");
+    assert!(
+        String::from_utf8(replayed.stdout)
+            .unwrap()
+            .contains("db> gamma\n")
+    );
+}
+
+#[test]
+fn aof_evictions_preserve_multi_key_commands_and_recreated_keys() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let limited = run_cli_with_args(
+        &["--aof", aof.to_str().unwrap(), "--max-keys", "1"],
+        "MSET alpha 1 beta 2\nEXIT\n",
+    );
+    assert!(limited.status.success(), "{limited:?}");
+
+    let unlimited = run_cli_with_aof(&aof, "KEYS\nEXIT\n");
+    assert!(unlimited.status.success(), "{unlimited:?}");
+    assert!(
+        String::from_utf8(unlimited.stdout)
+            .unwrap()
+            .contains("db> beta\n")
+    );
+
+    let replay_aof = directory.0.join("replay.aof");
+    assert!(
+        run_cli_with_aof(&replay_aof, "SET alpha 1\nSET beta 2\nSET alpha 3\nEXIT\n")
+            .status
+            .success()
+    );
+    let apply_limit = run_cli_with_args(
+        &["--aof", replay_aof.to_str().unwrap(), "--max-keys", "1"],
+        "EXIT\n",
+    );
+    assert!(apply_limit.status.success(), "{apply_limit:?}");
+
+    let replayed = run_cli_with_aof(&replay_aof, "KEYS\nGET alpha\nEXIT\n");
+    assert!(replayed.status.success(), "{replayed:?}");
+    let stdout = String::from_utf8(replayed.stdout).unwrap();
+    assert!(stdout.contains("db> alpha\n"));
+    assert!(stdout.contains("db> 3\n"));
 }
 
 #[test]

@@ -18,28 +18,6 @@ experimental until the production-readiness work is complete.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.8` — Expiration and memory management
-
-**Goal:** reclaim inaccessible data and control memory growth.
-
-### Work
-
-- Add active expiration alongside lazy expiration.
-- Compare sampling with a deadline heap and document the chosen design.
-- Handle stale scheduled entries after TTL changes.
-- Add configurable key-count or approximate-memory limits.
-- Implement one simple eviction policy before considering LRU or LFU.
-
-### Done when
-
-- Unaccessed expired keys are eventually reclaimed.
-- Expiration work is bounded and cannot monopolize command execution.
-- Limit and eviction behavior is testable.
-- Metrics distinguish deletion, expiration, and eviction.
-
-**Learning focus:** scheduling, bounded background work, memory accounting, and
-eviction algorithms.
-
 ## `0.9` — Observability and performance
 
 **Goal:** measure the system before optimizing it.

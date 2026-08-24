@@ -63,6 +63,22 @@ expirations. The replacement is written and synchronized as a temporary file
 before it atomically replaces the previous AOF. Rewriting is synchronous and
 holds the shared database lock, so other clients wait until it completes.
 
+Use `--max-keys` with a positive count to bound the number of stored keys in
+interactive or server mode:
+
+```console
+rustydb --max-keys 100000
+rustydb server 127.0.0.1:6379 --aof data/server.aof --max-keys 100000
+```
+
+Overwriting an existing key does not trigger eviction. When a command creates a
+key at the limit, RustyDB first reclaims an expired key when one is present;
+otherwise it evicts the existing key whose binary key is smallest in
+lexicographic byte order. This deliberately simple policy is deterministic and
+is not an LRU or LFU approximation. Snapshot loading and AOF replay apply the
+configured limit. In AOF mode, evictions are recorded as `DEL` operations so
+evicted keys do not reappear after a later restart without the same limit.
+
 Or install the binary from a source checkout:
 
 ```console
@@ -220,7 +236,11 @@ bulk strings, null bulk strings, or arrays.
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
-For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2` means it does not exist. Expired values are removed lazily when accessed or when collection-wide operations run.
+For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2`
+means it does not exist. Expired values are removed lazily when accessed or
+when collection-wide operations run. Server mode also performs bounded active-
+expiration work between connection accept attempts, reclaiming expired keys
+even when clients never access them.
 
 Snapshots store expirations as Unix-time millisecond timestamps. Loading turns
 future timestamps back into monotonic runtime deadlines and omits keys that
@@ -265,6 +285,7 @@ src/
 ├── command/
 │   ├── parser.rs          Text and argument-vector command parser
 │   └── types.rs           Command and CommandError types
+├── config.rs              Public memory-limit configuration
 ├── database/              Reusable stateful database service
 ├── executor/
 │   ├── execute.rs         Command dispatch and result mapping
@@ -292,7 +313,8 @@ The layers have deliberately narrow responsibilities:
 
 1. `command` validates and converts user input into typed commands.
 2. `executor` applies a command to storage and creates a `CommandOutput`.
-3. `storage` owns values, numeric operations, ranges, and expiration behavior.
+3. `storage` owns values, numeric operations, ranges, expiration, key limits,
+   eviction, and reclamation accounting.
 4. `database` owns reusable state and command execution.
 5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
 6. `output` renders results to any `Write` implementation.
@@ -374,6 +396,8 @@ succeed.
 - No transactions, authentication, or transport encryption.
 - RESP2 compatibility currently covers only the documented command subset.
 - Live values and keys are held entirely in memory while the process runs.
+- `--max-keys` limits key count rather than byte usage; a small number of large
+  keys can still consume substantial memory.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
   set to 1,000,000 elements, and each binary field to 512 MiB.
 - AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.

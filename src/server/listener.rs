@@ -6,11 +6,14 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::command::Command;
+use crate::config::MemoryConfig;
 use crate::database::Database;
 use crate::output::CommandOutput;
 use crate::resp_session::run_session;
 
 use super::shutdown::Shutdown;
+
+const ACTIVE_EXPIRATION_LIMIT: usize = 20;
 
 pub(crate) type SharedDatabase = Arc<Mutex<Database>>;
 
@@ -30,7 +33,24 @@ pub fn run_server_until_with_snapshot(
     snapshot_path: impl AsRef<Path>,
     save_on_shutdown: bool,
 ) -> io::Result<()> {
-    let database = Database::open(snapshot_path).map_err(io::Error::other)?;
+    run_server_until_with_snapshot_config(
+        bind_address,
+        shutdown,
+        snapshot_path,
+        save_on_shutdown,
+        MemoryConfig::default(),
+    )
+}
+
+pub fn run_server_until_with_snapshot_config(
+    bind_address: &str,
+    shutdown: Shutdown,
+    snapshot_path: impl AsRef<Path>,
+    save_on_shutdown: bool,
+    memory_config: MemoryConfig,
+) -> io::Result<()> {
+    let database =
+        Database::open_with_config(snapshot_path, memory_config).map_err(io::Error::other)?;
     let listener = TcpListener::bind(bind_address)?;
 
     run_server_on_listener_with_database(listener, shutdown, database, save_on_shutdown)
@@ -41,7 +61,17 @@ pub fn run_server_until_with_aof(
     shutdown: Shutdown,
     aof_path: impl AsRef<Path>,
 ) -> io::Result<()> {
-    let database = Database::open_aof(aof_path).map_err(io::Error::other)?;
+    run_server_until_with_aof_config(bind_address, shutdown, aof_path, MemoryConfig::default())
+}
+
+pub fn run_server_until_with_aof_config(
+    bind_address: &str,
+    shutdown: Shutdown,
+    aof_path: impl AsRef<Path>,
+    memory_config: MemoryConfig,
+) -> io::Result<()> {
+    let database =
+        Database::open_aof_with_config(aof_path, memory_config).map_err(io::Error::other)?;
     let listener = TcpListener::bind(bind_address)?;
     run_server_on_listener_with_database(listener, shutdown, database, false)
 }
@@ -64,6 +94,14 @@ pub(crate) fn run_server_on_listener_with_database(
     let result = loop {
         if shutdown.is_requested() {
             break Ok(());
+        }
+
+        {
+            let mut database = match database.lock() {
+                Ok(database) => database,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            database.active_expire(ACTIVE_EXPIRATION_LIMIT);
         }
 
         match listener.accept() {
