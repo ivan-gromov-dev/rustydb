@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-24
+
 ### Added
 
 - Bounded active expiration in server mode, backed by a deadline heap that
@@ -16,6 +18,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   AOF-persisted eviction records.
 - Separate storage-level counters for explicit deletion, expiration
   reclamation, and live-key eviction.
+
+### Changed
+
+- Package metadata now reports version 0.8.0.
+
+### Known limitations
+
+- Active expiration runs in server mode; the interactive CLI continues to
+  reclaim expired keys through lazy and collection-wide access paths.
+- `--max-keys` limits key count, not approximate memory usage, and uses a
+  deterministic learning-oriented policy rather than LRU or LFU.
 
 ## [0.7.0] - 2026-08-18
 
@@ -186,7 +199,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Djunichi/rustydb/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Djunichi/rustydb/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Djunichi/rustydb/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Djunichi/rustydb/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Djunichi/rustydb/compare/v0.4.0...v0.5.0

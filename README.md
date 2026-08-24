@@ -285,6 +285,7 @@ src/
 ├── command/
 │   ├── parser.rs          Text and argument-vector command parser
 │   └── types.rs           Command and CommandError types
+├── config.rs              Public memory-limit configuration
 ├── database/              Reusable stateful database service
 ├── executor/
 │   ├── execute.rs         Command dispatch and result mapping
@@ -312,7 +313,8 @@ The layers have deliberately narrow responsibilities:
 
 1. `command` validates and converts user input into typed commands.
 2. `executor` applies a command to storage and creates a `CommandOutput`.
-3. `storage` owns values, numeric operations, ranges, and expiration behavior.
+3. `storage` owns values, numeric operations, ranges, expiration, key limits,
+   eviction, and reclamation accounting.
 4. `database` owns reusable state and command execution.
 5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
 6. `output` renders results to any `Write` implementation.
