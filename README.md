@@ -170,7 +170,7 @@ expiration output through a real client.
 
 RustyDB does not implement RESP3, authentication, database selection,
 transactions, Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and
-`INFO`. Features of `redis-cli` that probe or depend on those commands are not
+`CONFIG`. Features of `redis-cli` that probe or depend on those commands are not
 supported. Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands;
 use one-shot invocations to send RustyDB commands with those names. Command
 errors use RustyDB's documented messages rather than full Redis error
@@ -365,8 +365,8 @@ Run the fast local verification suite while iterating:
 python scripts/agent_harness.py fast
 ```
 
-Run the end-to-end RESP workload benchmark and see its methodology and initial
-baseline in [BENCHMARKS.md](BENCHMARKS.md):
+Run the end-to-end RESP workload benchmark and see its methodology in
+[BENCHMARKS.md](BENCHMARKS.md):
 
 ```console
 cargo run --release --bin rustydb-benchmark -- --workload mixed --operations 100000 --value-size 64 --concurrency 4

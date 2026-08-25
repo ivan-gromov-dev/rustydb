@@ -27,6 +27,30 @@ impl Command {
         Self::from_bytes(&args)
     }
 
+    pub(crate) fn from_owned_bytes(args: Vec<Vec<u8>>) -> Result<Self, CommandError> {
+        let Some(command) = args.first() else {
+            return Err(CommandError::EmptyInput);
+        };
+
+        if command.eq_ignore_ascii_case(b"GET") {
+            exact_owned(&args, 2, "GET key")?;
+            let mut args = args;
+            return Ok(Self::Get {
+                key: args.remove(1),
+            });
+        }
+        if command.eq_ignore_ascii_case(b"SET") {
+            exact_owned(&args, 3, "SET key value")?;
+            let mut args = args;
+            let key = args.remove(1);
+            let value = args.remove(1);
+            return Ok(Self::Set { key, value });
+        }
+
+        let borrowed: Vec<_> = args.iter().map(Vec::as_slice).collect();
+        Self::from_bytes(&borrowed)
+    }
+
     pub(crate) fn from_bytes(args: &[&[u8]]) -> Result<Self, CommandError> {
         let Some(command) = args.first() else {
             return Err(CommandError::EmptyInput);
@@ -232,6 +256,14 @@ fn split_with_tail(input: &str, head_len: usize) -> Vec<&str> {
 }
 
 fn exact(args: &[&[u8]], length: usize, usage: &'static str) -> Result<(), CommandError> {
+    if args.len() == length {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidArguments(usage))
+    }
+}
+
+fn exact_owned(args: &[Vec<u8>], length: usize, usage: &'static str) -> Result<(), CommandError> {
     if args.len() == length {
         Ok(())
     } else {

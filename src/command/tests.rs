@@ -80,6 +80,27 @@ fn common_binary_commands_match_ascii_case_without_changing_validation() {
 }
 
 #[test]
+fn common_owned_commands_move_arguments_and_preserve_validation() {
+    assert_eq!(
+        Command::from_owned_bytes(vec![b"gEt".to_vec(), b"key".to_vec()]),
+        Ok(Command::Get {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_owned_bytes(vec![b"sEt".to_vec(), b"key".to_vec(), b"value".to_vec(),]),
+        Ok(Command::Set {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_owned_bytes(vec![b"sEt".to_vec(), b"key".to_vec()]),
+        Err(CommandError::InvalidArguments("SET key value"))
+    );
+}
+
+#[test]
 fn argument_vectors_use_the_same_validation_as_text_commands() {
     assert_eq!(Command::from_args(&[]), Err(CommandError::EmptyInput));
     assert_eq!(

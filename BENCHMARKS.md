@@ -25,31 +25,19 @@ RESP encoding/decoding, loopback TCP, server scheduling, shared-database lock
 contention, command execution, and the benchmark client's response handling.
 It is not a storage-only microbenchmark.
 
-For comparisons, use an otherwise idle machine, keep the command and toolchain
-fixed, run each case several times, and report the distribution rather than
-only the best result. Record changes to power mode, virtualization, and CPU
-availability because they can materially alter results.
+## Interpreting results
 
-## Initial baseline
+For comparisons, use an otherwise idle machine and keep the workload,
+operation count, value size, concurrency, Rust toolchain, and build profile
+fixed. Run each case several times and report the full distribution or a stated
+summary such as the median rather than only the best result. Record operating
+system, architecture, CPU availability, power mode, and virtualization changes
+because they can materially alter results.
 
-Measured on 2026-08-25 using Windows x86-64, 12 logical CPUs, Rust/Cargo 1.97.1,
-and RustyDB 0.8.0. Each row is one short 20,000-operation sample and is retained
-only as an initial sanity baseline; the samples are too short for optimization
-claims.
-
-| Workload    | Value bytes | Concurrency | Operations/second |
-| ----------- | ----------: | ----------: | ----------------: |
-| GET         |          64 |           1 |         12,883.25 |
-| GET         |          64 |           4 |         37,102.81 |
-| SET         |          64 |           1 |         17,716.99 |
-| SET         |          64 |           4 |         50,751.58 |
-| Mixed 80/20 |          64 |           1 |         13,875.02 |
-| Mixed 80/20 |          64 |           4 |         26,484.25 |
-| Mixed 80/20 |       1,024 |           4 |         37,911.17 |
-
-Do not interpret differences between these single samples as regressions or
-improvements. Any performance change must include repeated before-and-after
-measurements with the raw runner output and identical parameters.
+Performance changes should include repeated before-and-after measurements made
+with identical parameters. Keep raw benchmark output with the change or in its
+review discussion; this document intentionally does not preserve historical
+results from individual machines.
 
 CI runs a 100-operation mixed workload against the release binary as a smoke
 test. It verifies that the optimized runner and end-to-end server path work, but

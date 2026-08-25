@@ -18,29 +18,6 @@ experimental until the production-readiness work is complete.
 - Measure behavior before optimizing it.
 - Document intentional differences from Redis.
 
-## `0.9` — Observability and performance
-
-**Goal:** measure the system before optimizing it.
-
-### Work
-
-- Add `INFO` counters for clients, commands, hits, misses, expiration, eviction,
-  and persistence.
-- Add structured logging with configurable verbosity.
-- Benchmark common commands and mixed workloads.
-- Profile CPU, allocations, and lock contention.
-- Optimize only bottlenecks demonstrated by measurements.
-
-### Done when
-
-- Counters have documented meanings and tests.
-- Benchmarks record workload, value sizes, concurrency, and environment.
-- Performance changes include before-and-after measurements.
-- Logs do not expose stored values by default.
-
-**Learning focus:** metrics, benchmarking, profiling, workload design, and
-evidence-based optimization.
-
 ## `1.0` — Stable educational release
 
 **Goal:** publish a coherent and documented system rather than a collection of
