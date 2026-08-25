@@ -79,6 +79,19 @@ is not an LRU or LFU approximation. Snapshot loading and AOF replay apply the
 configured limit. In AOF mode, evictions are recorded as `DEL` operations so
 evicted keys do not reappear after a later restart without the same limit.
 
+Use `--log-level off|error|info|debug` to enable structured operational logs on
+standard error. Logging is off by default. `error` records failed commands,
+`info` records every completed command, and `debug` additionally records RESP
+client connection lifecycle events:
+
+```console
+rustydb server --log-level info
+```
+
+Log records use a stable space-separated `key=value` format. Command records
+contain only the command name and success/error status; stored keys, values,
+list elements, set members, and persistence paths are never logged.
+
 Or install the binary from a source checkout:
 
 ```console
@@ -157,7 +170,7 @@ expiration output through a real client.
 
 RustyDB does not implement RESP3, authentication, database selection,
 transactions, Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and
-`INFO`. Features of `redis-cli` that probe or depend on those commands are not
+`CONFIG`. Features of `redis-cli` that probe or depend on those commands are not
 supported. Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands;
 use one-shot invocations to send RustyDB commands with those names. Command
 errors use RustyDB's documented messages rather than full Redis error
@@ -233,6 +246,7 @@ bulk strings, null bulk strings, or arrays.
 | `CLEAR` | Remove every key | `OK` |
 | `SAVE` | Atomically write the configured snapshot | `OK` or an error |
 | `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
+| `INFO` | Read runtime counters | One `name:value` counter per line |
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
@@ -274,6 +288,18 @@ may contain spaces. RESP clients provide the member as one bulk-string argument.
 `SMEMBERS` sorts members for deterministic output. Mutating an existing set
 preserves its expiration while members remain; removing the final member also
 removes the key. Set commands reject strings and lists without mutation.
+
+`INFO` reports counters accumulated since the process started. `connected_clients`
+is the number of currently open RESP connections, while `total_connections` is
+the number accepted since startup. `commands_processed` includes every parsed
+command, including `INFO` and commands that return errors. `keyspace_hits` and
+`keyspace_misses` count individual key lookups by `GET`, `MGET`, and `EXISTS`;
+duplicate keys count repeatedly. Wrong-type errors count those attempted lookups
+as misses. `expired_keys` counts keys reclaimed by lazy, collection-wide, or
+active expiration, and `evicted_keys` counts live keys removed to enforce
+`--max-keys`. `persistence_successes` and `persistence_failures` count snapshot
+saves, AOF rewrites, and individual AOF records, including eviction `DEL`
+records. Interactive mode always reports zero connected and total clients.
 
 ## Project structure
 
@@ -339,6 +365,17 @@ Run the fast local verification suite while iterating:
 python scripts/agent_harness.py fast
 ```
 
+Run the end-to-end RESP workload benchmark and see its methodology in
+[BENCHMARKS.md](BENCHMARKS.md):
+
+```console
+cargo run --release --bin rustydb-benchmark -- --workload mixed --operations 100000 --value-size 64 --concurrency 4
+```
+
+Use the opt-in profiling build and platform CPU sampling recipes in
+[PROFILING.md](PROFILING.md) to measure allocations and database-lock waiting
+without adding instrumentation overhead to normal builds.
+
 Before submitting a change, run the complete suite:
 
 ```console
@@ -381,10 +418,10 @@ See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 ## Continuous integration
 
 The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
-(including the CLI and TCP integration tests), a real-process Ctrl+C shutdown
-test on Linux, the external `redis-cli` RESP2 smoke test, and the per-module
-coverage gate. The final `CI Success` job succeeds only when all five jobs
-succeed.
+(including the CLI and TCP integration tests), a release-mode benchmark smoke
+test without a throughput threshold, a real-process Ctrl+C shutdown test on
+Linux, the external `redis-cli` RESP2 smoke test, and the per-module coverage
+gate. The final `CI Success` job succeeds only when all five jobs succeed.
 
 ## Current limitations
 

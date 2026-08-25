@@ -3,15 +3,16 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use rustydb::{
-    DEFAULT_SNAPSHOT_PATH, MemoryConfig, Shutdown, run_server_until_with_aof_config,
+    DEFAULT_SNAPSHOT_PATH, LogLevel, MemoryConfig, Shutdown, run_server_until_with_aof_config,
     run_server_until_with_snapshot_config, run_with_aof_config, run_with_snapshot_config,
+    set_log_level,
 };
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:6379";
 const USAGE: &str = concat!(
     "Usage:\n",
-    "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
-    "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]"
+    "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count] [--log-level level]\n",
+    "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count] [--log-level level]"
 );
 
 struct Configuration {
@@ -20,6 +21,7 @@ struct Configuration {
     save_on_shutdown: bool,
     aof_path: Option<PathBuf>,
     memory_config: MemoryConfig,
+    log_level: LogLevel,
 }
 
 enum Mode {
@@ -43,7 +45,9 @@ fn main() {
         save_on_shutdown,
         aof_path,
         memory_config,
+        log_level,
     } = configuration;
+    set_log_level(log_level);
     let result = match mode {
         Mode::Interactive => match aof_path {
             Some(path) => run_with_aof_config(path, memory_config),
@@ -88,6 +92,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Configuration, ()> {
     let mut save_on_shutdown = false;
     let mut aof_path = None;
     let mut max_keys = None;
+    let mut log_level = LogLevel::Off;
 
     while let Some(argument) = arguments.get(index) {
         match argument.as_str() {
@@ -118,6 +123,13 @@ fn parse_arguments(arguments: &[String]) -> Result<Configuration, ()> {
                         .ok_or(())?,
                 );
             }
+            "--log-level" => {
+                index += 1;
+                log_level = arguments
+                    .get(index)
+                    .and_then(|value| LogLevel::parse(value))
+                    .ok_or(())?;
+            }
             _ => return Err(()),
         }
         index += 1;
@@ -135,6 +147,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Configuration, ()> {
         memory_config: max_keys
             .map(MemoryConfig::with_max_keys)
             .unwrap_or_default(),
+        log_level,
     })
 }
 

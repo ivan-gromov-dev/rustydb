@@ -21,7 +21,14 @@ where
 
     loop {
         while !buffer.is_empty() {
-            match decode(&buffer, limits) {
+            let decoded = {
+                #[cfg(feature = "profiling")]
+                let _scope = crate::server::profiling::profile_scope(
+                    crate::server::profiling::ProfilePhase::Decode,
+                );
+                decode(&buffer, limits)
+            };
+            match decoded {
                 Ok(DecodeResult::Complete { frame, consumed }) => {
                     let should_exit = process_frame(frame, writer, &mut execute)?;
                     buffer.drain(..consumed);
@@ -59,7 +66,14 @@ fn process_frame<F>(frame: RespFrame, writer: &mut impl Write, execute: &mut F) 
 where
     F: FnMut(Command) -> CommandOutput,
 {
-    let command = match command_from_frame(frame) {
+    let parsed = {
+        #[cfg(feature = "profiling")]
+        let _scope = crate::server::profiling::profile_scope(
+            crate::server::profiling::ProfilePhase::Command,
+        );
+        command_from_frame(frame)
+    };
+    let command = match parsed {
         Ok(command) => command,
         Err(error) => {
             error_frame(format_args!("ERR {error}")).write_to(writer)?;
@@ -68,10 +82,22 @@ where
         }
     };
 
-    let output = execute(command);
+    let output = {
+        #[cfg(feature = "profiling")]
+        let _scope = crate::server::profiling::profile_scope(
+            crate::server::profiling::ProfilePhase::Execute,
+        );
+        execute(command)
+    };
     let should_exit = matches!(output, CommandOutput::Exit);
-    frame_from_output(output).write_to(writer)?;
-    writer.flush()?;
+    {
+        #[cfg(feature = "profiling")]
+        let _scope = crate::server::profiling::profile_scope(
+            crate::server::profiling::ProfilePhase::Response,
+        );
+        frame_from_output(output).write_to(writer)?;
+        writer.flush()?;
+    }
 
     Ok(should_exit)
 }

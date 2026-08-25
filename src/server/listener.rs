@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::command::Command;
 use crate::config::MemoryConfig;
 use crate::database::Database;
+use crate::logging::{self, LogLevel};
 use crate::output::CommandOutput;
 use crate::resp_session::run_session;
 
@@ -134,6 +135,8 @@ fn spawn_worker(stream: TcpStream, database: &SharedDatabase) -> JoinHandle<()> 
     let database = Arc::clone(database);
 
     thread::spawn(move || {
+        #[cfg(feature = "profiling")]
+        super::profiling::mark_server_thread();
         let _ = handle_client(stream, database);
     })
 }
@@ -187,16 +190,34 @@ fn handle_client(mut stream: TcpStream, database: SharedDatabase) -> io::Result<
 
     let mut reader = stream.try_clone()?;
 
-    run_session(&mut reader, &mut stream, move |command| {
+    with_database(&database, Database::client_connected);
+    logging::event(LogLevel::Debug, "client_connected", &[]);
+
+    let result = run_session(&mut reader, &mut stream, |command| {
         execute_shared(&database, command)
-    })
+    });
+
+    with_database(&database, Database::client_disconnected);
+    logging::event(LogLevel::Debug, "client_disconnected", &[]);
+
+    result
 }
 
 pub(crate) fn execute_shared(database: &SharedDatabase, command: Command) -> CommandOutput {
+    #[cfg(feature = "profiling")]
+    let started = std::time::Instant::now();
+    with_database(database, |database| {
+        #[cfg(feature = "profiling")]
+        super::profiling::record_lock_wait(started.elapsed());
+        database.execute(command)
+    })
+}
+
+fn with_database<T>(database: &SharedDatabase, operation: impl FnOnce(&mut Database) -> T) -> T {
     let mut database = match database.lock() {
         Ok(database) => database,
         Err(poisoned) => poisoned.into_inner(),
     };
 
-    database.execute(command)
+    operation(&mut database)
 }

@@ -8,7 +8,10 @@ use crate::command::Command;
 use crate::database::Database;
 use crate::output::CommandOutput;
 use crate::resp::frame::RespFrame;
-use crate::server::{SharedDatabase, execute_shared, run_server, serve_incoming};
+use crate::server::{
+    SharedDatabase, Shutdown as ServerShutdown, execute_shared, run_server,
+    run_server_until_with_snapshot, serve_incoming,
+};
 
 fn start_server(client_count: usize) -> (SocketAddr, JoinHandle<io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -19,6 +22,25 @@ fn start_server(client_count: usize) -> (SocketAddr, JoinHandle<io::Result<()>>)
     });
 
     (address, handle)
+}
+
+#[test]
+fn snapshot_server_wrapper_honors_pre_requested_shutdown() {
+    let reserved = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = reserved.local_addr().unwrap();
+    drop(reserved);
+    let shutdown = ServerShutdown::default();
+    shutdown.request();
+    let snapshot = std::env::temp_dir().join(format!(
+        "rustydb-info-server-{}-{}.snapshot",
+        std::process::id(),
+        address.port()
+    ));
+
+    assert!(
+        run_server_until_with_snapshot(address.to_string().as_str(), shutdown, snapshot, false)
+            .is_ok()
+    );
 }
 
 fn request(arguments: &[&[u8]]) -> Vec<u8> {

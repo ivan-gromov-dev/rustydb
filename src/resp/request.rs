@@ -34,14 +34,18 @@ pub(crate) fn command_from_frame(frame: RespFrame) -> Result<Command, RequestErr
         return Err(RequestError::EmptyArray);
     }
 
+    for (index, element) in elements.iter().enumerate() {
+        if !matches!(element, RespFrame::BulkString(_)) {
+            return Err(RequestError::ExpectedBulkString { index });
+        }
+    }
     let arguments = elements
-        .iter()
-        .enumerate()
-        .map(|(index, element)| match element {
-            RespFrame::BulkString(value) => Ok(value.as_slice()),
-            _ => Err(RequestError::ExpectedBulkString { index }),
+        .into_iter()
+        .filter_map(|element| match element {
+            RespFrame::BulkString(value) => Some(value),
+            _ => None,
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
 
-    Command::from_bytes(&arguments).map_err(RequestError::InvalidCommand)
+    Command::from_owned_bytes(arguments).map_err(RequestError::InvalidCommand)
 }

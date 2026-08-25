@@ -19,6 +19,15 @@ fn aof_rewrite_accepts_no_arguments() {
 }
 
 #[test]
+fn info_accepts_no_arguments() {
+    assert_eq!(Command::parse("INFO"), Ok(Command::Info));
+    assert_eq!(
+        Command::parse("INFO extra"),
+        Err(CommandError::InvalidArguments("INFO"))
+    );
+}
+
+#[test]
 fn parses_exact_argument_vectors_without_retokenizing_values() {
     assert_eq!(
         Command::from_args(&["set", "key", "spaces\nnull\0byte"]),
@@ -46,6 +55,48 @@ fn parses_binary_argument_vectors_without_utf8_conversion() {
             key: b"\xff-key".to_vec(),
             value: b"a\0\x80".to_vec(),
         })
+    );
+}
+
+#[test]
+fn common_binary_commands_match_ascii_case_without_changing_validation() {
+    assert_eq!(
+        Command::from_bytes(&[b"gEt", b"key"]),
+        Ok(Command::Get {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"sEt", b"key", b"value"]),
+        Ok(Command::Set {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"gEt", b"key", b"extra"]),
+        Err(CommandError::InvalidArguments("GET key"))
+    );
+}
+
+#[test]
+fn common_owned_commands_move_arguments_and_preserve_validation() {
+    assert_eq!(
+        Command::from_owned_bytes(vec![b"gEt".to_vec(), b"key".to_vec()]),
+        Ok(Command::Get {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_owned_bytes(vec![b"sEt".to_vec(), b"key".to_vec(), b"value".to_vec(),]),
+        Ok(Command::Set {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_owned_bytes(vec![b"sEt".to_vec(), b"key".to_vec()]),
+        Err(CommandError::InvalidArguments("SET key value"))
     );
 }
 

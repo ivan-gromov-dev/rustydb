@@ -27,20 +27,53 @@ impl Command {
         Self::from_bytes(&args)
     }
 
+    pub(crate) fn from_owned_bytes(args: Vec<Vec<u8>>) -> Result<Self, CommandError> {
+        let Some(command) = args.first() else {
+            return Err(CommandError::EmptyInput);
+        };
+
+        if command.eq_ignore_ascii_case(b"GET") {
+            exact_owned(&args, 2, "GET key")?;
+            let mut args = args;
+            return Ok(Self::Get {
+                key: args.remove(1),
+            });
+        }
+        if command.eq_ignore_ascii_case(b"SET") {
+            exact_owned(&args, 3, "SET key value")?;
+            let mut args = args;
+            let key = args.remove(1);
+            let value = args.remove(1);
+            return Ok(Self::Set { key, value });
+        }
+
+        let borrowed: Vec<_> = args.iter().map(Vec::as_slice).collect();
+        Self::from_bytes(&borrowed)
+    }
+
     pub(crate) fn from_bytes(args: &[&[u8]]) -> Result<Self, CommandError> {
         let Some(command) = args.first() else {
             return Err(CommandError::EmptyInput);
         };
+
+        // GET and SET dominate the measured workloads. Match them directly so
+        // their names do not need an allocated uppercase copy.
+        if command.eq_ignore_ascii_case(b"GET") {
+            return Ok(Self::Get {
+                key: one(args, "GET key")?,
+            });
+        }
+        if command.eq_ignore_ascii_case(b"SET") {
+            exact(args, 3, "SET key value")?;
+            return Ok(Self::Set {
+                key: owned(args[1]),
+                value: owned(args[2]),
+            });
+        }
+
         let command = String::from_utf8_lossy(command).to_ascii_uppercase();
 
         match command.as_str() {
-            "SET" => {
-                exact(args, 3, "SET key value")?;
-                Ok(Self::Set {
-                    key: owned(args[1]),
-                    value: owned(args[2]),
-                })
-            }
             "MSET" => parse_mset(args),
             "SETNX" => {
                 exact(args, 3, "SETNX key value")?;
@@ -49,9 +82,6 @@ impl Command {
                     value: owned(args[2]),
                 })
             }
-            "GET" => Ok(Self::Get {
-                key: one(args, "GET key")?,
-            }),
             "MGET" => Ok(Self::MGet {
                 keys: many(args, "MGET key [key ...]")?,
             }),
@@ -192,6 +222,7 @@ impl Command {
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
             "SAVE" => no_args(args, "SAVE", Self::Save),
             "AOFREWRITE" => no_args(args, "AOFREWRITE", Self::AofRewrite),
+            "INFO" => no_args(args, "INFO", Self::Info),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),
             _ => Err(CommandError::UnknownCommand(command)),
@@ -225,6 +256,14 @@ fn split_with_tail(input: &str, head_len: usize) -> Vec<&str> {
 }
 
 fn exact(args: &[&[u8]], length: usize, usage: &'static str) -> Result<(), CommandError> {
+    if args.len() == length {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidArguments(usage))
+    }
+}
+
+fn exact_owned(args: &[Vec<u8>], length: usize, usage: &'static str) -> Result<(), CommandError> {
     if args.len() == length {
         Ok(())
     } else {

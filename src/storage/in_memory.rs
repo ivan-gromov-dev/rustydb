@@ -874,7 +874,6 @@ impl InMemoryStore {
         self.reclamation_metrics.evictions
     }
 
-    #[cfg(test)]
     pub(crate) fn reclamation_metrics(&self) -> ReclamationMetrics {
         self.reclamation_metrics
     }
