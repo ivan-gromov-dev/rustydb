@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::command::Command;
 use crate::config::MemoryConfig;
 use crate::database::Database;
+use crate::logging::{self, LogLevel};
 use crate::output::CommandOutput;
 use crate::resp_session::run_session;
 
@@ -188,12 +189,14 @@ fn handle_client(mut stream: TcpStream, database: SharedDatabase) -> io::Result<
     let mut reader = stream.try_clone()?;
 
     with_database(&database, Database::client_connected);
+    logging::event(LogLevel::Debug, "client_connected", &[]);
 
     let result = run_session(&mut reader, &mut stream, |command| {
         execute_shared(&database, command)
     });
 
     with_database(&database, Database::client_disconnected);
+    logging::event(LogLevel::Debug, "client_disconnected", &[]);
 
     result
 }

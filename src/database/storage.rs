@@ -5,6 +5,7 @@ use crate::aof::{Aof, AofError};
 use crate::command::Command;
 use crate::config::MemoryConfig;
 use crate::executor::execute_with_snapshot;
+use crate::logging::{self, LogLevel};
 use crate::output::CommandOutput;
 use crate::snapshot::{self, SnapshotError};
 use crate::storage::InMemoryStore;
@@ -33,6 +34,23 @@ impl Database {
     }
 
     pub(crate) fn execute(&mut self, command: Command) -> CommandOutput {
+        let command_name = command.name();
+        let output = self.execute_inner(command);
+        let status = if output.is_error() { "error" } else { "ok" };
+        let level = if output.is_error() {
+            LogLevel::Error
+        } else {
+            LogLevel::Info
+        };
+        logging::event(
+            level,
+            "command_completed",
+            &[("command", command_name), ("status", status)],
+        );
+        output
+    }
+
+    fn execute_inner(&mut self, command: Command) -> CommandOutput {
         self.metrics.commands_processed = self.metrics.commands_processed.saturating_add(1);
         if command == Command::Info {
             return CommandOutput::Value(self.info().into_bytes());

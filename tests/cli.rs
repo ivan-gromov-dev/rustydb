@@ -322,8 +322,8 @@ fn unknown_mode_reports_usage_and_returns_exit_code_two() {
         String::from_utf8(output.stderr).unwrap(),
         concat!(
             "Usage:\n",
-            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
-            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count] [--log-level level]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count] [--log-level level]\n",
         )
     );
 }
@@ -338,10 +338,40 @@ fn extra_server_arguments_report_usage_and_return_exit_code_two() {
         String::from_utf8(output.stderr).unwrap(),
         concat!(
             "Usage:\n",
-            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
-            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count]\n",
+            "  rustydb [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count] [--log-level level]\n",
+            "  rustydb server [bind-address] [--snapshot path] [--save-on-shutdown] [--aof path] [--max-keys count] [--log-level level]\n",
         )
     );
+}
+
+#[test]
+fn configurable_structured_logs_omit_keys_and_values() {
+    let directory = TestDirectory::new();
+    let output = run_cli_with_snapshot(
+        &directory.snapshot(),
+        &["--log-level", "info"],
+        "SET secret-key secret-value\nGET secret-key\nEXIT\n",
+    );
+
+    assert!(output.status.success(), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(
+        stderr,
+        concat!(
+            "level=info event=command_completed command=SET status=ok\n",
+            "level=info event=command_completed command=GET status=ok\n",
+            "level=info event=command_completed command=EXIT status=ok\n",
+        )
+    );
+    assert!(!stderr.contains("secret-key"));
+    assert!(!stderr.contains("secret-value"));
+}
+
+#[test]
+fn log_level_rejects_missing_and_unknown_values() {
+    for arguments in [&["--log-level"][..], &["--log-level", "verbose"][..]] {
+        assert_eq!(run_cli_with_args(arguments, "").status.code(), Some(2));
+    }
 }
 
 #[test]

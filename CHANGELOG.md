@@ -12,6 +12,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - An `INFO` command with documented counters for RESP clients, processed
   commands, `GET`/`MGET`/`EXISTS` hits and misses, expiration, eviction, and
   snapshot/AOF persistence outcomes.
+- Dependency-free structured logging with `off`, `error`, `info`, and `debug`
+  verbosity levels. Logs omit stored keys and values.
 
 ## [0.8.0] - 2026-08-24
 

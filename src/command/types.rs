@@ -139,6 +139,54 @@ pub(crate) enum Command {
 }
 
 impl Command {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Set { .. } => "SET",
+            Self::MSet { .. } => "MSET",
+            Self::SetNx { .. } => "SETNX",
+            Self::Get { .. } => "GET",
+            Self::MGet { .. } => "MGET",
+            Self::GetSet { .. } => "GETSET",
+            Self::GetDel { .. } => "GETDEL",
+            Self::Append { .. } => "APPEND",
+            Self::Increment { .. } => "INCR",
+            Self::IncrementBy { .. } => "INCRBY",
+            Self::Decrement { .. } => "DECR",
+            Self::DecrementBy { .. } => "DECRBY",
+            Self::IncrementByFloat { .. } => "INCRBYFLOAT",
+            Self::Exists { .. } => "EXISTS",
+            Self::Delete { .. } => "DEL",
+            Self::Rename { .. } => "RENAME",
+            Self::Expire { .. } => "EXPIRE",
+            Self::PExpire { .. } => "PEXPIRE",
+            Self::Ttl { .. } => "TTL",
+            Self::PTtl { .. } => "PTTL",
+            Self::Persist { .. } => "PERSIST",
+            Self::StrLen { .. } => "STRLEN",
+            Self::GetRange { .. } => "GETRANGE",
+            Self::SetRange { .. } => "SETRANGE",
+            Self::LPush { .. } => "LPUSH",
+            Self::RPush { .. } => "RPUSH",
+            Self::LLen { .. } => "LLEN",
+            Self::LPop { .. } => "LPOP",
+            Self::RPop { .. } => "RPOP",
+            Self::LRange { .. } => "LRANGE",
+            Self::SAdd { .. } => "SADD",
+            Self::SRem { .. } => "SREM",
+            Self::SIsMember { .. } => "SISMEMBER",
+            Self::SMembers { .. } => "SMEMBERS",
+            Self::SCard { .. } => "SCARD",
+            Self::Keys => "KEYS",
+            Self::Len => "LEN",
+            Self::Clear => "CLEAR",
+            Self::Save => "SAVE",
+            Self::AofRewrite => "AOFREWRITE",
+            Self::Info => "INFO",
+            Self::Help => "HELP",
+            Self::Exit => "EXIT",
+        }
+    }
+
     pub(crate) fn lookup_size(&self) -> Option<usize> {
         match self {
             Self::Get { .. } => Some(1),

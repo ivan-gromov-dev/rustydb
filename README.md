@@ -79,6 +79,19 @@ is not an LRU or LFU approximation. Snapshot loading and AOF replay apply the
 configured limit. In AOF mode, evictions are recorded as `DEL` operations so
 evicted keys do not reappear after a later restart without the same limit.
 
+Use `--log-level off|error|info|debug` to enable structured operational logs on
+standard error. Logging is off by default. `error` records failed commands,
+`info` records every completed command, and `debug` additionally records RESP
+client connection lifecycle events:
+
+```console
+rustydb server --log-level info
+```
+
+Log records use a stable space-separated `key=value` format. Command records
+contain only the command name and success/error status; stored keys, values,
+list elements, set members, and persistence paths are never logged.
+
 Or install the binary from a source checkout:
 
 ```console
