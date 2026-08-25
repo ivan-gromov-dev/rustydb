@@ -14,6 +14,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   snapshot/AOF persistence outcomes.
 - Dependency-free structured logging with `off`, `error`, `info`, and `debug`
   verbosity levels. Logs omit stored keys and values.
+- A dependency-free end-to-end benchmark runner for GET, SET, and deterministic
+  mixed RESP workloads, with recorded value size, concurrency, environment, and
+  an initial baseline plus a release-mode CI smoke test without a performance
+  threshold.
 
 ## [0.8.0] - 2026-08-24
 

@@ -1,6 +1,7 @@
 [package]
 name = "rustydb"
 version = "0.8.0"
+default-run = "rustydb"
 edition = "2024"
 rust-version = "1.85"
 description = "A small in-memory key-value database written in Rust."

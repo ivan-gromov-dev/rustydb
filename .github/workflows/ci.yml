@@ -39,6 +39,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run all Cargo tests
         run: cargo test --all-features
+      - name: Smoke-test release benchmark runner
+        run: >-
+          cargo run --release --bin rustydb-benchmark --
+          --workload mixed
+          --operations 100
+          --value-size 64
+          --concurrency 2
 
   ctrl_c:
     name: Ctrl+C process test

@@ -365,6 +365,13 @@ Run the fast local verification suite while iterating:
 python scripts/agent_harness.py fast
 ```
 
+Run the end-to-end RESP workload benchmark and see its methodology and initial
+baseline in [BENCHMARKS.md](BENCHMARKS.md):
+
+```console
+cargo run --release --bin rustydb-benchmark -- --workload mixed --operations 100000 --value-size 64 --concurrency 4
+```
+
 Before submitting a change, run the complete suite:
 
 ```console
@@ -407,10 +414,10 @@ See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 ## Continuous integration
 
 The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
-(including the CLI and TCP integration tests), a real-process Ctrl+C shutdown
-test on Linux, the external `redis-cli` RESP2 smoke test, and the per-module
-coverage gate. The final `CI Success` job succeeds only when all five jobs
-succeed.
+(including the CLI and TCP integration tests), a release-mode benchmark smoke
+test without a throughput threshold, a real-process Ctrl+C shutdown test on
+Linux, the external `redis-cli` RESP2 smoke test, and the per-module coverage
+gate. The final `CI Success` job succeeds only when all five jobs succeed.
 
 ## Current limitations
 
