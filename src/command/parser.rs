@@ -192,6 +192,7 @@ impl Command {
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
             "SAVE" => no_args(args, "SAVE", Self::Save),
             "AOFREWRITE" => no_args(args, "AOFREWRITE", Self::AofRewrite),
+            "INFO" => no_args(args, "INFO", Self::Info),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),
             _ => Err(CommandError::UnknownCommand(command)),

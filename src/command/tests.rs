@@ -19,6 +19,15 @@ fn aof_rewrite_accepts_no_arguments() {
 }
 
 #[test]
+fn info_accepts_no_arguments() {
+    assert_eq!(Command::parse("INFO"), Ok(Command::Info));
+    assert_eq!(
+        Command::parse("INFO extra"),
+        Err(CommandError::InvalidArguments("INFO"))
+    );
+}
+
+#[test]
 fn parses_exact_argument_vectors_without_retokenizing_values() {
     assert_eq!(
         Command::from_args(&["set", "key", "spaces\nnull\0byte"]),

@@ -42,6 +42,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  CLEAR\n",
     "  SAVE\n",
     "  AOFREWRITE\n",
+    "  INFO\n",
     "  HELP\n",
     "  EXIT\n",
 );

@@ -187,16 +187,26 @@ fn handle_client(mut stream: TcpStream, database: SharedDatabase) -> io::Result<
 
     let mut reader = stream.try_clone()?;
 
-    run_session(&mut reader, &mut stream, move |command| {
+    with_database(&database, Database::client_connected);
+
+    let result = run_session(&mut reader, &mut stream, |command| {
         execute_shared(&database, command)
-    })
+    });
+
+    with_database(&database, Database::client_disconnected);
+
+    result
 }
 
 pub(crate) fn execute_shared(database: &SharedDatabase, command: Command) -> CommandOutput {
+    with_database(database, |database| database.execute(command))
+}
+
+fn with_database<T>(database: &SharedDatabase, operation: impl FnOnce(&mut Database) -> T) -> T {
     let mut database = match database.lock() {
         Ok(database) => database,
         Err(poisoned) => poisoned.into_inner(),
     };
 
-    database.execute(command)
+    operation(&mut database)
 }

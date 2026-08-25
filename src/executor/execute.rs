@@ -223,6 +223,8 @@ pub(crate) fn execute_with_snapshot(
 
         Command::AofRewrite => CommandOutput::Error("AOF is not configured".to_owned()),
 
+        Command::Info => CommandOutput::Error("INFO requires database metrics".to_owned()),
+
         Command::Help => CommandOutput::Help,
 
         Command::Exit => CommandOutput::Exit,

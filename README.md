@@ -233,6 +233,7 @@ bulk strings, null bulk strings, or arrays.
 | `CLEAR` | Remove every key | `OK` |
 | `SAVE` | Atomically write the configured snapshot | `OK` or an error |
 | `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
+| `INFO` | Read runtime counters | One `name:value` counter per line |
 | `HELP` | Print the command list | Help text |
 | `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
 
@@ -274,6 +275,18 @@ may contain spaces. RESP clients provide the member as one bulk-string argument.
 `SMEMBERS` sorts members for deterministic output. Mutating an existing set
 preserves its expiration while members remain; removing the final member also
 removes the key. Set commands reject strings and lists without mutation.
+
+`INFO` reports counters accumulated since the process started. `connected_clients`
+is the number of currently open RESP connections, while `total_connections` is
+the number accepted since startup. `commands_processed` includes every parsed
+command, including `INFO` and commands that return errors. `keyspace_hits` and
+`keyspace_misses` count individual key lookups by `GET`, `MGET`, and `EXISTS`;
+duplicate keys count repeatedly. Wrong-type errors count those attempted lookups
+as misses. `expired_keys` counts keys reclaimed by lazy, collection-wide, or
+active expiration, and `evicted_keys` counts live keys removed to enforce
+`--max-keys`. `persistence_successes` and `persistence_failures` count snapshot
+saves, AOF rewrites, and individual AOF records, including eviction `DEL`
+records. Interactive mode always reports zero connected and total clients.
 
 ## Project structure
 
