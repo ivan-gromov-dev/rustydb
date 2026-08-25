@@ -18,6 +18,15 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   mixed RESP workloads, with recorded value size, concurrency, environment, and
   an initial baseline plus a release-mode CI smoke test without a performance
   threshold.
+- An opt-in `profiling` feature that records timed allocation volume and shared
+  database mutex wait totals/maxima, attributes allocations to server versus
+  benchmark-client threads, and documents reproducible WPR and `perf` CPU
+  sampling.
+
+### Changed
+
+- RESP `GET` and `SET` parsing now compares command names without allocating an
+  uppercase copy, removing one server allocation per request.
 
 ## [0.8.0] - 2026-08-24
 

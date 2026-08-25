@@ -372,6 +372,10 @@ baseline in [BENCHMARKS.md](BENCHMARKS.md):
 cargo run --release --bin rustydb-benchmark -- --workload mixed --operations 100000 --value-size 64 --concurrency 4
 ```
 
+Use the opt-in profiling build and platform CPU sampling recipes in
+[PROFILING.md](PROFILING.md) to measure allocations and database-lock waiting
+without adding instrumentation overhead to normal builds.
+
 Before submitting a change, run the complete suite:
 
 ```console

@@ -37,15 +37,15 @@ and RustyDB 0.8.0. Each row is one short 20,000-operation sample and is retained
 only as an initial sanity baseline; the samples are too short for optimization
 claims.
 
-| Workload | Value bytes | Concurrency | Operations/second |
-| --- | ---: | ---: | ---: |
-| GET | 64 | 1 | 12,883.25 |
-| GET | 64 | 4 | 37,102.81 |
-| SET | 64 | 1 | 17,716.99 |
-| SET | 64 | 4 | 50,751.58 |
-| Mixed 80/20 | 64 | 1 | 13,875.02 |
-| Mixed 80/20 | 64 | 4 | 26,484.25 |
-| Mixed 80/20 | 1,024 | 4 | 37,911.17 |
+| Workload    | Value bytes | Concurrency | Operations/second |
+| ----------- | ----------: | ----------: | ----------------: |
+| GET         |          64 |           1 |         12,883.25 |
+| GET         |          64 |           4 |         37,102.81 |
+| SET         |          64 |           1 |         17,716.99 |
+| SET         |          64 |           4 |         50,751.58 |
+| Mixed 80/20 |          64 |           1 |         13,875.02 |
+| Mixed 80/20 |          64 |           4 |         26,484.25 |
+| Mixed 80/20 |       1,024 |           4 |         37,911.17 |
 
 Do not interpret differences between these single samples as regressions or
 improvements. Any performance change must include repeated before-and-after
@@ -54,3 +54,6 @@ measurements with the raw runner output and identical parameters.
 CI runs a 100-operation mixed workload against the release binary as a smoke
 test. It verifies that the optimized runner and end-to-end server path work, but
 does not enforce a throughput threshold because shared runners are noisy.
+
+For allocation counts, shared-database lock wait measurements, and CPU sampling
+instructions, see [PROFILING.md](PROFILING.md).

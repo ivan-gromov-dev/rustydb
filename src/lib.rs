@@ -19,6 +19,10 @@ pub use app::{
 };
 pub use config::MemoryConfig;
 pub use logging::{LogLevel, set_log_level};
+#[cfg(feature = "profiling")]
+pub use server::{
+    LockProfile, ProfilePhase, is_server_thread, lock_profile, profiling_phase, reset_lock_profile,
+};
 pub use server::{
     Shutdown, run_server, run_server_on_listener, run_server_until, run_server_until_with_aof,
     run_server_until_with_aof_config, run_server_until_with_snapshot,

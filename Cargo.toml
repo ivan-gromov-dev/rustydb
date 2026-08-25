@@ -12,5 +12,8 @@ keywords = ["database", "key-value", "in-memory", "redis", "learning"]
 categories = ["database-implementations", "command-line-utilities"]
 exclude = ["scripts/__pycache__/"]
 
+[features]
+profiling = []
+
 [dependencies]
 ctrlc = "3.5.2"

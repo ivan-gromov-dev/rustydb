@@ -7,6 +7,58 @@ use std::time::{Duration, Instant};
 
 use rustydb::{Shutdown, run_server_on_listener};
 
+#[cfg(feature = "profiling")]
+use std::alloc::{GlobalAlloc, Layout, System};
+#[cfg(feature = "profiling")]
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+#[cfg(feature = "profiling")]
+struct CountingAllocator;
+
+#[cfg(feature = "profiling")]
+static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "profiling")]
+static ALLOCATION_EVENTS: [AtomicU64; rustydb::ProfilePhase::COUNT] =
+    [const { AtomicU64::new(0) }; rustydb::ProfilePhase::COUNT];
+#[cfg(feature = "profiling")]
+static ALLOCATED_BYTES: [AtomicU64; rustydb::ProfilePhase::COUNT] =
+    [const { AtomicU64::new(0) }; rustydb::ProfilePhase::COUNT];
+
+#[cfg(feature = "profiling")]
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+#[cfg(feature = "profiling")]
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            record_allocation(layout.size());
+        }
+        // SAFETY: the layout is forwarded unchanged to the system allocator.
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the pointer and layout came from the system allocator.
+        unsafe { System.dealloc(pointer, layout) }
+    }
+
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            record_allocation(new_size);
+        }
+        // SAFETY: the pointer and layout came from the system allocator.
+        unsafe { System.realloc(pointer, layout, new_size) }
+    }
+}
+
+#[cfg(feature = "profiling")]
+fn record_allocation(bytes: usize) {
+    let index = rustydb::profiling_phase().index();
+    ALLOCATION_EVENTS[index].fetch_add(1, Ordering::Relaxed);
+    ALLOCATED_BYTES[index].fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Workload {
     Get,
@@ -120,8 +172,22 @@ fn run(configuration: Configuration) -> io::Result<()> {
     }
 
     barrier.wait();
+    #[cfg(feature = "profiling")]
+    {
+        for counter in ALLOCATION_EVENTS.iter().chain(&ALLOCATED_BYTES) {
+            counter.store(0, Ordering::Relaxed);
+        }
+        rustydb::reset_lock_profile();
+        COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
+    }
     let started = Instant::now();
+    barrier.wait();
+    barrier.wait();
     let mut worker_error = None;
+    let elapsed = started.elapsed();
+    #[cfg(feature = "profiling")]
+    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    barrier.wait();
     for worker in workers {
         match worker.join() {
             Ok(Ok(())) => {}
@@ -133,7 +199,6 @@ fn run(configuration: Configuration) -> io::Result<()> {
             }
         };
     }
-    let elapsed = started.elapsed();
     shutdown.request();
     let server_result = server
         .join()
@@ -145,8 +210,48 @@ fn run(configuration: Configuration) -> io::Result<()> {
 
     let seconds = elapsed.as_secs_f64();
     let operations_per_second = configuration.operations as f64 / seconds;
+    #[cfg(feature = "profiling")]
+    let profile = {
+        let lock = rustydb::lock_profile();
+        let events: [u64; rustydb::ProfilePhase::COUNT] =
+            std::array::from_fn(|index| ALLOCATION_EVENTS[index].load(Ordering::Relaxed));
+        let bytes: [u64; rustydb::ProfilePhase::COUNT] =
+            std::array::from_fn(|index| ALLOCATED_BYTES[index].load(Ordering::Relaxed));
+        let client = rustydb::ProfilePhase::ClientRunner.index();
+        let other = rustydb::ProfilePhase::ServerOther.index();
+        let decode = rustydb::ProfilePhase::Decode.index();
+        let command = rustydb::ProfilePhase::Command.index();
+        let execute = rustydb::ProfilePhase::Execute.index();
+        let response = rustydb::ProfilePhase::Response.index();
+        let server_events: u64 = events[other..].iter().sum();
+        let server_bytes: u64 = bytes[other..].iter().sum();
+        format!(
+            " allocation_events={} allocated_bytes={} server_allocation_events={} server_allocated_bytes={} client_runner_allocation_events={} client_runner_allocated_bytes={} server_other_allocation_events={} server_other_allocated_bytes={} decode_allocation_events={} decode_allocated_bytes={} command_allocation_events={} command_allocated_bytes={} execute_allocation_events={} execute_allocated_bytes={} response_allocation_events={} response_allocated_bytes={} lock_acquisitions={} lock_wait_nanoseconds={} lock_max_wait_nanoseconds={}",
+            server_events.saturating_add(events[client]),
+            server_bytes.saturating_add(bytes[client]),
+            server_events,
+            server_bytes,
+            events[client],
+            bytes[client],
+            events[other],
+            bytes[other],
+            events[decode],
+            bytes[decode],
+            events[command],
+            bytes[command],
+            events[execute],
+            bytes[execute],
+            events[response],
+            bytes[response],
+            lock.acquisitions,
+            lock.wait_nanoseconds,
+            lock.max_wait_nanoseconds,
+        )
+    };
+    #[cfg(not(feature = "profiling"))]
+    let profile = "";
     println!(
-        "workload={} operations={} value_size_bytes={} concurrency={} duration_seconds={seconds:.6} operations_per_second={operations_per_second:.2} os={} arch={} logical_cpus={} package_version={}",
+        "workload={} operations={} value_size_bytes={} concurrency={} duration_seconds={seconds:.6} operations_per_second={operations_per_second:.2} os={} arch={} logical_cpus={} package_version={}{}",
         configuration.workload.name(),
         configuration.operations,
         configuration.value_size,
@@ -155,6 +260,7 @@ fn run(configuration: Configuration) -> io::Result<()> {
         env::consts::ARCH,
         thread::available_parallelism().map_or(1, usize::from),
         env!("CARGO_PKG_VERSION"),
+        profile,
     );
     Ok(())
 }
@@ -185,29 +291,33 @@ fn run_worker(
         Ok::<_, io::Error>((client, key, value))
     })();
     barrier.wait();
-    let (mut client, key, value) = setup?;
-
-    for operation in 0..operations {
-        let is_set = match configuration.workload {
-            Workload::Get => false,
-            Workload::Set => true,
-            Workload::Mixed => operation % 5 == 0,
-        };
-        if is_set {
-            send(
-                &mut client,
-                &[b"SET", key.as_bytes(), &value],
-                Response::Simple,
-            )?;
-        } else {
-            send(
-                &mut client,
-                &[b"GET", key.as_bytes()],
-                Response::Bulk(configuration.value_size),
-            )?;
+    barrier.wait();
+    let result = setup.and_then(|(mut client, key, value)| {
+        for operation in 0..operations {
+            let is_set = match configuration.workload {
+                Workload::Get => false,
+                Workload::Set => true,
+                Workload::Mixed => operation % 5 == 0,
+            };
+            if is_set {
+                send(
+                    &mut client,
+                    &[b"SET", key.as_bytes(), &value],
+                    Response::Simple,
+                )?;
+            } else {
+                send(
+                    &mut client,
+                    &[b"GET", key.as_bytes()],
+                    Response::Bulk(configuration.value_size),
+                )?;
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    });
+    barrier.wait();
+    barrier.wait();
+    result
 }
 
 fn connect(address: SocketAddr) -> io::Result<TcpStream> {

@@ -31,16 +31,25 @@ impl Command {
         let Some(command) = args.first() else {
             return Err(CommandError::EmptyInput);
         };
+
+        // GET and SET dominate the measured workloads. Match them directly so
+        // their names do not need an allocated uppercase copy.
+        if command.eq_ignore_ascii_case(b"GET") {
+            return Ok(Self::Get {
+                key: one(args, "GET key")?,
+            });
+        }
+        if command.eq_ignore_ascii_case(b"SET") {
+            exact(args, 3, "SET key value")?;
+            return Ok(Self::Set {
+                key: owned(args[1]),
+                value: owned(args[2]),
+            });
+        }
+
         let command = String::from_utf8_lossy(command).to_ascii_uppercase();
 
         match command.as_str() {
-            "SET" => {
-                exact(args, 3, "SET key value")?;
-                Ok(Self::Set {
-                    key: owned(args[1]),
-                    value: owned(args[2]),
-                })
-            }
             "MSET" => parse_mset(args),
             "SETNX" => {
                 exact(args, 3, "SETNX key value")?;
@@ -49,9 +58,6 @@ impl Command {
                     value: owned(args[2]),
                 })
             }
-            "GET" => Ok(Self::Get {
-                key: one(args, "GET key")?,
-            }),
             "MGET" => Ok(Self::MGet {
                 keys: many(args, "MGET key [key ...]")?,
             }),

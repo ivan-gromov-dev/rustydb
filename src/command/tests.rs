@@ -59,6 +59,27 @@ fn parses_binary_argument_vectors_without_utf8_conversion() {
 }
 
 #[test]
+fn common_binary_commands_match_ascii_case_without_changing_validation() {
+    assert_eq!(
+        Command::from_bytes(&[b"gEt", b"key"]),
+        Ok(Command::Get {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"sEt", b"key", b"value"]),
+        Ok(Command::Set {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"gEt", b"key", b"extra"]),
+        Err(CommandError::InvalidArguments("GET key"))
+    );
+}
+
+#[test]
 fn argument_vectors_use_the_same_validation_as_text_commands() {
     assert_eq!(Command::from_args(&[]), Err(CommandError::EmptyInput));
     assert_eq!(

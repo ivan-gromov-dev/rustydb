@@ -33,6 +33,30 @@ fn benchmark_runner_records_workload_and_environment() {
     ] {
         assert!(stdout.contains(field), "missing {field:?} in {stdout:?}");
     }
+    #[cfg(feature = "profiling")]
+    for field in [
+        "allocation_events=",
+        "allocated_bytes=",
+        "server_allocation_events=",
+        "server_allocated_bytes=",
+        "client_runner_allocation_events=",
+        "client_runner_allocated_bytes=",
+        "server_other_allocation_events=",
+        "server_other_allocated_bytes=",
+        "decode_allocation_events=",
+        "decode_allocated_bytes=",
+        "command_allocation_events=",
+        "command_allocated_bytes=",
+        "execute_allocation_events=",
+        "execute_allocated_bytes=",
+        "response_allocation_events=",
+        "response_allocated_bytes=",
+        "lock_acquisitions=20",
+        "lock_wait_nanoseconds=",
+        "lock_max_wait_nanoseconds=",
+    ] {
+        assert!(stdout.contains(field), "missing {field:?} in {stdout:?}");
+    }
 }
 
 #[test]

@@ -135,6 +135,8 @@ fn spawn_worker(stream: TcpStream, database: &SharedDatabase) -> JoinHandle<()> 
     let database = Arc::clone(database);
 
     thread::spawn(move || {
+        #[cfg(feature = "profiling")]
+        super::profiling::mark_server_thread();
         let _ = handle_client(stream, database);
     })
 }
@@ -202,7 +204,13 @@ fn handle_client(mut stream: TcpStream, database: SharedDatabase) -> io::Result<
 }
 
 pub(crate) fn execute_shared(database: &SharedDatabase, command: Command) -> CommandOutput {
-    with_database(database, |database| database.execute(command))
+    #[cfg(feature = "profiling")]
+    let started = std::time::Instant::now();
+    with_database(database, |database| {
+        #[cfg(feature = "profiling")]
+        super::profiling::record_lock_wait(started.elapsed());
+        database.execute(command)
+    })
 }
 
 fn with_database<T>(database: &SharedDatabase, operation: impl FnOnce(&mut Database) -> T) -> T {
