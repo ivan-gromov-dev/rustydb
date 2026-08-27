@@ -7,6 +7,8 @@ pub(crate) enum RespFrame {
     Integer(i64),
     BulkString(Vec<u8>),
     Array(Vec<RespFrame>),
+    Map(Vec<(RespFrame, RespFrame)>),
+    Null,
     NullBulkString,
     NullArray,
 }
@@ -39,6 +41,17 @@ impl RespFrame {
 
                 Ok(())
             }
+            Self::Map(entries) => {
+                write!(writer, "%{}\r\n", entries.len())?;
+
+                for (key, value) in entries {
+                    key.write_to(writer)?;
+                    value.write_to(writer)?;
+                }
+
+                Ok(())
+            }
+            Self::Null => writer.write_all(b"_\r\n"),
             Self::NullBulkString => writer.write_all(b"$-1\r\n"),
             Self::NullArray => writer.write_all(b"*-1\r\n"),
         }

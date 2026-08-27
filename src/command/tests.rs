@@ -46,6 +46,38 @@ fn echo_requires_one_binary_message() {
 }
 
 #[test]
+fn hello_accepts_current_and_supported_protocol_versions() {
+    assert_eq!(
+        Command::parse("HELLO"),
+        Ok(Command::Hello { protocol: None })
+    );
+    assert_eq!(
+        Command::parse("hello 2"),
+        Ok(Command::Hello {
+            protocol: Some(ProtocolVersion::Resp2),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"HELLO", b"3"]),
+        Ok(Command::Hello {
+            protocol: Some(ProtocolVersion::Resp3),
+        })
+    );
+    assert_eq!(
+        Command::parse("HELLO 4"),
+        Err(CommandError::UnsupportedProtocol(4))
+    );
+    assert_eq!(
+        Command::parse("HELLO nope"),
+        Err(CommandError::InvalidInteger("nope".to_owned()))
+    );
+    assert_eq!(
+        Command::parse("HELLO 3 extra"),
+        Err(CommandError::InvalidArguments("HELLO [2|3]"))
+    );
+}
+
+#[test]
 fn save_accepts_no_arguments() {
     assert_eq!(Command::parse("SAVE"), Ok(Command::Save));
     assert_eq!(
@@ -594,6 +626,9 @@ fn parses_every_supported_command_form() {
         "PING",
         "PING message",
         "ECHO message",
+        "HELLO",
+        "HELLO 2",
+        "HELLO 3",
         "KEYS",
         "LEN",
         "CLEAR",

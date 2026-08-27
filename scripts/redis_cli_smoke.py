@@ -36,9 +36,15 @@ def wait_for_server(port: int, process: subprocess.Popen[bytes]) -> None:
     raise RuntimeError("RustyDB server did not start within five seconds")
 
 
-def redis(cli: str, port: int, *arguments: str, stdin: bytes | None = None) -> bytes:
+def redis(
+    cli: str,
+    port: int,
+    *arguments: str,
+    stdin: bytes | None = None,
+    protocol: int = 2,
+) -> bytes:
     result = subprocess.run(
-        [cli, "-2", "--raw", "-h", HOST, "-p", str(port), *arguments],
+        [cli, f"-{protocol}", "--raw", "-h", HOST, "-p", str(port), *arguments],
         cwd=ROOT,
         input=stdin,
         stdout=subprocess.PIPE,
@@ -92,6 +98,11 @@ def main() -> int:
         wait_for_server(port, server)
         expect(line(redis(cli, port, "PING")), b"PONG", "PING")
         expect(
+            line(redis(cli, port, "PING", protocol=3)),
+            b"PONG",
+            "RESP3 PING",
+        )
+        expect(
             line(redis(cli, port, "PING", "hello world")),
             b"hello world",
             "PING message",
@@ -122,7 +133,7 @@ def main() -> int:
             server.kill()
         server.wait(timeout=5)
 
-    print("redis-cli RESP2 smoke test passed")
+    print("redis-cli RESP2/RESP3 smoke test passed")
     return 0
 
 

@@ -1,5 +1,7 @@
 use std::io::{self, Write};
 
+use crate::command::ProtocolVersion;
+
 pub(crate) const HELP_TEXT: &str = concat!(
     "Available commands:\n",
     "  SET key value\n",
@@ -39,6 +41,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  SCARD key\n",
     "  PING [message]\n",
     "  ECHO message\n",
+    "  HELLO [2|3]\n",
     "  KEYS\n",
     "  LEN\n",
     "  CLEAR\n",
@@ -53,6 +56,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
 pub(crate) enum CommandOutput {
     Ok,
     Pong,
+    Hello { protocol: Option<ProtocolVersion> },
     Integer(i64),
     Float(f64),
     Value(Vec<u8>),
@@ -73,6 +77,15 @@ impl CommandOutput {
         match self {
             Self::Ok => writeln!(writer, "OK"),
             Self::Pong => writeln!(writer, "PONG"),
+            Self::Hello { protocol } => {
+                let protocol = protocol.unwrap_or(ProtocolVersion::Resp2).number();
+                writeln!(writer, "server:rustydb")?;
+                writeln!(writer, "version:{}", env!("CARGO_PKG_VERSION"))?;
+                writeln!(writer, "proto:{protocol}")?;
+                writeln!(writer, "mode:standalone")?;
+                writeln!(writer, "role:master")?;
+                writeln!(writer, "modules:(empty)")
+            }
             Self::Integer(value) => writeln!(writer, "{value}"),
             Self::Float(value) => writeln!(writer, "{value}"),
             Self::Value(value) => {

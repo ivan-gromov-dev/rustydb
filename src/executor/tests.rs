@@ -487,6 +487,17 @@ fn execute_control_commands_return_control_responses() {
         ),
         Response::Value(b"message\0\xff".to_vec())
     );
+    assert_eq!(
+        execute(
+            Command::Hello {
+                protocol: Some(crate::command::ProtocolVersion::Resp3),
+            },
+            &mut database,
+        ),
+        Response::Hello {
+            protocol: Some(crate::command::ProtocolVersion::Resp3),
+        }
+    );
     assert_eq!(execute(Command::Help, &mut database), Response::Help);
     assert_eq!(execute(Command::Exit, &mut database), Response::Exit);
 }

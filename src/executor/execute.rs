@@ -213,6 +213,8 @@ pub(crate) fn execute_with_snapshot(
         }
         | Command::Echo { message } => CommandOutput::Value(message),
 
+        Command::Hello { protocol } => CommandOutput::Hello { protocol },
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

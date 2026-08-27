@@ -56,6 +56,69 @@ fn executes_every_pipelined_command_in_order() {
 }
 
 #[test]
+fn hello_switches_response_encoding_for_the_connection() {
+    let input = concat!(
+        "*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n",
+        "*2\r\n$3\r\nGET\r\n$7\r\nmissing\r\n",
+        "*3\r\n$11\r\nINCRBYFLOAT\r\n$7\r\ncounter\r\n$3\r\n1.5\r\n",
+        "*2\r\n$5\r\nHELLO\r\n$1\r\n2\r\n",
+        "*2\r\n$3\r\nGET\r\n$7\r\nmissing\r\n",
+    );
+
+    let output = run(input.as_bytes(), |command| match command {
+        Command::Hello { protocol } => CommandOutput::Hello { protocol },
+        Command::Get { .. } => CommandOutput::Nil,
+        Command::IncrementByFloat { .. } => CommandOutput::Float(1.5),
+        other => panic!("unexpected command: {other:?}"),
+    });
+
+    let version = env!("CARGO_PKG_VERSION");
+    let expected = format!(
+        concat!(
+            "%6\r\n",
+            "$6\r\nserver\r\n$7\r\nrustydb\r\n",
+            "$7\r\nversion\r\n${}\r\n{}\r\n",
+            "$5\r\nproto\r\n:3\r\n",
+            "$4\r\nmode\r\n$10\r\nstandalone\r\n",
+            "$4\r\nrole\r\n$6\r\nmaster\r\n",
+            "$7\r\nmodules\r\n*0\r\n",
+            "_\r\n",
+            "$3\r\n1.5\r\n",
+            "*12\r\n",
+            "$6\r\nserver\r\n$7\r\nrustydb\r\n",
+            "$7\r\nversion\r\n${}\r\n{}\r\n",
+            "$5\r\nproto\r\n:2\r\n",
+            "$4\r\nmode\r\n$10\r\nstandalone\r\n",
+            "$4\r\nrole\r\n$6\r\nmaster\r\n",
+            "$7\r\nmodules\r\n*0\r\n",
+            "$-1\r\n",
+        ),
+        version.len(),
+        version,
+        version.len(),
+        version,
+    );
+    assert_eq!(output, expected.as_bytes());
+}
+
+#[test]
+fn unsupported_hello_protocol_does_not_change_or_close_the_connection() {
+    let input = concat!("*2\r\n$5\r\nHELLO\r\n$1\r\n4\r\n", "*1\r\n$4\r\nPING\r\n",);
+    let mut executed = Vec::new();
+
+    let output = run(input.as_bytes(), |command| {
+        executed.push(command);
+        CommandOutput::Pong
+    });
+
+    assert_eq!(executed, vec![Command::Ping { message: None }]);
+    assert_eq!(
+        output,
+        b"-NOPROTO unsupported protocol version: 4\r\n+PONG\r\n"
+    );
+}
+
+#[test]
 fn command_errors_do_not_stop_later_pipeline_entries() {
     let input = b"*1\r\n$3\r\nGET\r\n*2\r\n$3\r\nGET\r\n$2\r\nok\r\n";
     let mut calls = 0;

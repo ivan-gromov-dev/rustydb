@@ -1,7 +1,8 @@
+use crate::command::ProtocolVersion;
 use crate::output::{CommandOutput, HELP_TEXT};
 
 use super::frame::RespFrame;
-use super::response::frame_from_output;
+use super::response::{frame_from_output, frame_from_output_for_protocol};
 
 #[test]
 fn converts_scalar_outputs() {
@@ -91,4 +92,39 @@ fn converted_outputs_encode_as_expected_resp2_frames() {
     .unwrap();
 
     assert_eq!(encoded, b"*2\r\n$3\r\na\0\xff\r\n$-1\r\n");
+}
+
+#[test]
+fn converts_existing_outputs_to_resp3_semantic_types() {
+    assert_eq!(
+        frame_from_output_for_protocol(CommandOutput::Float(1.5), ProtocolVersion::Resp3),
+        RespFrame::BulkString(b"1.5".to_vec())
+    );
+    assert_eq!(
+        frame_from_output_for_protocol(CommandOutput::Nil, ProtocolVersion::Resp3),
+        RespFrame::Null
+    );
+    assert_eq!(
+        frame_from_output_for_protocol(
+            CommandOutput::OptionalValues(vec![None]),
+            ProtocolVersion::Resp3,
+        ),
+        RespFrame::Array(vec![RespFrame::Null])
+    );
+}
+
+#[test]
+fn hello_uses_a_flat_array_in_resp2_and_a_map_in_resp3() {
+    let output = || CommandOutput::Hello {
+        protocol: Some(ProtocolVersion::Resp3),
+    };
+
+    assert!(matches!(
+        frame_from_output_for_protocol(output(), ProtocolVersion::Resp2),
+        RespFrame::Array(values) if values.len() == 12
+    ));
+    assert!(matches!(
+        frame_from_output_for_protocol(output(), ProtocolVersion::Resp3),
+        RespFrame::Map(entries) if entries.len() == 6
+    ));
 }

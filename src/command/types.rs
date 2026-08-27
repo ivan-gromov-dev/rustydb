@@ -1,5 +1,20 @@
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProtocolVersion {
+    Resp2,
+    Resp3,
+}
+
+impl ProtocolVersion {
+    pub(crate) fn number(self) -> u8 {
+        match self {
+            Self::Resp2 => 2,
+            Self::Resp3 => 3,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Command {
     Set {
@@ -134,6 +149,9 @@ pub(crate) enum Command {
     Echo {
         message: Vec<u8>,
     },
+    Hello {
+        protocol: Option<ProtocolVersion>,
+    },
     Keys,
     Len,
     Clear,
@@ -184,6 +202,7 @@ impl Command {
             Self::SCard { .. } => "SCARD",
             Self::Ping { .. } => "PING",
             Self::Echo { .. } => "ECHO",
+            Self::Hello { .. } => "HELLO",
             Self::Keys => "KEYS",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
@@ -278,6 +297,7 @@ impl Command {
             | Self::SCard { .. }
             | Self::Ping { .. }
             | Self::Echo { .. }
+            | Self::Hello { .. }
             | Self::Keys
             | Self::Len
             | Self::Save
@@ -305,6 +325,7 @@ pub(crate) enum CommandError {
     UnknownCommand(String),
     InvalidInteger(String),
     InvalidFloat(String),
+    UnsupportedProtocol(i64),
 }
 
 impl fmt::Display for CommandError {
@@ -322,6 +343,9 @@ impl fmt::Display for CommandError {
             }
             Self::InvalidFloat(usage) => {
                 write!(formatter, "invalid float: {usage}")
+            }
+            Self::UnsupportedProtocol(protocol) => {
+                write!(formatter, "unsupported protocol version: {protocol}")
             }
         }
     }

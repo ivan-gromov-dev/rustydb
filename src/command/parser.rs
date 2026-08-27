@@ -1,4 +1,4 @@
-use super::types::{Command, CommandError};
+use super::types::{Command, CommandError, ProtocolVersion};
 
 impl Command {
     pub(crate) fn parse(input: &str) -> Result<Self, CommandError> {
@@ -229,6 +229,7 @@ impl Command {
             "ECHO" => Ok(Self::Echo {
                 message: one(args, "ECHO message")?,
             }),
+            "HELLO" => parse_hello(args),
             "KEYS" => no_args(args, "KEYS", Self::Keys),
             "LEN" => no_args(args, "LEN", Self::Len),
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
@@ -311,6 +312,24 @@ fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
         .map(|entry| (owned(entry[0]), owned(entry[1])))
         .collect();
     Ok(Command::MSet { entries })
+}
+
+fn parse_hello(args: &[&[u8]]) -> Result<Command, CommandError> {
+    if args.len() > 2 {
+        return Err(CommandError::InvalidArguments("HELLO [2|3]"));
+    }
+    let Some(protocol) = args.get(1) else {
+        return Ok(Command::Hello { protocol: None });
+    };
+    let protocol = parse_i64(protocol)?;
+    let protocol = match protocol {
+        2 => ProtocolVersion::Resp2,
+        3 => ProtocolVersion::Resp3,
+        unsupported => return Err(CommandError::UnsupportedProtocol(unsupported)),
+    };
+    Ok(Command::Hello {
+        protocol: Some(protocol),
+    })
 }
 
 fn key_i64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64), CommandError> {

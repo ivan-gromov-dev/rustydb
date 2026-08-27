@@ -1,4 +1,5 @@
 use super::CommandOutput;
+use crate::command::ProtocolVersion;
 
 fn render(output: CommandOutput) -> String {
     let mut bytes = Vec::new();
@@ -10,6 +11,12 @@ fn render(output: CommandOutput) -> String {
 fn renders_scalar_outputs() {
     assert_eq!(render(CommandOutput::Ok), "OK\n");
     assert_eq!(render(CommandOutput::Pong), "PONG\n");
+    assert!(
+        render(CommandOutput::Hello {
+            protocol: Some(ProtocolVersion::Resp3),
+        })
+        .contains("proto:3\n")
+    );
     assert_eq!(render(CommandOutput::Integer(-2)), "-2\n");
     assert_eq!(render(CommandOutput::Float(1.5)), "1.5\n");
     assert_eq!(
@@ -96,6 +103,7 @@ fn help_lists_every_supported_command() {
         "SCARD",
         "PING",
         "ECHO",
+        "HELLO",
         "KEYS",
         "LEN",
         "CLEAR",

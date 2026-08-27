@@ -126,10 +126,11 @@ with it):
 rustydb server 127.0.0.1:6380 --aof data/server.aof
 ```
 
-The server accepts RESP2 arrays of bulk strings and shares one database between
-connected clients. It supports fragmented requests, pipelining, and binary keys
-and values. Press Ctrl+C to stop accepting new connections and wait for active
-client sessions to finish cleanly.
+The server accepts RESP arrays of bulk strings and shares one database between
+connected clients. Connections start in RESP2 mode and can switch between RESP2
+and RESP3 with `HELLO 2` or `HELLO 3`. It supports fragmented requests,
+pipelining, and binary keys and values. Press Ctrl+C to stop accepting new
+connections and wait for active client sessions to finish cleanly.
 
 Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
@@ -142,11 +143,11 @@ saves its snapshot.
 
 ### Using `redis-cli`
 
-Force RESP2 when connecting because RustyDB does not implement the RESP3
-`HELLO` handshake:
+Connect with RESP2 or negotiate RESP3:
 
 ```console
 redis-cli -2 -h 127.0.0.1 -p 6379
+redis-cli -3 -h 127.0.0.1 -p 6379
 ```
 
 One-shot invocations work for the command subset in the table below, and normal
@@ -169,13 +170,14 @@ Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
 `PATH`. The smoke test covers connection checks, binary input and echo, strings,
 integers, lists, sets, and expiration output through a real client.
 
-RustyDB does not implement RESP3, authentication, database selection,
-transactions, Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and
-`CONFIG`. Features of `redis-cli` that probe or depend on those commands are not
-supported. Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands;
-use one-shot invocations to send RustyDB commands with those names. Command
-errors use RustyDB's documented messages rather than full Redis error
-compatibility. See the official [`redis-cli` documentation](https://redis.io/docs/latest/develop/tools/cli/)
+RustyDB implements RESP3 response types needed by its documented command subset,
+but does not implement authentication, database selection, transactions,
+Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and `CONFIG`.
+Features of `redis-cli` that probe or depend on those commands are not supported.
+Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
+invocations to send RustyDB commands with those names. Command errors use
+RustyDB's documented messages rather than full Redis error compatibility. See
+the official [`redis-cli` documentation](https://redis.io/docs/latest/develop/tools/cli/)
 for client installation and option details.
 
 Example interactive CLI session:
@@ -201,9 +203,8 @@ RESP clients pass every key and value as an exact binary argument.
 
 ## Commands
 
-The result column describes the interactive CLI representation. The RESP2
-server returns the corresponding typed RESP value: simple strings, integers,
-bulk strings, null bulk strings, or arrays.
+The result column describes the interactive CLI representation. RESP2 and RESP3
+clients receive the corresponding protocol-specific typed value.
 
 | Command | Description | Result |
 | --- | --- | --- |
@@ -244,6 +245,7 @@ bulk strings, null bulk strings, or arrays.
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
 | `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
 | `ECHO message` | Return a binary message unchanged | The message |
+| `HELLO [2\|3]` | Report connection metadata and optionally select RESP2 or RESP3 | Server metadata |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
@@ -251,7 +253,7 @@ bulk strings, null bulk strings, or arrays.
 | `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
 | `INFO` | Read runtime counters | One `name:value` counter per line |
 | `HELP` | Print the command list | Help text |
-| `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
+| `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP |
 
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2`
 means it does not exist. Expired values are removed lazily when accessed or
@@ -324,8 +326,8 @@ src/
 ├── output/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
-├── resp/                  RESP2 frames, codec, and command/output adapters
-├── resp_session/          Buffered RESP2 request/response session loop
+├── resp/                  RESP request codec and RESP2/RESP3 response adapters
+├── resp_session/          Buffered RESP request/response session loop
 ├── server/                Concurrent TCP listener and graceful shutdown
 ├── snapshot.rs            Versioned snapshot codec and atomic file replacement
 └── storage/
@@ -347,8 +349,9 @@ The layers have deliberately narrow responsibilities:
 4. `database` owns reusable state and command execution.
 5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
 6. `output` renders results to any `Write` implementation.
-7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
-8. `resp_session` coordinates buffered RESP2 request and response processing.
+7. `resp` owns RESP request decoding, response encoding, and protocol adapters.
+8. `resp_session` coordinates buffered requests, responses, and per-connection
+   protocol negotiation.
 9. `snapshot` owns point-in-time persistence, while `aof` owns mutation records
    and replay; `storage` converts runtime values and expirations.
 10. `app` provides the interactive loop, while `server` accepts TCP clients and
@@ -423,7 +426,7 @@ See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
 (including the CLI and TCP integration tests), a release-mode benchmark smoke
 test without a throughput threshold, a real-process Ctrl+C shutdown test on
-Linux, the external `redis-cli` RESP2 smoke test, and the per-module coverage
+Linux, the external `redis-cli` RESP2/RESP3 smoke test, and the per-module coverage
 gate. The final `CI Success` job succeeds only when all five jobs succeed.
 
 ## Current limitations
@@ -434,7 +437,8 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
   save-on-shutdown completes. AOF mode instead synchronizes each successful
   mutation before acknowledging it.
 - No transactions, authentication, or transport encryption.
-- RESP2 compatibility currently covers only the documented command subset.
+- Redis protocol compatibility currently covers only the documented command
+  subset and the RESP3 response types it requires.
 - Live values and keys are held entirely in memory while the process runs.
 - `--max-keys` limits key count rather than byte usage; a small number of large
   keys can still consume substantial memory.

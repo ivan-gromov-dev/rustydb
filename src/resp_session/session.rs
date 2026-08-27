@@ -1,11 +1,11 @@
 use std::io::{self, Read, Write};
 
-use crate::command::Command;
+use crate::command::{Command, ProtocolVersion};
 use crate::output::CommandOutput;
 use crate::resp::decoder::{DecodeLimits, DecodeResult, decode};
 use crate::resp::frame::RespFrame;
 use crate::resp::request::command_from_frame;
-use crate::resp::response::{error_frame, frame_from_output};
+use crate::resp::response::{error_frame, frame_from_output_for_protocol};
 
 const READ_CHUNK_SIZE: usize = 8 * 1024;
 
@@ -16,6 +16,7 @@ where
     F: FnMut(Command) -> CommandOutput,
 {
     let limits = DecodeLimits::default();
+    let mut protocol = ProtocolVersion::Resp2;
     let mut buffer = Vec::new();
     let mut read_chunk = [0; READ_CHUNK_SIZE];
 
@@ -30,7 +31,7 @@ where
             };
             match decoded {
                 Ok(DecodeResult::Complete { frame, consumed }) => {
-                    let should_exit = process_frame(frame, writer, &mut execute)?;
+                    let should_exit = process_frame(frame, writer, &mut execute, &mut protocol)?;
                     buffer.drain(..consumed);
 
                     if should_exit {
@@ -62,7 +63,12 @@ where
     }
 }
 
-fn process_frame<F>(frame: RespFrame, writer: &mut impl Write, execute: &mut F) -> io::Result<bool>
+fn process_frame<F>(
+    frame: RespFrame,
+    writer: &mut impl Write,
+    execute: &mut F,
+    protocol: &mut ProtocolVersion,
+) -> io::Result<bool>
 where
     F: FnMut(Command) -> CommandOutput,
 {
@@ -76,11 +82,17 @@ where
     let command = match parsed {
         Ok(command) => command,
         Err(error) => {
-            error_frame(format_args!("ERR {error}")).write_to(writer)?;
+            error_frame(error.response_message()).write_to(writer)?;
             writer.flush()?;
             return Ok(false);
         }
     };
+
+    let hello_protocol = match &command {
+        Command::Hello { protocol } => Some(*protocol),
+        _ => None,
+    };
+    let response_protocol = hello_protocol.flatten().unwrap_or(*protocol);
 
     let output = {
         #[cfg(feature = "profiling")]
@@ -95,8 +107,12 @@ where
         let _scope = crate::server::profiling::profile_scope(
             crate::server::profiling::ProfilePhase::Response,
         );
-        frame_from_output(output).write_to(writer)?;
+        frame_from_output_for_protocol(output, response_protocol).write_to(writer)?;
         writer.flush()?;
+    }
+
+    if hello_protocol.is_some() {
+        *protocol = response_protocol;
     }
 
     Ok(should_exit)
