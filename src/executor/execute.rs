@@ -1,8 +1,15 @@
-use crate::command::Command;
+use crate::command::{COMMANDS, command_metadata};
+use crate::command::{
+    Command, ExpireCondition as CommandExpireCondition, GetExExpiration,
+    SetCondition as CommandSetCondition, SetExpiration as CommandSetExpiration,
+};
 use crate::output::CommandOutput;
 use crate::snapshot;
-use crate::storage::InMemoryStore;
+use crate::storage::{
+    ExpirationUpdate, ExpireCondition, InMemoryStore, SetCondition, SetExpiration,
+};
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 #[cfg(test)]
 pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOutput {
@@ -20,12 +27,44 @@ pub(crate) fn execute_with_snapshot(
             CommandOutput::Ok
         }
 
+        Command::SetAdvanced {
+            key,
+            value,
+            condition,
+            return_old,
+            expiration,
+        } => {
+            let condition = condition.map(|condition| match condition {
+                CommandSetCondition::IfAbsent => SetCondition::IfAbsent,
+                CommandSetCondition::IfPresent => SetCondition::IfPresent,
+            });
+            let expiration = match resolve_set_expiration(expiration) {
+                Ok(expiration) => expiration,
+                Err(error) => return CommandOutput::Error(error),
+            };
+            match store.set_advanced(key, value, condition, return_old, expiration) {
+                Ok(result) if !result.applied && return_old => result
+                    .old_value
+                    .map_or(CommandOutput::Nil, CommandOutput::Value),
+                Ok(result) if !result.applied => CommandOutput::Nil,
+                Ok(result) if return_old => result
+                    .old_value
+                    .map_or(CommandOutput::Nil, CommandOutput::Value),
+                Ok(_) => CommandOutput::Ok,
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+
         Command::MSet { entries } => {
             for (key, value) in entries {
                 store.set(key, value);
             }
 
             CommandOutput::Ok
+        }
+
+        Command::MSetNx { entries } => {
+            CommandOutput::Integer(i64::from(store.mset_if_absent(entries)))
         }
 
         Command::SetNx { key, value } => {
@@ -41,6 +80,18 @@ pub(crate) fn execute_with_snapshot(
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+
+        Command::GetEx { key, expiration } => {
+            let update = match resolve_getex_expiration(expiration) {
+                Ok(update) => update,
+                Err(error) => return CommandOutput::Error(error),
+            };
+            match store.get_with_expiration(&key, update) {
+                Ok(Some(value)) => CommandOutput::Value(value),
+                Ok(None) => CommandOutput::Nil,
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
 
         Command::MGet { keys } => {
             let values: Result<Vec<Option<Vec<u8>>>, _> = keys
@@ -104,9 +155,39 @@ pub(crate) fn execute_with_snapshot(
 
         Command::Delete { keys } => CommandOutput::Integer(store.delete_many(&keys) as i64),
 
+        Command::Type { key } => CommandOutput::SimpleString(store.type_name(&key)),
+
+        Command::Touch { keys } => CommandOutput::Integer(store.exists_many(&keys) as i64),
+
+        Command::Unlink { keys } => CommandOutput::Integer(store.delete_many(&keys) as i64),
+
         Command::Exists { keys } => CommandOutput::Integer(store.exists_many(&keys) as i64),
 
-        Command::Keys => CommandOutput::KeyList(store.keys()),
+        Command::Keys { pattern } => CommandOutput::KeyList(store.keys_matching(&pattern)),
+
+        Command::Scan {
+            cursor,
+            pattern,
+            count,
+            type_name,
+        } => {
+            let (cursor, keys) =
+                store.scan(cursor, pattern.as_deref(), count, type_name.as_deref());
+            CommandOutput::Scan { cursor, keys }
+        }
+
+        Command::RandomKey => store
+            .random_key()
+            .map_or(CommandOutput::Nil, CommandOutput::Value),
+
+        Command::Copy {
+            source,
+            destination,
+            replace,
+        } => match store.copy(source, destination, replace) {
+            Ok(copied) => CommandOutput::Integer(i64::from(copied)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::Rename { old_key, new_key } => {
             CommandOutput::Integer(if store.rename(&old_key, new_key) {
@@ -122,15 +203,66 @@ pub(crate) fn execute_with_snapshot(
             CommandOutput::Integer(if result { 1 } else { 0 })
         }
 
+        Command::ExpireAdvanced {
+            key,
+            seconds,
+            condition,
+        } => CommandOutput::Integer(i64::from(store.expire_duration_if(
+            &key,
+            Duration::from_secs(seconds),
+            Some(map_expire_condition(condition)),
+        ))),
+
         Command::PExpire { key, milliseconds } => {
             let result = store.pexpire(&key, milliseconds);
 
             CommandOutput::Integer(if result { 1 } else { 0 })
         }
 
+        Command::PExpireAdvanced {
+            key,
+            milliseconds,
+            condition,
+        } => CommandOutput::Integer(i64::from(store.expire_duration_if(
+            &key,
+            Duration::from_millis(milliseconds),
+            Some(map_expire_condition(condition)),
+        ))),
+
+        Command::ExpireAt {
+            key,
+            unix_seconds,
+            condition,
+        } => match execute_expire_at(store, &key, Duration::from_secs(unix_seconds), condition) {
+            Ok(applied) => CommandOutput::Integer(i64::from(applied)),
+            Err(error) => CommandOutput::Error(error),
+        },
+
+        Command::PExpireAt {
+            key,
+            unix_milliseconds,
+            condition,
+        } => match execute_expire_at(
+            store,
+            &key,
+            Duration::from_millis(unix_milliseconds),
+            condition,
+        ) {
+            Ok(applied) => CommandOutput::Integer(i64::from(applied)),
+            Err(error) => CommandOutput::Error(error),
+        },
+
         Command::Ttl { key } => CommandOutput::Integer(store.ttl(&key)),
 
         Command::PTtl { key } => CommandOutput::Integer(store.pttl(&key)),
+
+        Command::ExpireTime { key } => {
+            CommandOutput::Integer(store.expiration_unix_time(&key, SystemTime::now(), false))
+        }
+
+        Command::PExpireTime { key } => {
+            CommandOutput::Integer(store.expiration_unix_time(&key, SystemTime::now(), true))
+        }
 
         Command::Persist { key } => CommandOutput::Integer(if store.persist(&key) { 1 } else { 0 }),
 
@@ -206,6 +338,46 @@ pub(crate) fn execute_with_snapshot(
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::Ping { message: None } => CommandOutput::Pong,
+
+        Command::Ping {
+            message: Some(message),
+        }
+        | Command::Echo { message } => CommandOutput::Value(message),
+
+        Command::Hello { protocol } => CommandOutput::Hello {
+            protocol,
+            connection_id: None,
+        },
+
+        Command::ClientId
+        | Command::ClientSetName { .. }
+        | Command::ClientGetName
+        | Command::ClientSetInfo { .. } => {
+            CommandOutput::Error("CLIENT requires a server connection".to_owned())
+        }
+
+        Command::MetadataList => {
+            CommandOutput::CommandMetadata(COMMANDS.iter().copied().map(Some).collect())
+        }
+
+        Command::MetadataInfo { names } => CommandOutput::CommandMetadata(if names.is_empty() {
+            COMMANDS.iter().copied().map(Some).collect()
+        } else {
+            names.iter().map(|name| command_metadata(name)).collect()
+        }),
+
+        Command::MetadataCount => CommandOutput::Integer(COMMANDS.len() as i64),
+
+        Command::Select => CommandOutput::Ok,
+
+        Command::DbSize => CommandOutput::Integer(store.len() as i64),
+
+        Command::FlushDb | Command::FlushAll => {
+            store.clear();
+            CommandOutput::Ok
+        }
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {
@@ -229,4 +401,66 @@ pub(crate) fn execute_with_snapshot(
 
         Command::Exit => CommandOutput::Exit,
     }
+}
+
+fn resolve_set_expiration(
+    expiration: Option<CommandSetExpiration>,
+) -> Result<Option<SetExpiration>, String> {
+    let duration = match expiration {
+        None => return Ok(None),
+        Some(CommandSetExpiration::KeepTtl) => return Ok(Some(SetExpiration::KeepTtl)),
+        Some(CommandSetExpiration::Seconds(value)) => Duration::from_secs(value),
+        Some(CommandSetExpiration::Milliseconds(value)) => Duration::from_millis(value),
+        Some(CommandSetExpiration::UnixSeconds(value)) => {
+            absolute_expiration(Duration::from_secs(value))?
+        }
+        Some(CommandSetExpiration::UnixMilliseconds(value)) => {
+            absolute_expiration(Duration::from_millis(value))?
+        }
+    };
+    Ok(Some(SetExpiration::Duration(duration)))
+}
+
+fn absolute_expiration(timestamp: Duration) -> Result<Duration, String> {
+    let target = SystemTime::UNIX_EPOCH
+        .checked_add(timestamp)
+        .ok_or_else(|| "expiration is out of range".to_owned())?;
+    Ok(target.duration_since(SystemTime::now()).unwrap_or_default())
+}
+
+fn resolve_getex_expiration(
+    expiration: Option<GetExExpiration>,
+) -> Result<Option<ExpirationUpdate>, String> {
+    let duration = match expiration {
+        None => return Ok(None),
+        Some(GetExExpiration::Persist) => return Ok(Some(ExpirationUpdate::Persist)),
+        Some(GetExExpiration::Seconds(value)) => Duration::from_secs(value),
+        Some(GetExExpiration::Milliseconds(value)) => Duration::from_millis(value),
+        Some(GetExExpiration::UnixSeconds(value)) => {
+            absolute_expiration(Duration::from_secs(value))?
+        }
+        Some(GetExExpiration::UnixMilliseconds(value)) => {
+            absolute_expiration(Duration::from_millis(value))?
+        }
+    };
+    Ok(Some(ExpirationUpdate::Set(duration)))
+}
+
+fn map_expire_condition(condition: CommandExpireCondition) -> ExpireCondition {
+    match condition {
+        CommandExpireCondition::NoExpiration => ExpireCondition::NoExpiration,
+        CommandExpireCondition::HasExpiration => ExpireCondition::HasExpiration,
+        CommandExpireCondition::Greater => ExpireCondition::Greater,
+        CommandExpireCondition::Less => ExpireCondition::Less,
+    }
+}
+
+fn execute_expire_at(
+    store: &mut InMemoryStore,
+    key: &[u8],
+    timestamp: Duration,
+    condition: Option<CommandExpireCondition>,
+) -> Result<bool, String> {
+    let duration = absolute_expiration(timestamp)?;
+    Ok(store.expire_duration_if(key, duration, condition.map(map_expire_condition)))
 }

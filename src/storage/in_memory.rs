@@ -1,3 +1,4 @@
+use super::glob;
 use super::indexing::normalize_index;
 use super::stored_value::StoredValue;
 use crate::storage::clock::{Clock, SystemClock};
@@ -5,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::str;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 pub(crate) struct InMemoryStore {
     pub(super) storage: HashMap<Vec<u8>, StoredValue>,
@@ -14,6 +15,7 @@ pub(crate) struct InMemoryStore {
     reclamation_metrics: ReclamationMetrics,
     pending_evictions: Vec<Vec<u8>>,
     pub(super) clock: Box<dyn Clock>,
+    random_state: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -30,6 +32,8 @@ pub(crate) enum StoreError {
     ValueIsNotFloat,
     FloatIsNotFinite,
     WrongType,
+    ExpirationOutOfRange,
+    SameSourceDestination,
 }
 
 impl fmt::Display for StoreError {
@@ -57,8 +61,44 @@ impl fmt::Display for StoreError {
                     "operation against a key holding the wrong kind of value"
                 )
             }
+            Self::ExpirationOutOfRange => write!(formatter, "expiration is out of range"),
+            Self::SameSourceDestination => {
+                write!(formatter, "source and destination objects are the same")
+            }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetCondition {
+    IfAbsent,
+    IfPresent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetExpiration {
+    Duration(Duration),
+    KeepTtl,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpirationUpdate {
+    Set(Duration),
+    Persist,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpireCondition {
+    NoExpiration,
+    HasExpiration,
+    Greater,
+    Less,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SetResult {
+    pub(crate) applied: bool,
+    pub(crate) old_value: Option<Vec<u8>>,
 }
 
 impl InMemoryStore {
@@ -83,6 +123,7 @@ impl InMemoryStore {
             reclamation_metrics: ReclamationMetrics::default(),
             pending_evictions: Vec::new(),
             clock,
+            random_state: 0x9e37_79b9_7f4a_7c15,
         }
     }
 
@@ -92,11 +133,120 @@ impl InMemoryStore {
         self.storage.insert(key, StoredValue::new(value));
     }
 
+    pub(crate) fn set_advanced(
+        &mut self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+        condition: Option<SetCondition>,
+        return_old: bool,
+        expiration: Option<SetExpiration>,
+    ) -> Result<SetResult, StoreError> {
+        self.remove_if_expired(&key);
+
+        let old_value = if return_old {
+            self.storage
+                .get(&key)
+                .map(|entry| entry.value().map(<[u8]>::to_vec))
+                .transpose()?
+        } else {
+            None
+        };
+        let exists = self.storage.contains_key(&key);
+        let applies = match condition {
+            Some(SetCondition::IfAbsent) => !exists,
+            Some(SetCondition::IfPresent) => exists,
+            None => true,
+        };
+        if !applies {
+            return Ok(SetResult {
+                applied: false,
+                old_value,
+            });
+        }
+
+        let expires_at = match expiration {
+            Some(SetExpiration::Duration(duration)) => Some(
+                self.clock
+                    .now()
+                    .checked_add(duration)
+                    .ok_or(StoreError::ExpirationOutOfRange)?,
+            ),
+            Some(SetExpiration::KeepTtl) => {
+                self.storage.get(&key).and_then(StoredValue::expires_at)
+            }
+            None => None,
+        };
+
+        self.ensure_capacity_for(&key);
+        let mut entry = StoredValue::new(value);
+        if let Some(expires_at) = expires_at {
+            entry.set_expires_at(expires_at);
+            self.expirations.push(Reverse((expires_at, key.clone())));
+        }
+        self.storage.insert(key, entry);
+        Ok(SetResult {
+            applied: true,
+            old_value,
+        })
+    }
+
     pub(crate) fn get(&mut self, key: impl AsRef<[u8]>) -> Result<Option<&[u8]>, StoreError> {
         let key = key.as_ref();
         self.remove_if_expired(key);
 
         self.storage.get(key).map(StoredValue::value).transpose()
+    }
+
+    pub(crate) fn get_with_expiration(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        update: Option<ExpirationUpdate>,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(None);
+        };
+        let value = entry.value()?.to_vec();
+        let expires_at = match update {
+            Some(ExpirationUpdate::Set(duration)) => Some(
+                self.clock
+                    .now()
+                    .checked_add(duration)
+                    .ok_or(StoreError::ExpirationOutOfRange)?,
+            ),
+            _ => None,
+        };
+        if let Some(update) = update {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(None);
+            };
+            match update {
+                ExpirationUpdate::Set(_) => {
+                    let expires_at = expires_at.ok_or(StoreError::ExpirationOutOfRange)?;
+                    entry.set_expires_at(expires_at);
+                    self.expirations.push(Reverse((expires_at, key.to_vec())));
+                }
+                ExpirationUpdate::Persist => entry.clear_expiration(),
+            }
+        }
+        Ok(Some(value))
+    }
+
+    pub(crate) fn mset_if_absent(&mut self, entries: Vec<(Vec<u8>, Vec<u8>)>) -> bool {
+        for (key, _) in &entries {
+            self.remove_if_expired(key);
+        }
+        if entries
+            .iter()
+            .any(|(key, _)| self.storage.contains_key(key))
+        {
+            return false;
+        }
+        for (key, value) in entries {
+            self.set(key, value);
+        }
+        true
     }
 
     pub(crate) fn exists(&mut self, key: impl AsRef<[u8]>) -> bool {
@@ -139,6 +289,82 @@ impl InMemoryStore {
 
         keys.sort();
         keys
+    }
+
+    pub(crate) fn keys_matching(&mut self, pattern: &[u8]) -> Vec<Vec<u8>> {
+        self.keys()
+            .into_iter()
+            .filter(|key| glob::matches(pattern, key))
+            .collect()
+    }
+
+    pub(crate) fn scan(
+        &mut self,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+        type_name: Option<&[u8]>,
+    ) -> (usize, Vec<Vec<u8>>) {
+        let keys = self.keys();
+        if cursor >= keys.len() {
+            return (0, Vec::new());
+        }
+        let end = cursor.saturating_add(count).min(keys.len());
+        let matched = keys[cursor..end]
+            .iter()
+            .filter(|key| pattern.is_none_or(|pattern| glob::matches(pattern, key)))
+            .filter(|key| {
+                type_name.is_none_or(|expected| {
+                    self.storage.get(key.as_slice()).is_some_and(|entry| {
+                        entry.type_name().as_bytes().eq_ignore_ascii_case(expected)
+                    })
+                })
+            })
+            .cloned()
+            .collect();
+        (if end == keys.len() { 0 } else { end }, matched)
+    }
+
+    pub(crate) fn random_key(&mut self) -> Option<Vec<u8>> {
+        let keys = self.keys();
+        if keys.is_empty() {
+            return None;
+        }
+        self.random_state ^= self.random_state << 13;
+        self.random_state ^= self.random_state >> 7;
+        self.random_state ^= self.random_state << 17;
+        let index = (self.random_state as usize) % keys.len();
+        keys.get(index).cloned()
+    }
+
+    pub(crate) fn copy(
+        &mut self,
+        source: impl AsRef<[u8]>,
+        destination: Vec<u8>,
+        replace: bool,
+    ) -> Result<bool, StoreError> {
+        let source = source.as_ref();
+        if source == destination {
+            return Err(StoreError::SameSourceDestination);
+        }
+        self.remove_if_expired(source);
+        self.remove_if_expired(&destination);
+        if self.storage.contains_key(&destination) && !replace {
+            return Ok(false);
+        }
+        let Some(entry) = self.storage.get(source).cloned() else {
+            return Ok(false);
+        };
+        self.ensure_capacity_for(&destination);
+        let expires_at = entry.expires_at();
+        if self.storage.insert(destination.clone(), entry).is_some() {
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        if let Some(expires_at) = expires_at {
+            self.expirations.push(Reverse((expires_at, destination)));
+        }
+        Ok(true)
     }
 
     pub(crate) fn rename(&mut self, old_key: impl AsRef<[u8]>, new_key: Vec<u8>) -> bool {
@@ -342,11 +568,35 @@ impl InMemoryStore {
     }
 
     pub(crate) fn expire_at(&mut self, key: impl AsRef<[u8]>, expires_at: Instant) -> bool {
+        self.expire_at_if(key, expires_at, None)
+    }
+
+    pub(crate) fn expire_at_if(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        expires_at: Instant,
+        condition: Option<ExpireCondition>,
+    ) -> bool {
         let key = key.as_ref();
         self.remove_if_expired(key);
 
         match self.storage.get_mut(key) {
             Some(entry) => {
+                let current = entry.expires_at();
+                let applies = match condition {
+                    Some(ExpireCondition::NoExpiration) => current.is_none(),
+                    Some(ExpireCondition::HasExpiration) => current.is_some(),
+                    Some(ExpireCondition::Greater) => {
+                        current.is_some_and(|current| expires_at > current)
+                    }
+                    Some(ExpireCondition::Less) => {
+                        current.is_none_or(|current| expires_at < current)
+                    }
+                    None => true,
+                };
+                if !applies {
+                    return false;
+                }
                 entry.set_expires_at(expires_at);
                 self.expirations.push(Reverse((expires_at, key.to_vec())));
                 true
@@ -517,6 +767,46 @@ impl InMemoryStore {
         self.expire_at(key, expires_at)
     }
 
+    pub(crate) fn expire_duration_if(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        duration: Duration,
+        condition: Option<ExpireCondition>,
+    ) -> bool {
+        let Some(expires_at) = self.clock.now().checked_add(duration) else {
+            return false;
+        };
+        self.expire_at_if(key, expires_at, condition)
+    }
+
+    pub(crate) fn expiration_unix_time(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        wall_now: SystemTime,
+        milliseconds: bool,
+    ) -> i64 {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return -2;
+        };
+        let Some(expires_at) = entry.expires_at() else {
+            return -1;
+        };
+        let remaining = expires_at.saturating_duration_since(self.clock.now());
+        let Some(wall_expiration) = wall_now.checked_add(remaining) else {
+            return i64::MAX;
+        };
+        let Ok(since_epoch) = wall_expiration.duration_since(SystemTime::UNIX_EPOCH) else {
+            return 0;
+        };
+        if milliseconds {
+            i64::try_from(since_epoch.as_millis()).unwrap_or(i64::MAX)
+        } else {
+            i64::try_from(since_epoch.as_secs()).unwrap_or(i64::MAX)
+        }
+    }
+
     pub(crate) fn pttl(&mut self, key: impl AsRef<[u8]>) -> i64 {
         let key = key.as_ref();
         self.remove_if_expired(key);
@@ -607,6 +897,12 @@ impl InMemoryStore {
 
     pub(crate) fn exists_many(&mut self, keys: &[Vec<u8>]) -> usize {
         keys.iter().filter(|key| self.exists(key)).count()
+    }
+
+    pub(crate) fn type_name(&mut self, key: impl AsRef<[u8]>) -> &'static str {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.storage.get(key).map_or("none", StoredValue::type_name)
     }
 
     pub(crate) fn push_left(

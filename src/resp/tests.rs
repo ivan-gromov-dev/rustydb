@@ -16,6 +16,7 @@ fn encodes_scalar_frames() {
         b"-ERR failure\r\n"
     );
     assert_eq!(encode(RespFrame::Integer(-42)), b":-42\r\n");
+    assert_eq!(encode(RespFrame::Null), b"_\r\n");
 }
 
 #[test]
@@ -39,6 +40,17 @@ fn encodes_nested_and_empty_arrays() {
             ]),
         ])),
         b"*2\r\n$3\r\nGET\r\n*2\r\n:1\r\n+OK\r\n"
+    );
+}
+
+#[test]
+fn encodes_resp3_maps() {
+    assert_eq!(
+        encode(RespFrame::Map(vec![(
+            RespFrame::BulkString(b"proto".to_vec()),
+            RespFrame::Integer(3),
+        )])),
+        b"%1\r\n$5\r\nproto\r\n:3\r\n"
     );
 }
 

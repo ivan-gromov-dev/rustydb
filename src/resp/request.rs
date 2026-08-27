@@ -25,6 +25,17 @@ impl fmt::Display for RequestError {
     }
 }
 
+impl RequestError {
+    pub(crate) fn response_message(&self) -> String {
+        match self {
+            Self::InvalidCommand(CommandError::UnsupportedProtocol(_)) => {
+                format!("NOPROTO {self}")
+            }
+            _ => format!("ERR {self}"),
+        }
+    }
+}
+
 pub(crate) fn command_from_frame(frame: RespFrame) -> Result<Command, RequestError> {
     let RespFrame::Array(elements) = frame else {
         return Err(RequestError::ExpectedArray);

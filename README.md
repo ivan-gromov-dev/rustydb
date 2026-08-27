@@ -5,9 +5,10 @@ interactive command-line interface and a concurrent TCP server inspired by a
 focused subset of Redis string, list, set, and expiration operations, with
 snapshot and append-only persistence.
 
-RustyDB begins as a learning-oriented implementation of database internals and
-is intended to evolve toward a production-capable system through explicit,
-tested guarantees. Current releases remain experimental, with snapshot and
+RustyDB is a learning-oriented implementation of database internals and a
+functional engineering demonstration. It is intended to provide an
+application-ready standalone subset of Redis rather than production or complete
+Redis compatibility. Current releases remain experimental, with snapshot and
 append-only persistence available as separate operating modes.
 
 ## Requirements
@@ -51,8 +52,9 @@ Every successfully executed mutating command is appended as a binary-safe,
 checksummed record and synchronized before its result is acknowledged. RustyDB
 replays those records at startup without appending them again. Failed commands
 and read-only commands are not recorded. AOF records retain their execution
-time, so replay reduces `EXPIRE` and `PEXPIRE` lifetimes by the time elapsed
-while RustyDB was stopped. Snapshot options and `--aof` are currently mutually
+time, so replay reduces relative `SET`, `GETEX`, `EXPIRE`, and `PEXPIRE`
+lifetimes by the time elapsed while RustyDB was stopped. Snapshot options and
+`--aof` are currently mutually
 exclusive. If a crash leaves the final AOF record incomplete, startup discards
 that tail at the previous valid record boundary and continues. A checksum
 mismatch or malformed complete record remains a startup error.
@@ -125,10 +127,11 @@ with it):
 rustydb server 127.0.0.1:6380 --aof data/server.aof
 ```
 
-The server accepts RESP2 arrays of bulk strings and shares one database between
-connected clients. It supports fragmented requests, pipelining, and binary keys
-and values. Press Ctrl+C to stop accepting new connections and wait for active
-client sessions to finish cleanly.
+The server accepts RESP arrays of bulk strings and shares one database between
+connected clients. Connections start in RESP2 mode and can switch between RESP2
+and RESP3 with `HELLO 2` or `HELLO 3`. It supports fragmented requests,
+pipelining, and binary keys and values. Press Ctrl+C to stop accepting new
+connections and wait for active client sessions to finish cleanly.
 
 Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
@@ -141,11 +144,11 @@ saves its snapshot.
 
 ### Using `redis-cli`
 
-Force RESP2 when connecting because RustyDB does not implement the RESP3
-`HELLO` handshake:
+Connect with RESP2 or negotiate RESP3:
 
 ```console
 redis-cli -2 -h 127.0.0.1 -p 6379
+redis-cli -3 -h 127.0.0.1 -p 6379
 ```
 
 One-shot invocations work for the command subset in the table below, and normal
@@ -165,16 +168,17 @@ python scripts/redis_cli_smoke.py
 ```
 
 Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
-`PATH`. The smoke test covers strings, binary input, integers, lists, sets, and
-expiration output through a real client.
+`PATH`. The smoke test covers connection checks, binary input and echo, strings,
+integers, lists, sets, and expiration output through a real client.
 
-RustyDB does not implement RESP3, authentication, database selection,
-transactions, Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and
-`CONFIG`. Features of `redis-cli` that probe or depend on those commands are not
-supported. Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands;
-use one-shot invocations to send RustyDB commands with those names. Command
-errors use RustyDB's documented messages rather than full Redis error
-compatibility. See the official [`redis-cli` documentation](https://redis.io/docs/latest/develop/tools/cli/)
+RustyDB implements RESP3 response types needed by its documented command subset,
+but does not implement authentication, multiple logical databases, transactions,
+Pub/Sub, or configuration metadata commands such as `CONFIG`.
+Features of `redis-cli` that probe or depend on those commands are not supported.
+Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
+invocations to send RustyDB commands with those names. Command errors use
+RustyDB's documented messages rather than full Redis error compatibility. See
+the official [`redis-cli` documentation](https://redis.io/docs/latest/develop/tools/cli/)
 for client installation and option details.
 
 Example interactive CLI session:
@@ -200,16 +204,17 @@ RESP clients pass every key and value as an exact binary argument.
 
 ## Commands
 
-The result column describes the interactive CLI representation. The RESP2
-server returns the corresponding typed RESP value: simple strings, integers,
-bulk strings, null bulk strings, or arrays.
+The result column describes the interactive CLI representation. RESP2 and RESP3
+clients receive the corresponding protocol-specific typed value.
 
 | Command | Description | Result |
 | --- | --- | --- |
-| `SET key value` | Store or overwrite a value and clear its previous expiration | `OK` |
+| `SET key value [NX\|XX] [GET] [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|KEEPTTL]` | Store a value with optional existence conditions, old-value return, and expiration policy | `OK`, previous value, or `(nil)` |
 | `MSET key value [key value ...]` | Store one or more key/value pairs | `OK` |
+| `MSETNX key value [key value ...]` | Atomically store all pairs only when every key is missing | `1` if all were stored, otherwise `0` |
 | `SETNX key value` | Store only when the key does not exist | `1` if stored, otherwise `0` |
 | `GET key` | Read a value | Value or `(nil)` |
+| `GETEX key [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|PERSIST]` | Read a value and optionally update or remove its expiration | Value or `(nil)` |
 | `MGET key [key ...]` | Read multiple values in request order | One value or `(nil)` per line |
 | `GETSET key value` | Replace a value and return the previous value | Previous value or `(nil)` |
 | `GETDEL key` | Delete a key and return its value | Previous value or `(nil)` |
@@ -221,11 +226,18 @@ bulk strings, null bulk strings, or arrays.
 | `INCRBYFLOAT key amount` | Increment a finite floating-point value | Updated number |
 | `EXISTS key [key ...]` | Count existing, non-expired keys; duplicate keys are counted repeatedly | Number of matches |
 | `DEL key [key ...]` | Delete one or more keys; duplicate keys are removed once | Number deleted |
+| `TYPE key` | Report `string`, `list`, `set`, or `none` for an expired or missing key | Type name |
+| `TOUCH key [key ...]` | Count existing keys (including duplicate arguments); RustyDB has no LRU/LFU access metadata to update | Number of matches |
+| `UNLINK key [key ...]` | Delete keys synchronously; duplicate keys are removed once | Number deleted |
 | `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
-| `EXPIRE key seconds` | Set expiration in seconds | `1` if set, otherwise `0` |
-| `PEXPIRE key milliseconds` | Set expiration in milliseconds | `1` if set, otherwise `0` |
+| `EXPIRE key seconds [NX\|XX\|GT\|LT]` | Set a relative expiration in seconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
+| `PEXPIRE key milliseconds [NX\|XX\|GT\|LT]` | Set a relative expiration in milliseconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
+| `EXPIREAT key unix-seconds [NX\|XX\|GT\|LT]` | Set an absolute Unix expiration in seconds | `1` if set, otherwise `0` |
+| `PEXPIREAT key unix-milliseconds [NX\|XX\|GT\|LT]` | Set an absolute Unix expiration in milliseconds | `1` if set, otherwise `0` |
 | `TTL key` | Read remaining lifetime in seconds | Remaining TTL, `-1`, or `-2` |
 | `PTTL key` | Read remaining lifetime in milliseconds | Remaining TTL, `-1`, or `-2` |
+| `EXPIRETIME key` | Read the absolute Unix expiration in seconds | Unix timestamp, `-1`, or `-2` |
+| `PEXPIRETIME key` | Read the absolute Unix expiration in milliseconds | Unix timestamp, `-1`, or `-2` |
 | `PERSIST key` | Remove an expiration | `1` if removed, otherwise `0` |
 | `STRLEN key` | Count bytes in a string | Byte count |
 | `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
@@ -241,20 +253,43 @@ bulk strings, null bulk strings, or arrays.
 | `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
-| `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
+| `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
+| `ECHO message` | Return a binary message unchanged | The message |
+| `HELLO [2\|3]` | Report connection metadata and optionally select RESP2 or RESP3 | Server metadata |
+| `CLIENT ID` | Read the connection's unique, monotonically increasing identifier | Connection ID |
+| `CLIENT SETNAME name` | Set or clear the current connection name | `OK` |
+| `CLIENT GETNAME` | Read the current connection name | Name or `(nil)` |
+| `CLIENT SETINFO LIB-NAME\|LIB-VER value` | Record client library metadata for the connection | `OK` |
+| `COMMAND` | List metadata for every supported command in sorted order | Command metadata |
+| `COMMAND INFO [command ...]` | Read selected command metadata, or all metadata when omitted | Metadata or `(nil)` per name |
+| `COMMAND COUNT` | Count the commands advertised by RustyDB | Command count |
+| `SELECT 0` | Select the only supported logical database | `OK`; other indexes are rejected |
+| `DBSIZE` | Count non-expired keys in database zero | Number of keys |
+| `FLUSHDB [SYNC\|ASYNC]` | Synchronously remove every key from database zero | `OK` |
+| `FLUSHALL [SYNC\|ASYNC]` | Synchronously remove every key from the standalone server | `OK` |
+| `KEYS pattern` | List non-expired keys matching a binary-safe Redis glob, in sorted order | One key per line or `(nil)` |
+| `SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]` | Deterministically inspect sorted keyspace batches; `COUNT` controls examined keys | Next cursor followed by matching keys |
+| `RANDOMKEY` | Return a pseudo-random non-expired key | Key or `(nil)` |
+| `COPY source destination [DB 0] [REPLACE]` | Copy a value and its remaining TTL, optionally replacing the destination | `1` if copied, otherwise `0` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
 | `SAVE` | Atomically write the configured snapshot | `OK` or an error |
 | `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
 | `INFO` | Read runtime counters | One `name:value` counter per line |
 | `HELP` | Print the command list | Help text |
-| `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP2 |
+| `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP |
 
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2`
 means it does not exist. Expired values are removed lazily when accessed or
 when collection-wide operations run. Server mode also performs bounded active-
 expiration work between connection accept attempts, reclaiming expired keys
 even when clients never access them.
+
+Expiration conditions are mutually exclusive. `NX` applies only when the key
+has no expiration, `XX` only when it already has one, and `GT`/`LT` compare the
+new deadline with the current deadline. A persistent key is treated as having
+an infinite deadline for those comparisons. `EXPIRETIME` and `PEXPIRETIME` use
+the same `-1` and `-2` sentinel values as `TTL` and `PTTL`.
 
 Snapshots store expirations as Unix-time millisecond timestamps. Loading turns
 future timestamps back into monotonic runtime deadlines and omits keys that
@@ -309,6 +344,7 @@ src/
 ├── aof.rs                 Append-only record codec, writer, and replay
 ├── app/tests.rs           End-to-end CLI-loop tests
 ├── command/
+│   ├── metadata.rs        Deterministic supported-command metadata
 │   ├── parser.rs          Text and argument-vector command parser
 │   └── types.rs           Command and CommandError types
 ├── config.rs              Public memory-limit configuration
@@ -321,12 +357,13 @@ src/
 ├── output/
 │   ├── command_output.rs  Output model and writer-based rendering
 │   └── tests.rs
-├── resp/                  RESP2 frames, codec, and command/output adapters
-├── resp_session/          Buffered RESP2 request/response session loop
+├── resp/                  RESP request codec and RESP2/RESP3 response adapters
+├── resp_session/          Buffered RESP request/response session loop
 ├── server/                Concurrent TCP listener and graceful shutdown
 ├── snapshot.rs            Versioned snapshot codec and atomic file replacement
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
+    ├── glob.rs            Binary-safe Redis-style key-pattern matching
     ├── in_memory.rs       InMemoryStore and StoreError
     ├── indexing.rs        Range-index normalization
     ├── snapshot.rs        Snapshot data conversion and TTL restoration
@@ -344,8 +381,9 @@ The layers have deliberately narrow responsibilities:
 4. `database` owns reusable state and command execution.
 5. `line_protocol` and `line_session` coordinate line-oriented parsing and I/O.
 6. `output` renders results to any `Write` implementation.
-7. `resp` owns RESP2 framing, encoding, decoding, and protocol adapters.
-8. `resp_session` coordinates buffered RESP2 request and response processing.
+7. `resp` owns RESP request decoding, response encoding, and protocol adapters.
+8. `resp_session` coordinates buffered requests, responses, and per-connection
+   protocol negotiation.
 9. `snapshot` owns point-in-time persistence, while `aof` owns mutation records
    and replay; `storage` converts runtime values and expirations.
 10. `app` provides the interactive loop, while `server` accepts TCP clients and
@@ -420,7 +458,7 @@ See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
 The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
 (including the CLI and TCP integration tests), a release-mode benchmark smoke
 test without a throughput threshold, a real-process Ctrl+C shutdown test on
-Linux, the external `redis-cli` RESP2 smoke test, and the per-module coverage
+Linux, the external `redis-cli` RESP2/RESP3 smoke test, and the per-module coverage
 gate. The final `CI Success` job succeeds only when all five jobs succeed.
 
 ## Current limitations
@@ -431,13 +469,33 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
   save-on-shutdown completes. AOF mode instead synchronizes each successful
   mutation before acknowledging it.
 - No transactions, authentication, or transport encryption.
-- RESP2 compatibility currently covers only the documented command subset.
+- Redis protocol compatibility currently covers only the documented command
+  subset and the RESP3 response types it requires.
 - Live values and keys are held entirely in memory while the process runs.
 - `--max-keys` limits key count rather than byte usage; a small number of large
   keys can still consume substantial memory.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
   set to 1,000,000 elements, and each binary field to 512 MiB.
 - AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
+
+### Intentional scope
+
+RustyDB is intentionally a standalone server with a focused Redis-compatible
+feature set. The project does not plan to implement:
+
+- Lua scripting or Redis Functions;
+- streams;
+- authentication, ACLs, or TLS;
+- Redis RDB or multi-part AOF format compatibility;
+- replication, Sentinel, or Cluster;
+- HyperLogLog or geospatial commands;
+- JSON, Search, time-series, vector, probabilistic, or other extended data
+  engines;
+- multiple logical databases or complete Redis command, protocol, error, and
+  operational compatibility.
+
+These are conscious project boundaries rather than untracked future work. See
+[ROADMAP.md](ROADMAP.md) for the complete planned feature set.
 
 ## License
 

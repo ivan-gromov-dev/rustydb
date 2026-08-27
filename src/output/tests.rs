@@ -1,4 +1,5 @@
 use super::CommandOutput;
+use crate::command::{ProtocolVersion, command_metadata};
 
 fn render(output: CommandOutput) -> String {
     let mut bytes = Vec::new();
@@ -9,8 +10,17 @@ fn render(output: CommandOutput) -> String {
 #[test]
 fn renders_scalar_outputs() {
     assert_eq!(render(CommandOutput::Ok), "OK\n");
+    assert_eq!(render(CommandOutput::Pong), "PONG\n");
+    assert!(
+        render(CommandOutput::Hello {
+            protocol: Some(ProtocolVersion::Resp3),
+            connection_id: Some(7),
+        })
+        .contains("proto:3\n")
+    );
     assert_eq!(render(CommandOutput::Integer(-2)), "-2\n");
     assert_eq!(render(CommandOutput::Float(1.5)), "1.5\n");
+    assert_eq!(render(CommandOutput::SimpleString("string")), "string\n");
     assert_eq!(
         render(CommandOutput::Value("sample".to_owned().into())),
         "sample\n"
@@ -93,6 +103,18 @@ fn help_lists_every_supported_command() {
         "SISMEMBER",
         "SMEMBERS",
         "SCARD",
+        "PING",
+        "ECHO",
+        "HELLO",
+        "CLIENT ID",
+        "CLIENT SETNAME",
+        "CLIENT GETNAME",
+        "CLIENT SETINFO",
+        "COMMAND",
+        "SELECT",
+        "DBSIZE",
+        "FLUSHDB",
+        "FLUSHALL",
         "KEYS",
         "LEN",
         "CLEAR",
@@ -103,4 +125,26 @@ fn help_lists_every_supported_command() {
     ] {
         assert!(help.lines().any(|line| line.trim().starts_with(command)));
     }
+}
+
+#[test]
+fn renders_scan_cursor_before_keys() {
+    assert_eq!(
+        render(CommandOutput::Scan {
+            cursor: 2,
+            keys: vec![b"alpha".to_vec(), b"beta".to_vec()]
+        }),
+        "2\nalpha\nbeta\n"
+    );
+}
+
+#[test]
+fn renders_command_metadata_for_the_interactive_cli() {
+    assert_eq!(
+        render(CommandOutput::CommandMetadata(vec![
+            command_metadata(b"GET"),
+            None,
+        ])),
+        "get arity:2 flags:readonly,fast keys:1/1/1\n(nil)\n"
+    );
 }

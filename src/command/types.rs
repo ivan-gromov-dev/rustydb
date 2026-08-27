@@ -1,12 +1,75 @@
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProtocolVersion {
+    Resp2,
+    Resp3,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetCondition {
+    IfAbsent,
+    IfPresent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetExpiration {
+    Seconds(u64),
+    Milliseconds(u64),
+    UnixSeconds(u64),
+    UnixMilliseconds(u64),
+    KeepTtl,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GetExExpiration {
+    Seconds(u64),
+    Milliseconds(u64),
+    UnixSeconds(u64),
+    UnixMilliseconds(u64),
+    Persist,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpireCondition {
+    NoExpiration,
+    HasExpiration,
+    Greater,
+    Less,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClientInfoAttribute {
+    LibraryName,
+    LibraryVersion,
+}
+
+impl ProtocolVersion {
+    pub(crate) fn number(self) -> u8 {
+        match self {
+            Self::Resp2 => 2,
+            Self::Resp3 => 3,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Command {
     Set {
         key: Vec<u8>,
         value: Vec<u8>,
     },
+    SetAdvanced {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        condition: Option<SetCondition>,
+        return_old: bool,
+        expiration: Option<SetExpiration>,
+    },
     MSet {
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
+    },
+    MSetNx {
         entries: Vec<(Vec<u8>, Vec<u8>)>,
     },
     SetNx {
@@ -15,6 +78,10 @@ pub(crate) enum Command {
     },
     Get {
         key: Vec<u8>,
+    },
+    GetEx {
+        key: Vec<u8>,
+        expiration: Option<GetExExpiration>,
     },
     MGet {
         keys: Vec<Vec<u8>>,
@@ -54,6 +121,15 @@ pub(crate) enum Command {
     Delete {
         keys: Vec<Vec<u8>>,
     },
+    Type {
+        key: Vec<u8>,
+    },
+    Touch {
+        keys: Vec<Vec<u8>>,
+    },
+    Unlink {
+        keys: Vec<Vec<u8>>,
+    },
     Rename {
         old_key: Vec<u8>,
         new_key: Vec<u8>,
@@ -62,14 +138,40 @@ pub(crate) enum Command {
         key: Vec<u8>,
         seconds: u64,
     },
+    ExpireAdvanced {
+        key: Vec<u8>,
+        seconds: u64,
+        condition: ExpireCondition,
+    },
+    PExpireAdvanced {
+        key: Vec<u8>,
+        milliseconds: u64,
+        condition: ExpireCondition,
+    },
     PExpire {
         key: Vec<u8>,
         milliseconds: u64,
+    },
+    ExpireAt {
+        key: Vec<u8>,
+        unix_seconds: u64,
+        condition: Option<ExpireCondition>,
+    },
+    PExpireAt {
+        key: Vec<u8>,
+        unix_milliseconds: u64,
+        condition: Option<ExpireCondition>,
     },
     Ttl {
         key: Vec<u8>,
     },
     PTtl {
+        key: Vec<u8>,
+    },
+    ExpireTime {
+        key: Vec<u8>,
+    },
+    PExpireTime {
         key: Vec<u8>,
     },
     Persist {
@@ -128,7 +230,48 @@ pub(crate) enum Command {
     SCard {
         key: Vec<u8>,
     },
-    Keys,
+    Ping {
+        message: Option<Vec<u8>>,
+    },
+    Echo {
+        message: Vec<u8>,
+    },
+    Hello {
+        protocol: Option<ProtocolVersion>,
+    },
+    ClientId,
+    ClientSetName {
+        name: Vec<u8>,
+    },
+    ClientGetName,
+    ClientSetInfo {
+        attribute: ClientInfoAttribute,
+        value: Vec<u8>,
+    },
+    MetadataList,
+    MetadataInfo {
+        names: Vec<Vec<u8>>,
+    },
+    MetadataCount,
+    Select,
+    DbSize,
+    FlushDb,
+    FlushAll,
+    Keys {
+        pattern: Vec<u8>,
+    },
+    Scan {
+        cursor: usize,
+        pattern: Option<Vec<u8>>,
+        count: usize,
+        type_name: Option<Vec<u8>>,
+    },
+    RandomKey,
+    Copy {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        replace: bool,
+    },
     Len,
     Clear,
     Save,
@@ -141,10 +284,12 @@ pub(crate) enum Command {
 impl Command {
     pub(crate) fn name(&self) -> &'static str {
         match self {
-            Self::Set { .. } => "SET",
+            Self::Set { .. } | Self::SetAdvanced { .. } => "SET",
             Self::MSet { .. } => "MSET",
+            Self::MSetNx { .. } => "MSETNX",
             Self::SetNx { .. } => "SETNX",
             Self::Get { .. } => "GET",
+            Self::GetEx { .. } => "GETEX",
             Self::MGet { .. } => "MGET",
             Self::GetSet { .. } => "GETSET",
             Self::GetDel { .. } => "GETDEL",
@@ -156,11 +301,20 @@ impl Command {
             Self::IncrementByFloat { .. } => "INCRBYFLOAT",
             Self::Exists { .. } => "EXISTS",
             Self::Delete { .. } => "DEL",
+            Self::Type { .. } => "TYPE",
+            Self::Touch { .. } => "TOUCH",
+            Self::Unlink { .. } => "UNLINK",
             Self::Rename { .. } => "RENAME",
             Self::Expire { .. } => "EXPIRE",
+            Self::ExpireAdvanced { .. } => "EXPIRE",
             Self::PExpire { .. } => "PEXPIRE",
+            Self::PExpireAdvanced { .. } => "PEXPIRE",
+            Self::ExpireAt { .. } => "EXPIREAT",
+            Self::PExpireAt { .. } => "PEXPIREAT",
             Self::Ttl { .. } => "TTL",
             Self::PTtl { .. } => "PTTL",
+            Self::ExpireTime { .. } => "EXPIRETIME",
+            Self::PExpireTime { .. } => "PEXPIRETIME",
             Self::Persist { .. } => "PERSIST",
             Self::StrLen { .. } => "STRLEN",
             Self::GetRange { .. } => "GETRANGE",
@@ -176,7 +330,22 @@ impl Command {
             Self::SIsMember { .. } => "SISMEMBER",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
-            Self::Keys => "KEYS",
+            Self::Ping { .. } => "PING",
+            Self::Echo { .. } => "ECHO",
+            Self::Hello { .. } => "HELLO",
+            Self::ClientId
+            | Self::ClientSetName { .. }
+            | Self::ClientGetName
+            | Self::ClientSetInfo { .. } => "CLIENT",
+            Self::MetadataList | Self::MetadataInfo { .. } | Self::MetadataCount => "COMMAND",
+            Self::Select => "SELECT",
+            Self::DbSize => "DBSIZE",
+            Self::FlushDb => "FLUSHDB",
+            Self::FlushAll => "FLUSHALL",
+            Self::Keys { .. } => "KEYS",
+            Self::Scan { .. } => "SCAN",
+            Self::RandomKey => "RANDOMKEY",
+            Self::Copy { .. } => "COPY",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
             Self::Save => "SAVE",
@@ -201,7 +370,40 @@ impl Command {
         let offset = |value: usize| value.to_string().into_bytes();
         let mut arguments = match self {
             Self::Set { key, value } => vec![b"SET".to_vec(), key.clone(), value.clone()],
+            Self::SetAdvanced {
+                key,
+                value,
+                expiration,
+                ..
+            } => {
+                let mut values = vec![b"SET".to_vec(), key.clone(), value.clone()];
+                match expiration {
+                    Some(SetExpiration::Seconds(value)) => {
+                        values.extend([b"EX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::Milliseconds(value)) => {
+                        values.extend([b"PX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::UnixSeconds(value)) => {
+                        values.extend([b"EXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::UnixMilliseconds(value)) => {
+                        values.extend([b"PXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::KeepTtl) => values.push(b"KEEPTTL".to_vec()),
+                    None => {}
+                }
+                values
+            }
             Self::MSet { entries } => {
+                let mut values = vec![b"MSET".to_vec()];
+                for (key, value) in entries {
+                    values.push(key.clone());
+                    values.push(value.clone());
+                }
+                values
+            }
+            Self::MSetNx { entries } => {
                 let mut values = vec![b"MSET".to_vec()];
                 for (key, value) in entries {
                     values.push(key.clone());
@@ -212,6 +414,26 @@ impl Command {
             Self::SetNx { key, value } => vec![b"SETNX".to_vec(), key.clone(), value.clone()],
             Self::GetSet { key, value } => vec![b"GETSET".to_vec(), key.clone(), value.clone()],
             Self::GetDel { key } => vec![b"GETDEL".to_vec(), key.clone()],
+            Self::GetEx { key, expiration } => {
+                let mut values = vec![b"GETEX".to_vec(), key.clone()];
+                match expiration {
+                    Some(GetExExpiration::Seconds(value)) => {
+                        values.extend([b"EX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::Milliseconds(value)) => {
+                        values.extend([b"PX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::UnixSeconds(value)) => {
+                        values.extend([b"EXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::UnixMilliseconds(value)) => {
+                        values.extend([b"PXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::Persist) => values.push(b"PERSIST".to_vec()),
+                    None => return None,
+                }
+                values
+            }
             Self::Append { key, append_value } => {
                 vec![b"APPEND".to_vec(), key.clone(), append_value.clone()]
             }
@@ -229,15 +451,44 @@ impl Command {
                 amount.to_string().into_bytes(),
             ],
             Self::Delete { keys } => with_keys(b"DEL", keys),
+            Self::Unlink { keys } => with_keys(b"DEL", keys),
+            Self::Copy {
+                source,
+                destination,
+                ..
+            } => vec![
+                b"COPY".to_vec(),
+                source.clone(),
+                destination.clone(),
+                b"REPLACE".to_vec(),
+            ],
             Self::Rename { old_key, new_key } => {
                 vec![b"RENAME".to_vec(), old_key.clone(), new_key.clone()]
             }
             Self::Expire { key, seconds } => {
                 vec![b"EXPIRE".to_vec(), key.clone(), unsigned(*seconds)]
             }
+            Self::ExpireAdvanced { key, seconds, .. } => {
+                vec![b"EXPIRE".to_vec(), key.clone(), unsigned(*seconds)]
+            }
             Self::PExpire { key, milliseconds } => {
                 vec![b"PEXPIRE".to_vec(), key.clone(), unsigned(*milliseconds)]
             }
+            Self::PExpireAdvanced {
+                key, milliseconds, ..
+            } => vec![b"PEXPIRE".to_vec(), key.clone(), unsigned(*milliseconds)],
+            Self::ExpireAt {
+                key, unix_seconds, ..
+            } => vec![b"EXPIREAT".to_vec(), key.clone(), unsigned(*unix_seconds)],
+            Self::PExpireAt {
+                key,
+                unix_milliseconds,
+                ..
+            } => vec![
+                b"PEXPIREAT".to_vec(),
+                key.clone(),
+                unsigned(*unix_milliseconds),
+            ],
             Self::Persist { key } => vec![b"PERSIST".to_vec(), key.clone()],
             Self::SetRange {
                 key,
@@ -256,11 +507,17 @@ impl Command {
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
             Self::Clear => vec![b"CLEAR".to_vec()],
+            Self::FlushDb => vec![b"FLUSHDB".to_vec()],
+            Self::FlushAll => vec![b"FLUSHALL".to_vec()],
             Self::Get { .. }
             | Self::MGet { .. }
             | Self::Exists { .. }
+            | Self::Type { .. }
+            | Self::Touch { .. }
             | Self::Ttl { .. }
             | Self::PTtl { .. }
+            | Self::ExpireTime { .. }
+            | Self::PExpireTime { .. }
             | Self::StrLen { .. }
             | Self::GetRange { .. }
             | Self::LLen { .. }
@@ -268,7 +525,21 @@ impl Command {
             | Self::SIsMember { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
-            | Self::Keys
+            | Self::Ping { .. }
+            | Self::Echo { .. }
+            | Self::Hello { .. }
+            | Self::ClientId
+            | Self::ClientSetName { .. }
+            | Self::ClientGetName
+            | Self::ClientSetInfo { .. }
+            | Self::MetadataList
+            | Self::MetadataInfo { .. }
+            | Self::MetadataCount
+            | Self::Select
+            | Self::DbSize
+            | Self::Keys { .. }
+            | Self::Scan { .. }
+            | Self::RandomKey
             | Self::Len
             | Self::Save
             | Self::AofRewrite
@@ -295,6 +566,9 @@ pub(crate) enum CommandError {
     UnknownCommand(String),
     InvalidInteger(String),
     InvalidFloat(String),
+    UnsupportedProtocol(i64),
+    InvalidClientMetadata,
+    UnsupportedDatabase(i64),
 }
 
 impl fmt::Display for CommandError {
@@ -312,6 +586,16 @@ impl fmt::Display for CommandError {
             }
             Self::InvalidFloat(usage) => {
                 write!(formatter, "invalid float: {usage}")
+            }
+            Self::UnsupportedProtocol(protocol) => {
+                write!(formatter, "unsupported protocol version: {protocol}")
+            }
+            Self::InvalidClientMetadata => write!(
+                formatter,
+                "client metadata cannot contain spaces, newlines or special characters"
+            ),
+            Self::UnsupportedDatabase(index) => {
+                write!(formatter, "DB index is out of range: {index}")
             }
         }
     }

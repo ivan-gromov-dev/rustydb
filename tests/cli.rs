@@ -189,6 +189,47 @@ fn aof_rewrite_of_empty_state_leaves_only_the_header() {
 }
 
 #[test]
+fn keyspace_commands_work_end_to_end_and_copy_replays() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "SET user:1 value\nSET other value\nKEYS user:*\nSCAN 0 MATCH user:* COUNT 10 TYPE string\nCOPY user:1 clone\nGET clone\nEXIT\n",
+    );
+    assert!(first.status.success());
+    let stdout = String::from_utf8(first.stdout).unwrap();
+    assert!(stdout.contains("db> user:1\n"));
+    assert!(stdout.contains("db> 0\nuser:1\n"));
+    assert!(stdout.contains("db> 1\ndb> value\n"));
+
+    let replay = run_cli_with_aof(&aof, "GET clone\nEXIT\n");
+    assert!(replay.status.success());
+    assert!(
+        String::from_utf8(replay.stdout)
+            .unwrap()
+            .contains("db> value\n")
+    );
+}
+
+#[test]
+fn flushdb_is_replayed_from_aof_before_later_writes() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "SET removed value\nFLUSHDB ASYNC\nSET kept value\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+
+    let replay = run_cli_with_aof(&aof, "GET removed\nGET kept\nDBSIZE\nEXIT\n");
+    assert!(replay.status.success(), "{replay:?}");
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> (nil)\n"));
+    assert!(stdout.contains("db> value\n"));
+    assert!(stdout.contains("db> 1\n"));
+}
+
+#[test]
 fn corrupt_complete_aof_record_stops_startup() {
     let directory = TestDirectory::new();
     let aof = directory.aof();
@@ -378,7 +419,7 @@ fn log_level_rejects_missing_and_unknown_values() {
 fn max_keys_evicts_the_smallest_key_and_rejects_invalid_limits() {
     let output = run_cli_with_args(
         &["--max-keys", "2"],
-        "SET beta 2\nSET alpha 1\nSET gamma 3\nKEYS\nEXIT\n",
+        "SET beta 2\nSET alpha 1\nSET gamma 3\nKEYS *\nEXIT\n",
     );
 
     assert!(output.status.success(), "{output:?}");
@@ -402,7 +443,7 @@ fn max_keys_applies_during_snapshot_load_and_aof_replay() {
     );
     assert!(first.status.success());
 
-    let restored = run_cli_with_snapshot(&snapshot, &["--max-keys", "1"], "KEYS\nEXIT\n");
+    let restored = run_cli_with_snapshot(&snapshot, &["--max-keys", "1"], "KEYS *\nEXIT\n");
     assert!(restored.status.success(), "{restored:?}");
     assert!(
         String::from_utf8(restored.stdout)
@@ -422,7 +463,7 @@ fn max_keys_applies_during_snapshot_load_and_aof_replay() {
     );
     assert!(limited.status.success(), "{limited:?}");
 
-    let replayed = run_cli_with_args(&["--aof", aof.to_str().unwrap()], "KEYS\nEXIT\n");
+    let replayed = run_cli_with_args(&["--aof", aof.to_str().unwrap()], "KEYS *\nEXIT\n");
     assert!(replayed.status.success(), "{replayed:?}");
     assert!(
         String::from_utf8(replayed.stdout)
@@ -441,7 +482,7 @@ fn aof_evictions_preserve_multi_key_commands_and_recreated_keys() {
     );
     assert!(limited.status.success(), "{limited:?}");
 
-    let unlimited = run_cli_with_aof(&aof, "KEYS\nEXIT\n");
+    let unlimited = run_cli_with_aof(&aof, "KEYS *\nEXIT\n");
     assert!(unlimited.status.success(), "{unlimited:?}");
     assert!(
         String::from_utf8(unlimited.stdout)
@@ -461,7 +502,7 @@ fn aof_evictions_preserve_multi_key_commands_and_recreated_keys() {
     );
     assert!(apply_limit.status.success(), "{apply_limit:?}");
 
-    let replayed = run_cli_with_aof(&replay_aof, "KEYS\nGET alpha\nEXIT\n");
+    let replayed = run_cli_with_aof(&replay_aof, "KEYS *\nGET alpha\nEXIT\n");
     assert!(replayed.status.success(), "{replayed:?}");
     let stdout = String::from_utf8(replayed.stdout).unwrap();
     assert!(stdout.contains("db> alpha\n"));

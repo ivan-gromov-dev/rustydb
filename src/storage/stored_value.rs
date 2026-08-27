@@ -48,6 +48,14 @@ impl StoredValue {
         &self.value
     }
 
+    pub(crate) fn type_name(&self) -> &'static str {
+        match &self.value {
+            Value::String(_) => "string",
+            Value::List(_) => "list",
+            Value::Set(_) => "set",
+        }
+    }
+
     pub(crate) fn from_parts(value: Value, expires_at: Option<Instant>) -> Self {
         Self { value, expires_at }
     }

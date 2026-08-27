@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::aof::{Aof, AofError};
-use crate::command::Command;
+use crate::command::{Command, SetCondition};
 use crate::config::MemoryConfig;
 use crate::executor::execute_with_snapshot;
 use crate::logging::{self, LogLevel};
@@ -62,6 +62,29 @@ impl Database {
         }
         let lookup = command.lookup_size();
         let records_snapshot_save = command == Command::Save;
+        let aof_requires_integer_one = matches!(
+            command,
+            Command::ExpireAdvanced { .. }
+                | Command::PExpireAdvanced { .. }
+                | Command::ExpireAt {
+                    condition: Some(_),
+                    ..
+                }
+                | Command::PExpireAt {
+                    condition: Some(_),
+                    ..
+                }
+                | Command::Copy { .. }
+        );
+        let aof_should_append = match &command {
+            Command::SetAdvanced { key, condition, .. } => match condition {
+                Some(SetCondition::IfAbsent) => !self.store.exists(key),
+                Some(SetCondition::IfPresent) => self.store.exists(key),
+                None => true,
+            },
+            Command::MSetNx { entries } => entries.iter().all(|(key, _)| !self.store.exists(key)),
+            _ => true,
+        };
         let aof_arguments = command.aof_arguments();
         let output = execute_with_snapshot(command, &mut self.store, self.snapshot_path.as_deref());
         if let Some(total) = lookup {
@@ -82,6 +105,8 @@ impl Database {
         }
         let evicted_keys = self.store.take_evicted_keys();
         if !output.is_error()
+            && (!aof_requires_integer_one || output == CommandOutput::Integer(1))
+            && aof_should_append
             && let Some(aof) = &mut self.aof
         {
             if let Some(arguments) = aof_arguments.as_ref()

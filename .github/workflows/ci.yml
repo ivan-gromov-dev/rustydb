@@ -61,7 +61,7 @@ jobs:
         run: python3 scripts/test_ctrl_c.py target/debug/rustydb
 
   redis_cli:
-    name: redis-cli RESP2 compatibility
+    name: redis-cli RESP2/RESP3 compatibility
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

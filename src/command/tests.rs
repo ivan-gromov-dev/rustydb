@@ -1,6 +1,331 @@
 use super::*;
 
 #[test]
+fn parses_type_touch_and_unlink() {
+    assert_eq!(
+        Command::from_args(&["TYPE", "key"]),
+        Ok(Command::Type {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["TOUCH", "a", "b"]),
+        Ok(Command::Touch {
+            keys: vec![b"a".to_vec(), b"b".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["UNLINK", "a", "b"]),
+        Ok(Command::Unlink {
+            keys: vec![b"a".to_vec(), b"b".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["TYPE"]),
+        Err(CommandError::InvalidArguments("TYPE key"))
+    );
+    assert_eq!(
+        Command::from_args(&["TOUCH"]),
+        Err(CommandError::InvalidArguments("TOUCH key [key ...]"))
+    );
+}
+
+#[test]
+fn unlink_is_persisted_as_del() {
+    let command = Command::Unlink {
+        keys: vec![b"a".to_vec(), b"b".to_vec()],
+    };
+
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![b"DEL".to_vec(), b"a".to_vec(), b"b".to_vec()])
+    );
+}
+
+#[test]
+fn parses_keyspace_iteration_and_copy_options() {
+    assert_eq!(
+        Command::from_args(&["KEYS", "user:*"]),
+        Ok(Command::Keys {
+            pattern: b"user:*".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["SCAN", "2", "TYPE", "list", "COUNT", "3", "MATCH", "q:*"]),
+        Ok(Command::Scan {
+            cursor: 2,
+            pattern: Some(b"q:*".to_vec()),
+            count: 3,
+            type_name: Some(b"list".to_vec())
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["COPY", "source", "destination", "REPLACE", "DB", "0"]),
+        Ok(Command::Copy {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            replace: true
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["COPY", "a", "b", "DB", "1"]),
+        Err(CommandError::UnsupportedDatabase(1))
+    );
+    for invalid in [
+        vec!["KEYS"],
+        vec!["SCAN", "0", "COUNT", "0"],
+        vec!["SCAN", "0", "MATCH"],
+        vec!["SCAN", "0", "TYPE", "set", "TYPE", "list"],
+        vec!["COPY", "a", "b", "REPLACE", "REPLACE"],
+    ] {
+        assert!(matches!(
+            Command::from_args(&invalid),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn copy_aof_record_is_replay_safe() {
+    let command = Command::Copy {
+        source: b"source".to_vec(),
+        destination: b"destination".to_vec(),
+        replace: false,
+    };
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![
+            b"COPY".to_vec(),
+            b"source".to_vec(),
+            b"destination".to_vec(),
+            b"REPLACE".to_vec()
+        ])
+    );
+}
+
+#[test]
+fn parses_ping_with_an_optional_binary_message() {
+    assert_eq!(Command::parse("PING"), Ok(Command::Ping { message: None }));
+    assert_eq!(
+        Command::parse("ping hello world"),
+        Ok(Command::Ping {
+            message: Some(b"hello world".to_vec()),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PING", b"a\0\xff"]),
+        Ok(Command::Ping {
+            message: Some(b"a\0\xff".to_vec()),
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["PING", "one", "two"]),
+        Err(CommandError::InvalidArguments("PING [message]"))
+    );
+}
+
+#[test]
+fn echo_requires_one_binary_message() {
+    assert_eq!(
+        Command::parse("echo hello world"),
+        Ok(Command::Echo {
+            message: b"hello world".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"ECHO", b"a\0\xff"]),
+        Ok(Command::Echo {
+            message: b"a\0\xff".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ECHO"]),
+        Err(CommandError::InvalidArguments("ECHO message"))
+    );
+    assert_eq!(
+        Command::from_args(&["ECHO", "one", "two"]),
+        Err(CommandError::InvalidArguments("ECHO message"))
+    );
+}
+
+#[test]
+fn hello_accepts_current_and_supported_protocol_versions() {
+    assert_eq!(
+        Command::parse("HELLO"),
+        Ok(Command::Hello { protocol: None })
+    );
+    assert_eq!(
+        Command::parse("hello 2"),
+        Ok(Command::Hello {
+            protocol: Some(ProtocolVersion::Resp2),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"HELLO", b"3"]),
+        Ok(Command::Hello {
+            protocol: Some(ProtocolVersion::Resp3),
+        })
+    );
+    assert_eq!(
+        Command::parse("HELLO 4"),
+        Err(CommandError::UnsupportedProtocol(4))
+    );
+    assert_eq!(
+        Command::parse("HELLO nope"),
+        Err(CommandError::InvalidInteger("nope".to_owned()))
+    );
+    assert_eq!(
+        Command::parse("HELLO 3 extra"),
+        Err(CommandError::InvalidArguments("HELLO [2|3]"))
+    );
+}
+
+#[test]
+fn parses_connection_metadata_commands() {
+    assert_eq!(Command::parse("CLIENT ID"), Ok(Command::ClientId));
+    assert_eq!(Command::parse("client getname"), Ok(Command::ClientGetName));
+    assert_eq!(
+        Command::from_bytes(&[b"CLIENT", b"SETNAME", b"worker-1"]),
+        Ok(Command::ClientSetName {
+            name: b"worker-1".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::parse("CLIENT SETINFO LIB-NAME redis-rs"),
+        Ok(Command::ClientSetInfo {
+            attribute: ClientInfoAttribute::LibraryName,
+            value: b"redis-rs".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::parse("CLIENT SETINFO lib-ver 0.27.6"),
+        Ok(Command::ClientSetInfo {
+            attribute: ClientInfoAttribute::LibraryVersion,
+            value: b"0.27.6".to_vec(),
+        })
+    );
+}
+
+#[test]
+fn connection_metadata_commands_validate_subcommands_and_values() {
+    for input in [
+        "CLIENT",
+        "CLIENT ID extra",
+        "CLIENT GETNAME extra",
+        "CLIENT SETNAME",
+        "CLIENT SETINFO LIB-NAME",
+        "CLIENT SETINFO unknown value",
+        "CLIENT unknown",
+    ] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+    for arguments in [
+        &[b"CLIENT".as_slice(), b"SETNAME", b"two words"][..],
+        &[b"CLIENT".as_slice(), b"SETINFO", b"LIB-NAME", b"bad\nname"][..],
+    ] {
+        assert_eq!(
+            Command::from_bytes(arguments),
+            Err(CommandError::InvalidClientMetadata)
+        );
+    }
+    assert_eq!(
+        Command::from_bytes(&[b"CLIENT", b"SETNAME", b""]),
+        Ok(Command::ClientSetName { name: Vec::new() })
+    );
+}
+
+#[test]
+fn parses_command_metadata_queries() {
+    assert_eq!(Command::parse("COMMAND"), Ok(Command::MetadataList));
+    assert_eq!(Command::parse("command count"), Ok(Command::MetadataCount));
+    assert_eq!(
+        Command::parse("COMMAND INFO GET missing"),
+        Ok(Command::MetadataInfo {
+            names: vec![b"GET".to_vec(), b"missing".to_vec()],
+        })
+    );
+    assert_eq!(
+        Command::parse("COMMAND INFO"),
+        Ok(Command::MetadataInfo { names: Vec::new() })
+    );
+    for input in ["COMMAND COUNT extra", "COMMAND unknown"] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn select_accepts_only_database_zero() {
+    assert_eq!(Command::parse("SELECT 0"), Ok(Command::Select));
+    assert_eq!(
+        Command::parse("SELECT 1"),
+        Err(CommandError::UnsupportedDatabase(1))
+    );
+    assert_eq!(
+        Command::parse("SELECT -1"),
+        Err(CommandError::UnsupportedDatabase(-1))
+    );
+    assert_eq!(
+        Command::parse("SELECT nope"),
+        Err(CommandError::InvalidInteger("nope".to_owned()))
+    );
+    assert_eq!(
+        Command::parse("SELECT 0 extra"),
+        Err(CommandError::InvalidArguments("SELECT index"))
+    );
+}
+
+#[test]
+fn parses_database_size_and_flush_modes() {
+    assert_eq!(Command::parse("DBSIZE"), Ok(Command::DbSize));
+    assert_eq!(Command::parse("FLUSHDB"), Ok(Command::FlushDb));
+    assert_eq!(Command::parse("flushdb async"), Ok(Command::FlushDb));
+    assert_eq!(Command::parse("FLUSHALL SYNC"), Ok(Command::FlushAll));
+    for input in ["DBSIZE extra", "FLUSHDB unknown", "FLUSHALL SYNC extra"] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn flush_commands_have_canonical_aof_records() {
+    assert_eq!(
+        Command::FlushDb.aof_arguments(),
+        Some(vec![b"FLUSHDB".to_vec()])
+    );
+    assert_eq!(
+        Command::FlushAll.aof_arguments(),
+        Some(vec![b"FLUSHALL".to_vec()])
+    );
+    assert_eq!(Command::Select.aof_arguments(), None);
+    assert_eq!(Command::DbSize.aof_arguments(), None);
+}
+
+#[test]
+fn command_metadata_registry_is_sorted_unique_and_searchable() {
+    assert!(COMMANDS.windows(2).all(|pair| pair[0].name < pair[1].name));
+    assert_eq!(
+        command_metadata(b"GeT"),
+        Some(CommandMetadata {
+            name: "get",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            key_step: 1,
+        })
+    );
+    assert_eq!(command_metadata(b"\xff"), None);
+}
+
+#[test]
 fn save_accepts_no_arguments() {
     assert_eq!(Command::parse("SAVE"), Ok(Command::Save));
     assert_eq!(
@@ -546,7 +871,28 @@ fn parses_every_supported_command_form() {
         "SISMEMBER set member",
         "SMEMBERS set",
         "SCARD set",
-        "KEYS",
+        "PING",
+        "PING message",
+        "ECHO message",
+        "HELLO",
+        "HELLO 2",
+        "HELLO 3",
+        "CLIENT ID",
+        "CLIENT GETNAME",
+        "CLIENT SETNAME worker",
+        "CLIENT SETINFO LIB-NAME redis-rs",
+        "CLIENT SETINFO LIB-VER 1.0",
+        "COMMAND",
+        "COMMAND COUNT",
+        "COMMAND INFO",
+        "COMMAND INFO GET missing",
+        "SELECT 0",
+        "DBSIZE",
+        "FLUSHDB",
+        "FLUSHDB ASYNC",
+        "FLUSHALL",
+        "FLUSHALL SYNC",
+        "KEYS *",
         "LEN",
         "CLEAR",
         "SAVE",
@@ -690,4 +1036,130 @@ fn exists_requires_at_least_one_key() {
         result,
         Err(CommandError::InvalidArguments("EXISTS key [key ...]"))
     );
+}
+
+#[test]
+fn parses_set_options_in_any_supported_order() {
+    assert_eq!(
+        Command::parse("SET key value GET NX PX 1500"),
+        Ok(Command::SetAdvanced {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+            condition: Some(SetCondition::IfAbsent),
+            return_old: true,
+            expiration: Some(SetExpiration::Milliseconds(1500)),
+        })
+    );
+}
+
+#[test]
+fn set_rejects_conflicting_or_incomplete_options() {
+    for command in [
+        "SET key value NX XX",
+        "SET key value EX 1 KEEPTTL",
+        "SET key value GET GET",
+        "SET key value PX",
+        "SET key value EX 0",
+    ] {
+        assert!(matches!(
+            Command::parse(command),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+    assert!(matches!(
+        Command::from_args(&["SET", "key", "value", "UNKNOWN"]),
+        Err(CommandError::InvalidArguments(_))
+    ));
+}
+
+#[test]
+fn parses_getex_and_msetnx() {
+    assert_eq!(
+        Command::parse("GETEX key PXAT 2000"),
+        Ok(Command::GetEx {
+            key: b"key".to_vec(),
+            expiration: Some(GetExExpiration::UnixMilliseconds(2000)),
+        })
+    );
+    assert_eq!(
+        Command::parse("GETEX key PERSIST"),
+        Ok(Command::GetEx {
+            key: b"key".to_vec(),
+            expiration: Some(GetExExpiration::Persist),
+        })
+    );
+    assert_eq!(
+        Command::parse("MSETNX one 1 two 2"),
+        Ok(Command::MSetNx {
+            entries: vec![
+                (b"one".to_vec(), b"1".to_vec()),
+                (b"two".to_vec(), b"2".to_vec())
+            ],
+        })
+    );
+}
+
+#[test]
+fn getex_and_msetnx_reject_malformed_arguments() {
+    for command in [
+        "GETEX",
+        "GETEX key PX",
+        "GETEX key EX 0",
+        "GETEX key PERSIST EX 1",
+        "MSETNX key",
+        "MSETNX one 1 two",
+    ] {
+        assert!(matches!(
+            Command::parse(command),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn parses_absolute_and_conditional_expiration_commands() {
+    assert_eq!(
+        Command::parse("EXPIRE key 10 GT"),
+        Ok(Command::ExpireAdvanced {
+            key: b"key".to_vec(),
+            seconds: 10,
+            condition: ExpireCondition::Greater,
+        })
+    );
+    assert_eq!(
+        Command::parse("PEXPIREAT key 1234 NX"),
+        Ok(Command::PExpireAt {
+            key: b"key".to_vec(),
+            unix_milliseconds: 1234,
+            condition: Some(ExpireCondition::NoExpiration),
+        })
+    );
+    assert_eq!(
+        Command::parse("EXPIRETIME key"),
+        Ok(Command::ExpireTime {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::parse("PEXPIRETIME key"),
+        Ok(Command::PExpireTime {
+            key: b"key".to_vec()
+        })
+    );
+}
+
+#[test]
+fn expiration_conditions_reject_unknown_or_repeated_options() {
+    for command in [
+        "EXPIRE key 10 NX XX",
+        "PEXPIRE key 10 UNKNOWN",
+        "EXPIREAT key 10 GT LT",
+        "PEXPIREAT key",
+        "EXPIRETIME key extra",
+    ] {
+        assert!(matches!(
+            Command::parse(command),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
 }

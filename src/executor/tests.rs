@@ -1,7 +1,92 @@
 use super::execute;
-use crate::command::Command;
+use crate::command::{Command, ExpireCondition, GetExExpiration, SetCondition, SetExpiration};
 use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
+
+#[test]
+fn executes_type_touch_and_unlink() {
+    let mut database = Database::new();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    database.push_left(b"list", b"value".to_vec()).unwrap();
+    database.set_add(b"set", b"value".to_vec()).unwrap();
+
+    for (key, expected) in [
+        (b"string".as_slice(), "string"),
+        (b"list".as_slice(), "list"),
+        (b"set".as_slice(), "set"),
+        (b"missing".as_slice(), "none"),
+    ] {
+        assert_eq!(
+            execute(Command::Type { key: key.to_vec() }, &mut database),
+            Response::SimpleString(expected)
+        );
+    }
+    assert_eq!(
+        execute(
+            Command::Touch {
+                keys: vec![b"string".to_vec(), b"string".to_vec(), b"missing".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::Unlink {
+                keys: vec![b"string".to_vec(), b"string".to_vec(), b"missing".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
+fn executes_keyspace_iteration_random_and_copy() {
+    let mut database = Database::new();
+    database.set(b"a:1".to_vec(), b"one".to_vec());
+    database.set(b"b:1".to_vec(), b"two".to_vec());
+
+    assert_eq!(
+        execute(
+            Command::Keys {
+                pattern: b"a:*".to_vec()
+            },
+            &mut database
+        ),
+        Response::KeyList(vec![b"a:1".to_vec()])
+    );
+    assert_eq!(
+        execute(
+            Command::Scan {
+                cursor: 0,
+                pattern: None,
+                count: 1,
+                type_name: None
+            },
+            &mut database
+        ),
+        Response::Scan {
+            cursor: 1,
+            keys: vec![b"a:1".to_vec()]
+        }
+    );
+    assert!(matches!(
+        execute(Command::RandomKey, &mut database),
+        Response::Value(key) if key == b"a:1" || key == b"b:1"
+    ));
+    assert_eq!(
+        execute(
+            Command::Copy {
+                source: b"a:1".to_vec(),
+                destination: b"copy".to_vec(),
+                replace: false
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}
 
 #[test]
 fn save_reports_when_persistence_is_not_configured() {
@@ -36,6 +121,299 @@ fn execute_set_stores_value() {
 
     assert_eq!(response, Response::Ok);
     assert_eq!(database.get("name"), Ok(Some(b"sample-value".as_slice())));
+}
+
+#[test]
+fn execute_set_nx_get_applies_only_to_a_missing_key() {
+    let mut database = Database::new();
+    let command = |value: &[u8]| Command::SetAdvanced {
+        key: b"key".to_vec(),
+        value: value.to_vec(),
+        condition: Some(SetCondition::IfAbsent),
+        return_old: true,
+        expiration: None,
+    };
+
+    assert_eq!(execute(command(b"first"), &mut database), Response::Nil);
+    assert_eq!(
+        execute(command(b"second"), &mut database),
+        Response::Value(b"first".to_vec())
+    );
+    assert_eq!(database.get(b"key"), Ok(Some(b"first".as_slice())));
+}
+
+#[test]
+fn execute_set_xx_get_returns_old_value_and_replaces_it() {
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"old".to_vec());
+
+    let response = execute(
+        Command::SetAdvanced {
+            key: b"key".to_vec(),
+            value: b"new".to_vec(),
+            condition: Some(SetCondition::IfPresent),
+            return_old: true,
+            expiration: None,
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Value(b"old".to_vec()));
+    assert_eq!(database.get(b"key"), Ok(Some(b"new".as_slice())));
+}
+
+#[test]
+fn execute_set_px_and_keepttl_manage_expiration() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"first".to_vec(),
+                condition: None,
+                return_old: false,
+                expiration: Some(SetExpiration::Milliseconds(1_000)),
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    let ttl = database.pttl(b"key");
+    assert!((1..=1_000).contains(&ttl));
+
+    assert_eq!(
+        execute(
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"second".to_vec(),
+                condition: None,
+                return_old: false,
+                expiration: Some(SetExpiration::KeepTtl),
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    assert!((0..=ttl).contains(&database.pttl(b"key")));
+}
+
+#[test]
+fn execute_set_get_rejects_wrong_type_without_mutation() {
+    let mut database = Database::new();
+    database.set_list(b"key".to_vec(), vec![b"item".to_vec()]);
+
+    assert_eq!(
+        execute(
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"replacement".to_vec(),
+                condition: None,
+                return_old: true,
+                expiration: None,
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+    assert_eq!(
+        database.list_values(b"key"),
+        Ok(Some(vec![b"item".to_vec()]))
+    );
+}
+
+#[test]
+fn execute_getex_updates_and_removes_expiration() {
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"value".to_vec());
+
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"key".to_vec(),
+                expiration: Some(GetExExpiration::Milliseconds(1_000)),
+            },
+            &mut database,
+        ),
+        Response::Value(b"value".to_vec())
+    );
+    assert!((1..=1_000).contains(&database.pttl(b"key")));
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"key".to_vec(),
+                expiration: Some(GetExExpiration::Persist),
+            },
+            &mut database,
+        ),
+        Response::Value(b"value".to_vec())
+    );
+    assert_eq!(database.pttl(b"key"), -1);
+}
+
+#[test]
+fn execute_getex_handles_missing_and_wrong_type_without_mutation() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"item".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"missing".to_vec(),
+                expiration: Some(GetExExpiration::Seconds(1)),
+            },
+            &mut database,
+        ),
+        Response::Nil
+    );
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"list".to_vec(),
+                expiration: Some(GetExExpiration::Seconds(1)),
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+    assert_eq!(
+        database.list_values(b"list"),
+        Ok(Some(vec![b"item".to_vec()]))
+    );
+}
+
+#[test]
+fn execute_msetnx_is_all_or_nothing() {
+    let mut database = Database::new();
+    database.set(b"existing".to_vec(), b"old".to_vec());
+    assert_eq!(
+        execute(
+            Command::MSetNx {
+                entries: vec![
+                    (b"new".to_vec(), b"one".to_vec()),
+                    (b"existing".to_vec(), b"replacement".to_vec()),
+                ],
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+    assert_eq!(database.get(b"new"), Ok(None));
+    assert_eq!(database.get(b"existing"), Ok(Some(b"old".as_slice())));
+
+    assert_eq!(
+        execute(
+            Command::MSetNx {
+                entries: vec![
+                    (b"one".to_vec(), b"1".to_vec()),
+                    (b"two".to_vec(), b"2".to_vec()),
+                ],
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(database.get(b"one"), Ok(Some(b"1".as_slice())));
+    assert_eq!(database.get(b"two"), Ok(Some(b"2".as_slice())));
+}
+
+#[test]
+fn execute_expiration_conditions_compare_existing_deadlines() {
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"value".to_vec());
+
+    let expire = |seconds, condition| Command::ExpireAdvanced {
+        key: b"key".to_vec(),
+        seconds,
+        condition,
+    };
+    assert_eq!(
+        execute(expire(10, ExpireCondition::Greater), &mut database),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(expire(10, ExpireCondition::Less), &mut database),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(expire(20, ExpireCondition::NoExpiration), &mut database),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(expire(20, ExpireCondition::HasExpiration), &mut database),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(expire(10, ExpireCondition::Greater), &mut database),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(expire(30, ExpireCondition::Greater), &mut database),
+        Response::Integer(1)
+    );
+}
+
+#[test]
+fn execute_absolute_expiration_and_expiretime_use_unix_time() {
+    use std::time::SystemTime;
+
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"value".to_vec());
+    let target = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 60;
+
+    assert_eq!(
+        execute(
+            Command::ExpireAt {
+                key: b"key".to_vec(),
+                unix_seconds: target,
+                condition: None,
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    let seconds = match execute(
+        Command::ExpireTime {
+            key: b"key".to_vec(),
+        },
+        &mut database,
+    ) {
+        Response::Integer(value) => value,
+        response => panic!("unexpected response: {response:?}"),
+    };
+    assert!(((target - 1) as i64..=target as i64).contains(&seconds));
+    let milliseconds = match execute(
+        Command::PExpireTime {
+            key: b"key".to_vec(),
+        },
+        &mut database,
+    ) {
+        Response::Integer(value) => value,
+        response => panic!("unexpected response: {response:?}"),
+    };
+    assert!(((target * 1_000) as i64 - 20..=(target * 1_000) as i64).contains(&milliseconds));
+
+    database.set(b"persistent".to_vec(), b"value".to_vec());
+    assert_eq!(
+        execute(
+            Command::ExpireTime {
+                key: b"persistent".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Integer(-1)
+    );
+    assert_eq!(
+        execute(
+            Command::ExpireTime {
+                key: b"missing".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Integer(-2)
+    );
 }
 
 #[test]
@@ -314,7 +692,12 @@ fn execute_string_and_collection_commands() {
     );
     assert_eq!(execute(Command::Len, &mut database), Response::Integer(2));
     assert_eq!(
-        execute(Command::Keys, &mut database),
+        execute(
+            Command::Keys {
+                pattern: b"*".to_vec(),
+            },
+            &mut database,
+        ),
         Response::KeyList(vec!["first".to_owned().into(), "second".to_owned().into()])
     );
     assert_eq!(
@@ -465,8 +848,90 @@ fn execute_numeric_and_expiration_commands() {
 fn execute_control_commands_return_control_responses() {
     let mut database = Database::new();
 
+    assert_eq!(
+        execute(Command::Ping { message: None }, &mut database),
+        Response::Pong
+    );
+    assert_eq!(
+        execute(
+            Command::Ping {
+                message: Some(b"message\0\xff".to_vec()),
+            },
+            &mut database,
+        ),
+        Response::Value(b"message\0\xff".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::Echo {
+                message: b"message\0\xff".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Value(b"message\0\xff".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::Hello {
+                protocol: Some(crate::command::ProtocolVersion::Resp3),
+            },
+            &mut database,
+        ),
+        Response::Hello {
+            protocol: Some(crate::command::ProtocolVersion::Resp3),
+            connection_id: None,
+        }
+    );
     assert_eq!(execute(Command::Help, &mut database), Response::Help);
     assert_eq!(execute(Command::Exit, &mut database), Response::Exit);
+}
+
+#[test]
+fn execute_command_metadata_queries_use_the_shared_registry() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(Command::MetadataCount, &mut database),
+        Response::Integer(crate::command::COMMANDS.len() as i64)
+    );
+    assert_eq!(
+        execute(
+            Command::MetadataInfo {
+                names: vec![b"GET".to_vec(), b"missing".to_vec()],
+            },
+            &mut database,
+        ),
+        Response::CommandMetadata(vec![crate::command::command_metadata(b"get"), None])
+    );
+    assert_eq!(
+        execute(Command::MetadataInfo { names: Vec::new() }, &mut database),
+        Response::CommandMetadata(crate::command::COMMANDS.iter().copied().map(Some).collect())
+    );
+}
+
+#[test]
+fn select_size_and_flush_commands_operate_on_the_single_database() {
+    let mut database = Database::new();
+    database.set(b"one".to_vec(), b"1".to_vec());
+    database.set(b"two".to_vec(), b"2".to_vec());
+
+    assert_eq!(execute(Command::Select, &mut database), Response::Ok);
+    assert_eq!(
+        execute(Command::DbSize, &mut database),
+        Response::Integer(2)
+    );
+    assert_eq!(execute(Command::FlushDb, &mut database), Response::Ok);
+    assert_eq!(
+        execute(Command::DbSize, &mut database),
+        Response::Integer(0)
+    );
+
+    database.set(b"again".to_vec(), b"value".to_vec());
+    assert_eq!(execute(Command::FlushAll, &mut database), Response::Ok);
+    assert_eq!(
+        execute(Command::DbSize, &mut database),
+        Response::Integer(0)
+    );
 }
 
 #[test]

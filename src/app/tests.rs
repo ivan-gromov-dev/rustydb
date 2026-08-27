@@ -18,6 +18,14 @@ fn runs_commands_until_exit() {
 }
 
 #[test]
+fn runs_ping_and_echo_commands() {
+    let output = run_script("PING\nPING hello world\nECHO echoed value\nEXIT\n");
+
+    assert!(output.contains("db> PONG\ndb> hello world\ndb> echoed value\n"));
+    assert!(output.ends_with("db> Bye!\n"));
+}
+
+#[test]
 fn runs_list_commands() {
     let output = run_script(
         "LPUSH tasks second item\nLPUSH tasks first item\nRPUSH tasks third item\nLLEN tasks\nLRANGE tasks 0 -1\nLPOP tasks\nRPOP tasks\nEXIT\n",

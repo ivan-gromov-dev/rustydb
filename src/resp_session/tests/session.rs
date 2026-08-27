@@ -3,12 +3,23 @@ use std::io::{self, Cursor, Read, Write};
 use crate::command::Command;
 use crate::output::CommandOutput;
 
-use super::super::run_session;
+use super::super::{run_session, run_session_with_id};
 
 fn run(input: &[u8], execute: impl FnMut(Command) -> CommandOutput) -> Vec<u8> {
     let mut reader = Cursor::new(input);
     let mut output = Vec::new();
     run_session(&mut reader, &mut output, execute).unwrap();
+    output
+}
+
+fn run_with_id(
+    input: &[u8],
+    connection_id: i64,
+    execute: impl FnMut(Command) -> CommandOutput,
+) -> Vec<u8> {
+    let mut reader = Cursor::new(input);
+    let mut output = Vec::new();
+    run_session_with_id(&mut reader, &mut output, execute, connection_id).unwrap();
     output
 }
 
@@ -53,6 +64,152 @@ fn executes_every_pipelined_command_in_order() {
         ]
     );
     assert_eq!(output, b"$1\r\n1\r\n$1\r\n2\r\n");
+}
+
+#[test]
+fn hello_switches_response_encoding_for_the_connection() {
+    let input = concat!(
+        "*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n",
+        "*2\r\n$3\r\nGET\r\n$7\r\nmissing\r\n",
+        "*3\r\n$11\r\nINCRBYFLOAT\r\n$7\r\ncounter\r\n$3\r\n1.5\r\n",
+        "*2\r\n$5\r\nHELLO\r\n$1\r\n2\r\n",
+        "*2\r\n$3\r\nGET\r\n$7\r\nmissing\r\n",
+    );
+
+    let output = run_with_id(input.as_bytes(), 42, |command| match command {
+        Command::Get { .. } => CommandOutput::Nil,
+        Command::IncrementByFloat { .. } => CommandOutput::Float(1.5),
+        other => panic!("unexpected command: {other:?}"),
+    });
+
+    let version = env!("CARGO_PKG_VERSION");
+    let expected = format!(
+        concat!(
+            "%7\r\n",
+            "$6\r\nserver\r\n$7\r\nrustydb\r\n",
+            "$7\r\nversion\r\n${}\r\n{}\r\n",
+            "$5\r\nproto\r\n:3\r\n",
+            "$2\r\nid\r\n:42\r\n",
+            "$4\r\nmode\r\n$10\r\nstandalone\r\n",
+            "$4\r\nrole\r\n$6\r\nmaster\r\n",
+            "$7\r\nmodules\r\n*0\r\n",
+            "_\r\n",
+            "$3\r\n1.5\r\n",
+            "*14\r\n",
+            "$6\r\nserver\r\n$7\r\nrustydb\r\n",
+            "$7\r\nversion\r\n${}\r\n{}\r\n",
+            "$5\r\nproto\r\n:2\r\n",
+            "$2\r\nid\r\n:42\r\n",
+            "$4\r\nmode\r\n$10\r\nstandalone\r\n",
+            "$4\r\nrole\r\n$6\r\nmaster\r\n",
+            "$7\r\nmodules\r\n*0\r\n",
+            "$-1\r\n",
+        ),
+        version.len(),
+        version,
+        version.len(),
+        version,
+    );
+    assert_eq!(output, expected.as_bytes());
+}
+
+#[test]
+fn unsupported_hello_protocol_does_not_change_or_close_the_connection() {
+    let input = concat!("*2\r\n$5\r\nHELLO\r\n$1\r\n4\r\n", "*1\r\n$4\r\nPING\r\n",);
+    let mut executed = Vec::new();
+
+    let output = run(input.as_bytes(), |command| {
+        executed.push(command);
+        CommandOutput::Pong
+    });
+
+    assert_eq!(executed, vec![Command::Ping { message: None }]);
+    assert_eq!(
+        output,
+        b"-NOPROTO unsupported protocol version: 4\r\n+PONG\r\n"
+    );
+}
+
+#[test]
+fn unsupported_database_is_rejected_without_closing_the_connection() {
+    let input = concat!("*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "*1\r\n$4\r\nPING\r\n",);
+    let mut executed = Vec::new();
+
+    let output = run(input.as_bytes(), |command| {
+        executed.push(command);
+        CommandOutput::Pong
+    });
+
+    assert_eq!(executed, vec![Command::Ping { message: None }]);
+    assert_eq!(output, b"-ERR DB index is out of range: 1\r\n+PONG\r\n");
+}
+
+#[test]
+fn connection_metadata_is_scoped_to_the_session_without_database_execution() {
+    let input = concat!(
+        "*2\r\n$6\r\nCLIENT\r\n$2\r\nID\r\n",
+        "*2\r\n$6\r\nCLIENT\r\n$7\r\nGETNAME\r\n",
+        "*3\r\n$6\r\nCLIENT\r\n$7\r\nSETNAME\r\n$8\r\nworker-1\r\n",
+        "*2\r\n$6\r\nCLIENT\r\n$7\r\nGETNAME\r\n",
+        "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$8\r\nredis-rs\r\n",
+        "*3\r\n$6\r\nCLIENT\r\n$7\r\nSETNAME\r\n$0\r\n\r\n",
+        "*2\r\n$6\r\nCLIENT\r\n$7\r\nGETNAME\r\n",
+    );
+    let mut executed = false;
+
+    let output = run_with_id(input.as_bytes(), 73, |_| {
+        executed = true;
+        CommandOutput::Ok
+    });
+
+    assert!(!executed);
+    assert_eq!(
+        output,
+        b":73\r\n$-1\r\n+OK\r\n$8\r\nworker-1\r\n+OK\r\n+OK\r\n$-1\r\n"
+    );
+}
+
+#[test]
+fn connection_names_are_independent_between_sessions() {
+    let set_and_get = concat!(
+        "*3\r\n$6\r\nCLIENT\r\n$7\r\nSETNAME\r\n$5\r\nfirst\r\n",
+        "*2\r\n$6\r\nCLIENT\r\n$7\r\nGETNAME\r\n",
+    );
+    let get = "*2\r\n$6\r\nCLIENT\r\n$7\r\nGETNAME\r\n";
+
+    assert_eq!(
+        run_with_id(set_and_get.as_bytes(), 1, |_| CommandOutput::Ok),
+        b"+OK\r\n$5\r\nfirst\r\n"
+    );
+    assert_eq!(
+        run_with_id(get.as_bytes(), 2, |_| CommandOutput::Ok),
+        b"$-1\r\n"
+    );
+}
+
+#[test]
+fn command_count_and_info_are_encoded_for_resp_clients() {
+    let input = concat!(
+        "*2\r\n$7\r\nCOMMAND\r\n$5\r\nCOUNT\r\n",
+        "*4\r\n$7\r\nCOMMAND\r\n$4\r\nINFO\r\n$3\r\nGET\r\n$7\r\nmissing\r\n",
+    );
+    let output = run(input.as_bytes(), |command| match command {
+        Command::MetadataCount => CommandOutput::Integer(crate::command::COMMANDS.len() as i64),
+        Command::MetadataInfo { names } => CommandOutput::CommandMetadata(
+            names
+                .iter()
+                .map(|name| crate::command::command_metadata(name))
+                .collect(),
+        ),
+        other => panic!("unexpected command: {other:?}"),
+    });
+    let prefix = format!(
+        ":{}\r\n*2\r\n*6\r\n$3\r\nget\r\n:2\r\n",
+        crate::command::COMMANDS.len()
+    );
+
+    assert!(output.starts_with(prefix.as_bytes()));
+    assert!(output.ends_with(b"$-1\r\n"));
 }
 
 #[test]

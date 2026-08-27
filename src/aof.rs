@@ -376,6 +376,28 @@ fn adjust_expiration(command: &mut Command, elapsed_millis: u64) {
         Command::PExpire { milliseconds, .. } => {
             *milliseconds = milliseconds.saturating_sub(elapsed_millis)
         }
+        Command::SetAdvanced { expiration, .. } => match expiration {
+            Some(crate::command::SetExpiration::Seconds(seconds)) => {
+                *expiration = Some(crate::command::SetExpiration::Milliseconds(
+                    seconds.saturating_mul(1_000).saturating_sub(elapsed_millis),
+                ));
+            }
+            Some(crate::command::SetExpiration::Milliseconds(milliseconds)) => {
+                *milliseconds = milliseconds.saturating_sub(elapsed_millis);
+            }
+            _ => {}
+        },
+        Command::GetEx { expiration, .. } => match expiration {
+            Some(crate::command::GetExExpiration::Seconds(seconds)) => {
+                *expiration = Some(crate::command::GetExExpiration::Milliseconds(
+                    seconds.saturating_mul(1_000).saturating_sub(elapsed_millis),
+                ));
+            }
+            Some(crate::command::GetExExpiration::Milliseconds(milliseconds)) => {
+                *milliseconds = milliseconds.saturating_sub(elapsed_millis);
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -498,6 +520,52 @@ mod tests {
             Command::PExpire {
                 key: b"key".to_vec(),
                 milliseconds: 300
+            }
+        );
+    }
+
+    #[test]
+    fn replay_reduces_relative_set_expiration_by_downtime() {
+        let payload = encode_payload(
+            1_000,
+            &[
+                b"SET".to_vec(),
+                b"key".to_vec(),
+                b"value".to_vec(),
+                b"PX".to_vec(),
+                b"500".to_vec(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            decode_payload(&payload, 1_200).unwrap(),
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"value".to_vec(),
+                condition: None,
+                return_old: false,
+                expiration: Some(crate::command::SetExpiration::Milliseconds(300)),
+            }
+        );
+    }
+
+    #[test]
+    fn replay_reduces_relative_getex_expiration_by_downtime() {
+        let payload = encode_payload(
+            1_000,
+            &[
+                b"GETEX".to_vec(),
+                b"key".to_vec(),
+                b"EX".to_vec(),
+                b"2".to_vec(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            decode_payload(&payload, 1_500).unwrap(),
+            Command::GetEx {
+                key: b"key".to_vec(),
+                expiration: Some(crate::command::GetExExpiration::Milliseconds(1_500)),
             }
         );
     }

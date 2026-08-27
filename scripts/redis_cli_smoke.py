@@ -36,9 +36,15 @@ def wait_for_server(port: int, process: subprocess.Popen[bytes]) -> None:
     raise RuntimeError("RustyDB server did not start within five seconds")
 
 
-def redis(cli: str, port: int, *arguments: str, stdin: bytes | None = None) -> bytes:
+def redis(
+    cli: str,
+    port: int,
+    *arguments: str,
+    stdin: bytes | None = None,
+    protocol: int = 2,
+) -> bytes:
     result = subprocess.run(
-        [cli, "-2", "--raw", "-h", HOST, "-p", str(port), *arguments],
+        [cli, f"-{protocol}", "--raw", "-h", HOST, "-p", str(port), *arguments],
         cwd=ROOT,
         input=stdin,
         stdout=subprocess.PIPE,
@@ -90,6 +96,36 @@ def main() -> int:
 
     try:
         wait_for_server(port, server)
+        expect(line(redis(cli, port, "PING")), b"PONG", "PING")
+        expect(
+            line(redis(cli, port, "PING", protocol=3)),
+            b"PONG",
+            "RESP3 PING",
+        )
+        client_id = line(redis(cli, port, "CLIENT", "ID"))
+        if not client_id.isdigit() or int(client_id) <= 0:
+            raise AssertionError(f"CLIENT ID: expected a positive integer, got {client_id!r}")
+        expect(
+            line(redis(cli, port, "CLIENT", "SETINFO", "LIB-NAME", "rustydb-smoke")),
+            b"OK",
+            "CLIENT SETINFO",
+        )
+        command_count = line(redis(cli, port, "COMMAND", "COUNT"))
+        if not command_count.isdigit() or int(command_count) <= 0:
+            raise AssertionError(
+                f"COMMAND COUNT: expected a positive integer, got {command_count!r}"
+            )
+        expect(line(redis(cli, port, "SELECT", "0")), b"OK", "SELECT 0")
+        expect(
+            line(redis(cli, port, "PING", "hello world")),
+            b"hello world",
+            "PING message",
+        )
+        expect(
+            line(redis(cli, port, "-x", "ECHO", stdin=BINARY_VALUE)),
+            BINARY_VALUE,
+            "binary ECHO",
+        )
         expect(line(redis(cli, port, "SET", "greeting", "hello world")), b"OK", "SET")
         expect(line(redis(cli, port, "GET", "greeting")), b"hello world", "GET")
         expect(line(redis(cli, port, "INCR", "counter")), b"1", "INCR")
@@ -106,12 +142,19 @@ def main() -> int:
             "binary SET",
         )
         expect(line(redis(cli, port, "GET", "binary")), BINARY_VALUE, "binary GET")
+        database_size = line(redis(cli, port, "DBSIZE"))
+        if not database_size.isdigit() or int(database_size) <= 0:
+            raise AssertionError(
+                f"DBSIZE: expected a positive integer, got {database_size!r}"
+            )
+        expect(line(redis(cli, port, "FLUSHDB", "SYNC")), b"OK", "FLUSHDB SYNC")
+        expect(line(redis(cli, port, "DBSIZE")), b"0", "DBSIZE after FLUSHDB")
     finally:
         if server.poll() is None:
             server.kill()
         server.wait(timeout=5)
 
-    print("redis-cli RESP2 smoke test passed")
+    print("redis-cli RESP2/RESP3 smoke test passed")
     return 0
 
 

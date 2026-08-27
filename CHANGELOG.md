@@ -7,6 +7,36 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-27
+
+### Added
+
+- Redis-compatible `PING [message]` and `ECHO message` commands for interactive
+  and RESP clients, including binary-safe message replies.
+- `HELLO`, RESP2/RESP3 connection negotiation, and the RESP3 map and null
+  response types needed by the supported command set.
+- Per-connection IDs, names, and client library metadata through `CLIENT ID`,
+  `CLIENT SETNAME`, `CLIENT GETNAME`, and `CLIENT SETINFO`; `HELLO` now reports
+  the same connection ID.
+- Deterministic metadata for the supported command set through `COMMAND`,
+  `COMMAND INFO`, and `COMMAND COUNT`, including arity, flags, and key positions.
+- Single-database compatibility through `SELECT 0`, `DBSIZE`, `FLUSHDB`, and
+  `FLUSHALL`; unsupported database indexes are rejected explicitly and both
+  flush commands accept Redis `SYNC` and `ASYNC` modifiers while clearing
+  synchronously.
+- Redis-compatible `SET` options `NX`, `XX`, `GET`, `EX`, `PX`, `EXAT`, `PXAT`,
+  and `KEEPTTL`, with validation before mutation and expiration-aware AOF replay.
+- `GETEX` with relative, absolute, and `PERSIST` expiration updates, plus atomic
+  all-or-nothing `MSETNX` writes.
+- Absolute expiration through `EXPIREAT` and `PEXPIREAT`, Unix deadline reads
+  through `EXPIRETIME` and `PEXPIRETIME`, and `NX`, `XX`, `GT`, and `LT`
+  conditions for all four expiration setters.
+- Keyspace inspection and compatibility through `TYPE`, `TOUCH`, and
+  synchronous `UNLINK`, including Redis-compatible reply types and AOF replay.
+- Binary-safe Redis glob matching for `KEYS`, deterministic cursor iteration
+  through `SCAN MATCH/COUNT/TYPE`, pseudo-random `RANDOMKEY`, and TTL-preserving
+  `COPY` with `DB 0` validation, `REPLACE`, and replay-safe AOF records.
+
 ## [0.9.0] - 2026-08-25
 
 ### Added
@@ -221,7 +251,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.6.0...v0.7.0
