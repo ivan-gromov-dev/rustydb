@@ -9,6 +9,7 @@ fn render(output: CommandOutput) -> String {
 #[test]
 fn renders_scalar_outputs() {
     assert_eq!(render(CommandOutput::Ok), "OK\n");
+    assert_eq!(render(CommandOutput::Pong), "PONG\n");
     assert_eq!(render(CommandOutput::Integer(-2)), "-2\n");
     assert_eq!(render(CommandOutput::Float(1.5)), "1.5\n");
     assert_eq!(
@@ -93,6 +94,8 @@ fn help_lists_every_supported_command() {
         "SISMEMBER",
         "SMEMBERS",
         "SCARD",
+        "PING",
+        "ECHO",
         "KEYS",
         "LEN",
         "CLEAR",

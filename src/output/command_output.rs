@@ -37,6 +37,8 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  SISMEMBER key member\n",
     "  SMEMBERS key\n",
     "  SCARD key\n",
+    "  PING [message]\n",
+    "  ECHO message\n",
     "  KEYS\n",
     "  LEN\n",
     "  CLEAR\n",
@@ -50,6 +52,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
 #[derive(Debug, PartialEq)]
 pub(crate) enum CommandOutput {
     Ok,
+    Pong,
     Integer(i64),
     Float(f64),
     Value(Vec<u8>),
@@ -69,6 +72,7 @@ impl CommandOutput {
     pub(crate) fn write_to(&self, writer: &mut impl Write) -> io::Result<()> {
         match self {
             Self::Ok => writeln!(writer, "OK"),
+            Self::Pong => writeln!(writer, "PONG"),
             Self::Integer(value) => writeln!(writer, "{value}"),
             Self::Float(value) => writeln!(writer, "{value}"),
             Self::Value(value) => {

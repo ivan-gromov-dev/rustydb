@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Redis-compatible `PING [message]` and `ECHO message` commands for interactive
+  and RESP2 clients, including binary-safe message replies.
+
 ## [0.9.0] - 2026-08-25
 
 ### Added

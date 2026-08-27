@@ -1,6 +1,51 @@
 use super::*;
 
 #[test]
+fn parses_ping_with_an_optional_binary_message() {
+    assert_eq!(Command::parse("PING"), Ok(Command::Ping { message: None }));
+    assert_eq!(
+        Command::parse("ping hello world"),
+        Ok(Command::Ping {
+            message: Some(b"hello world".to_vec()),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PING", b"a\0\xff"]),
+        Ok(Command::Ping {
+            message: Some(b"a\0\xff".to_vec()),
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["PING", "one", "two"]),
+        Err(CommandError::InvalidArguments("PING [message]"))
+    );
+}
+
+#[test]
+fn echo_requires_one_binary_message() {
+    assert_eq!(
+        Command::parse("echo hello world"),
+        Ok(Command::Echo {
+            message: b"hello world".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"ECHO", b"a\0\xff"]),
+        Ok(Command::Echo {
+            message: b"a\0\xff".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ECHO"]),
+        Err(CommandError::InvalidArguments("ECHO message"))
+    );
+    assert_eq!(
+        Command::from_args(&["ECHO", "one", "two"]),
+        Err(CommandError::InvalidArguments("ECHO message"))
+    );
+}
+
+#[test]
 fn save_accepts_no_arguments() {
     assert_eq!(Command::parse("SAVE"), Ok(Command::Save));
     assert_eq!(
@@ -546,6 +591,9 @@ fn parses_every_supported_command_form() {
         "SISMEMBER set member",
         "SMEMBERS set",
         "SCARD set",
+        "PING",
+        "PING message",
+        "ECHO message",
         "KEYS",
         "LEN",
         "CLEAR",

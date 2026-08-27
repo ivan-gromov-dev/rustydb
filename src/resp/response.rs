@@ -7,6 +7,7 @@ use super::frame::RespFrame;
 pub(crate) fn frame_from_output(output: CommandOutput) -> RespFrame {
     match output {
         CommandOutput::Ok | CommandOutput::Exit => RespFrame::SimpleString("OK".to_owned()),
+        CommandOutput::Pong => RespFrame::SimpleString("PONG".to_owned()),
         CommandOutput::Integer(value) => RespFrame::Integer(value),
         CommandOutput::Float(value) => RespFrame::BulkString(value.to_string().into_bytes()),
         CommandOutput::Value(value) => RespFrame::BulkString(value),

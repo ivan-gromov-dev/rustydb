@@ -90,6 +90,17 @@ def main() -> int:
 
     try:
         wait_for_server(port, server)
+        expect(line(redis(cli, port, "PING")), b"PONG", "PING")
+        expect(
+            line(redis(cli, port, "PING", "hello world")),
+            b"hello world",
+            "PING message",
+        )
+        expect(
+            line(redis(cli, port, "-x", "ECHO", stdin=BINARY_VALUE)),
+            BINARY_VALUE,
+            "binary ECHO",
+        )
         expect(line(redis(cli, port, "SET", "greeting", "hello world")), b"OK", "SET")
         expect(line(redis(cli, port, "GET", "greeting")), b"hello world", "GET")
         expect(line(redis(cli, port, "INCR", "counter")), b"1", "INCR")

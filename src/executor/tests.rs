@@ -465,6 +465,28 @@ fn execute_numeric_and_expiration_commands() {
 fn execute_control_commands_return_control_responses() {
     let mut database = Database::new();
 
+    assert_eq!(
+        execute(Command::Ping { message: None }, &mut database),
+        Response::Pong
+    );
+    assert_eq!(
+        execute(
+            Command::Ping {
+                message: Some(b"message\0\xff".to_vec()),
+            },
+            &mut database,
+        ),
+        Response::Value(b"message\0\xff".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::Echo {
+                message: b"message\0\xff".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Value(b"message\0\xff".to_vec())
+    );
     assert_eq!(execute(Command::Help, &mut database), Response::Help);
     assert_eq!(execute(Command::Exit, &mut database), Response::Exit);
 }

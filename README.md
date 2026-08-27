@@ -5,9 +5,10 @@ interactive command-line interface and a concurrent TCP server inspired by a
 focused subset of Redis string, list, set, and expiration operations, with
 snapshot and append-only persistence.
 
-RustyDB begins as a learning-oriented implementation of database internals and
-is intended to evolve toward a production-capable system through explicit,
-tested guarantees. Current releases remain experimental, with snapshot and
+RustyDB is a learning-oriented implementation of database internals and a
+functional engineering demonstration. It is intended to provide an
+application-ready standalone subset of Redis rather than production or complete
+Redis compatibility. Current releases remain experimental, with snapshot and
 append-only persistence available as separate operating modes.
 
 ## Requirements
@@ -165,8 +166,8 @@ python scripts/redis_cli_smoke.py
 ```
 
 Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
-`PATH`. The smoke test covers strings, binary input, integers, lists, sets, and
-expiration output through a real client.
+`PATH`. The smoke test covers connection checks, binary input and echo, strings,
+integers, lists, sets, and expiration output through a real client.
 
 RustyDB does not implement RESP3, authentication, database selection,
 transactions, Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and
@@ -241,6 +242,8 @@ bulk strings, null bulk strings, or arrays.
 | `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
+| `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
+| `ECHO message` | Return a binary message unchanged | The message |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
@@ -438,6 +441,25 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
 - Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
   set to 1,000,000 elements, and each binary field to 512 MiB.
 - AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
+
+### Intentional scope
+
+RustyDB is intentionally a standalone server with a focused Redis-compatible
+feature set. The project does not plan to implement:
+
+- Lua scripting or Redis Functions;
+- streams;
+- authentication, ACLs, or TLS;
+- Redis RDB or multi-part AOF format compatibility;
+- replication, Sentinel, or Cluster;
+- HyperLogLog or geospatial commands;
+- JSON, Search, time-series, vector, probabilistic, or other extended data
+  engines;
+- multiple logical databases or complete Redis command, protocol, error, and
+  operational compatibility.
+
+These are conscious project boundaries rather than untracked future work. See
+[ROADMAP.md](ROADMAP.md) for the complete planned feature set.
 
 ## License
 

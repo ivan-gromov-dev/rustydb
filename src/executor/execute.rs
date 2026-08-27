@@ -206,6 +206,13 @@ pub(crate) fn execute_with_snapshot(
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::Ping { message: None } => CommandOutput::Pong,
+
+        Command::Ping {
+            message: Some(message),
+        }
+        | Command::Echo { message } => CommandOutput::Value(message),
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

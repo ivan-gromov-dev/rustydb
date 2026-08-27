@@ -11,6 +11,7 @@ impl Command {
         let tail_after = match command.as_str() {
             "SET" | "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "RPUSH" | "SADD" | "SREM"
             | "SISMEMBER" => Some(2),
+            "PING" | "ECHO" => Some(1),
             "SETRANGE" => Some(3),
             _ => None,
         };
@@ -216,6 +217,17 @@ impl Command {
             }),
             "SCARD" => Ok(Self::SCard {
                 key: one(args, "SCARD key")?,
+            }),
+            "PING" => {
+                if args.len() > 2 {
+                    return Err(CommandError::InvalidArguments("PING [message]"));
+                }
+                Ok(Self::Ping {
+                    message: args.get(1).map(|message| owned(message)),
+                })
+            }
+            "ECHO" => Ok(Self::Echo {
+                message: one(args, "ECHO message")?,
             }),
             "KEYS" => no_args(args, "KEYS", Self::Keys),
             "LEN" => no_args(args, "LEN", Self::Len),

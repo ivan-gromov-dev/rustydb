@@ -128,6 +128,12 @@ pub(crate) enum Command {
     SCard {
         key: Vec<u8>,
     },
+    Ping {
+        message: Option<Vec<u8>>,
+    },
+    Echo {
+        message: Vec<u8>,
+    },
     Keys,
     Len,
     Clear,
@@ -176,6 +182,8 @@ impl Command {
             Self::SIsMember { .. } => "SISMEMBER",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
+            Self::Ping { .. } => "PING",
+            Self::Echo { .. } => "ECHO",
             Self::Keys => "KEYS",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
@@ -268,6 +276,8 @@ impl Command {
             | Self::SIsMember { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
+            | Self::Ping { .. }
+            | Self::Echo { .. }
             | Self::Keys
             | Self::Len
             | Self::Save

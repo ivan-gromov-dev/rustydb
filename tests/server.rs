@@ -79,6 +79,25 @@ fn public_server_api_shares_binary_state_between_clients() {
 }
 
 #[test]
+fn public_server_api_supports_ping_and_binary_echo() {
+    let (address, shutdown, server) = start_server();
+    let input = pipeline(&[
+        &[b"PING"],
+        &[b"PING", b"a\0\xff"],
+        &[b"ECHO", b"line\r\n\0\xff"],
+        &[b"QUIT"],
+    ]);
+
+    assert_eq!(
+        exchange(connect(address), &input),
+        b"+PONG\r\n$3\r\na\0\xff\r\n$8\r\nline\r\n\0\xff\r\n+OK\r\n"
+    );
+
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
 fn public_shutdown_api_allows_an_active_session_to_finish() {
     let (address, shutdown, server) = start_server();
     let mut stream = connect(address);

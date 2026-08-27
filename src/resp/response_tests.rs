@@ -7,6 +7,10 @@ use super::response::frame_from_output;
 fn converts_scalar_outputs() {
     for (output, expected) in [
         (CommandOutput::Ok, RespFrame::SimpleString("OK".to_owned())),
+        (
+            CommandOutput::Pong,
+            RespFrame::SimpleString("PONG".to_owned()),
+        ),
         (CommandOutput::Integer(-2), RespFrame::Integer(-2)),
         (
             CommandOutput::Float(1.5),
