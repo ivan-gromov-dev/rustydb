@@ -1,6 +1,6 @@
 use super::types::{
-    ClientInfoAttribute, Command, CommandError, GetExExpiration, ProtocolVersion, SetCondition,
-    SetExpiration,
+    ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, ProtocolVersion,
+    SetCondition, SetExpiration,
 };
 
 type KeyValueEntries = Vec<(Vec<u8>, Vec<u8>)>;
@@ -141,19 +141,21 @@ impl Command {
                     new_key: owned(args[2]),
                 })
             }
-            "EXPIRE" => {
-                let (key, seconds) = key_u64(args, "EXPIRE key seconds")?;
-                Ok(Self::Expire { key, seconds })
-            }
-            "PEXPIRE" => {
-                let (key, milliseconds) = key_u64(args, "PEXPIRE key milliseconds")?;
-                Ok(Self::PExpire { key, milliseconds })
-            }
+            "EXPIRE" => parse_expire(args, false),
+            "PEXPIRE" => parse_expire(args, true),
+            "EXPIREAT" => parse_expire_at(args, false),
+            "PEXPIREAT" => parse_expire_at(args, true),
             "TTL" => Ok(Self::Ttl {
                 key: one(args, "TTL key")?,
             }),
             "PTTL" => Ok(Self::PTtl {
                 key: one(args, "PTTL key")?,
+            }),
+            "EXPIRETIME" => Ok(Self::ExpireTime {
+                key: one(args, "EXPIRETIME key")?,
+            }),
+            "PEXPIRETIME" => Ok(Self::PExpireTime {
+                key: one(args, "PEXPIRETIME key")?,
             }),
             "PERSIST" => Ok(Self::Persist {
                 key: one(args, "PERSIST key")?,
@@ -387,6 +389,92 @@ fn parse_getex(args: &[&[u8]]) -> Result<Command, CommandError> {
     })
 }
 
+fn parse_expire(args: &[&[u8]], milliseconds: bool) -> Result<Command, CommandError> {
+    let usage = if milliseconds {
+        "PEXPIRE key milliseconds"
+    } else {
+        "EXPIRE key seconds"
+    };
+    if args.len() != 3 && args.len() != 4 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    let value = parse_u64(args[2])?;
+    let key = owned(args[1]);
+    let Some(option) = args.get(3) else {
+        return Ok(if milliseconds {
+            Command::PExpire {
+                key,
+                milliseconds: value,
+            }
+        } else {
+            Command::Expire {
+                key,
+                seconds: value,
+            }
+        });
+    };
+    let condition = parse_expire_condition(option, usage)?;
+    Ok(if milliseconds {
+        Command::PExpireAdvanced {
+            key,
+            milliseconds: value,
+            condition,
+        }
+    } else {
+        Command::ExpireAdvanced {
+            key,
+            seconds: value,
+            condition,
+        }
+    })
+}
+
+fn parse_expire_at(args: &[&[u8]], milliseconds: bool) -> Result<Command, CommandError> {
+    let usage = if milliseconds {
+        "PEXPIREAT key unix-milliseconds [NX|XX|GT|LT]"
+    } else {
+        "EXPIREAT key unix-seconds [NX|XX|GT|LT]"
+    };
+    if args.len() != 3 && args.len() != 4 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    let value = parse_u64(args[2])?;
+    let condition = args
+        .get(3)
+        .map(|option| parse_expire_condition(option, usage))
+        .transpose()?;
+    Ok(if milliseconds {
+        Command::PExpireAt {
+            key: owned(args[1]),
+            unix_milliseconds: value,
+            condition,
+        }
+    } else {
+        Command::ExpireAt {
+            key: owned(args[1]),
+            unix_seconds: value,
+            condition,
+        }
+    })
+}
+
+fn parse_expire_condition(
+    option: &[u8],
+    usage: &'static str,
+) -> Result<ExpireCondition, CommandError> {
+    if option.eq_ignore_ascii_case(b"NX") {
+        Ok(ExpireCondition::NoExpiration)
+    } else if option.eq_ignore_ascii_case(b"XX") {
+        Ok(ExpireCondition::HasExpiration)
+    } else if option.eq_ignore_ascii_case(b"GT") {
+        Ok(ExpireCondition::Greater)
+    } else if option.eq_ignore_ascii_case(b"LT") {
+        Ok(ExpireCondition::Less)
+    } else {
+        Err(CommandError::InvalidArguments(usage))
+    }
+}
+
 fn parse_set(args: &[&[u8]]) -> Result<Command, CommandError> {
     const USAGE: &str = "SET key value";
     if args.len() < 3 {
@@ -578,11 +666,6 @@ fn parse_flush(
 fn key_i64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64), CommandError> {
     exact(args, 3, usage)?;
     Ok((owned(args[1]), parse_i64(args[2])?))
-}
-
-fn key_u64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, u64), CommandError> {
-    exact(args, 3, usage)?;
-    Ok((owned(args[1]), parse_u64(args[2])?))
 }
 
 fn range_args(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64, i64), CommandError> {

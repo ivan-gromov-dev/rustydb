@@ -62,6 +62,19 @@ impl Database {
         }
         let lookup = command.lookup_size();
         let records_snapshot_save = command == Command::Save;
+        let aof_requires_integer_one = matches!(
+            command,
+            Command::ExpireAdvanced { .. }
+                | Command::PExpireAdvanced { .. }
+                | Command::ExpireAt {
+                    condition: Some(_),
+                    ..
+                }
+                | Command::PExpireAt {
+                    condition: Some(_),
+                    ..
+                }
+        );
         let aof_should_append = match &command {
             Command::SetAdvanced { key, condition, .. } => match condition {
                 Some(SetCondition::IfAbsent) => !self.store.exists(key),
@@ -91,6 +104,7 @@ impl Database {
         }
         let evicted_keys = self.store.take_evicted_keys();
         if !output.is_error()
+            && (!aof_requires_integer_one || output == CommandOutput::Integer(1))
             && aof_should_append
             && let Some(aof) = &mut self.aof
         {

@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::str;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 pub(crate) struct InMemoryStore {
     pub(super) storage: HashMap<Vec<u8>, StoredValue>,
@@ -79,6 +79,14 @@ pub(crate) enum SetExpiration {
 pub(crate) enum ExpirationUpdate {
     Set(Duration),
     Persist,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpireCondition {
+    NoExpiration,
+    HasExpiration,
+    Greater,
+    Less,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -477,11 +485,35 @@ impl InMemoryStore {
     }
 
     pub(crate) fn expire_at(&mut self, key: impl AsRef<[u8]>, expires_at: Instant) -> bool {
+        self.expire_at_if(key, expires_at, None)
+    }
+
+    pub(crate) fn expire_at_if(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        expires_at: Instant,
+        condition: Option<ExpireCondition>,
+    ) -> bool {
         let key = key.as_ref();
         self.remove_if_expired(key);
 
         match self.storage.get_mut(key) {
             Some(entry) => {
+                let current = entry.expires_at();
+                let applies = match condition {
+                    Some(ExpireCondition::NoExpiration) => current.is_none(),
+                    Some(ExpireCondition::HasExpiration) => current.is_some(),
+                    Some(ExpireCondition::Greater) => {
+                        current.is_some_and(|current| expires_at > current)
+                    }
+                    Some(ExpireCondition::Less) => {
+                        current.is_none_or(|current| expires_at < current)
+                    }
+                    None => true,
+                };
+                if !applies {
+                    return false;
+                }
                 entry.set_expires_at(expires_at);
                 self.expirations.push(Reverse((expires_at, key.to_vec())));
                 true
@@ -650,6 +682,46 @@ impl InMemoryStore {
         };
 
         self.expire_at(key, expires_at)
+    }
+
+    pub(crate) fn expire_duration_if(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        duration: Duration,
+        condition: Option<ExpireCondition>,
+    ) -> bool {
+        let Some(expires_at) = self.clock.now().checked_add(duration) else {
+            return false;
+        };
+        self.expire_at_if(key, expires_at, condition)
+    }
+
+    pub(crate) fn expiration_unix_time(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        wall_now: SystemTime,
+        milliseconds: bool,
+    ) -> i64 {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return -2;
+        };
+        let Some(expires_at) = entry.expires_at() else {
+            return -1;
+        };
+        let remaining = expires_at.saturating_duration_since(self.clock.now());
+        let Some(wall_expiration) = wall_now.checked_add(remaining) else {
+            return i64::MAX;
+        };
+        let Ok(since_epoch) = wall_expiration.duration_since(SystemTime::UNIX_EPOCH) else {
+            return 0;
+        };
+        if milliseconds {
+            i64::try_from(since_epoch.as_millis()).unwrap_or(i64::MAX)
+        } else {
+            i64::try_from(since_epoch.as_secs()).unwrap_or(i64::MAX)
+        }
     }
 
     pub(crate) fn pttl(&mut self, key: impl AsRef<[u8]>) -> i64 {

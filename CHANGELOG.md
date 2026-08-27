@@ -26,6 +26,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   and `KEEPTTL`, with validation before mutation and expiration-aware AOF replay.
 - `GETEX` with relative, absolute, and `PERSIST` expiration updates, plus atomic
   all-or-nothing `MSETNX` writes.
+- Absolute expiration through `EXPIREAT` and `PEXPIREAT`, Unix deadline reads
+  through `EXPIRETIME` and `PEXPIRETIME`, and `NX`, `XX`, `GT`, and `LT`
+  conditions for all four expiration setters.
 
 ## [0.9.0] - 2026-08-25
 

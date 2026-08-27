@@ -1,11 +1,13 @@
 use crate::command::{COMMANDS, command_metadata};
 use crate::command::{
-    Command, GetExExpiration, SetCondition as CommandSetCondition,
-    SetExpiration as CommandSetExpiration,
+    Command, ExpireCondition as CommandExpireCondition, GetExExpiration,
+    SetCondition as CommandSetCondition, SetExpiration as CommandSetExpiration,
 };
 use crate::output::CommandOutput;
 use crate::snapshot;
-use crate::storage::{ExpirationUpdate, InMemoryStore, SetCondition, SetExpiration};
+use crate::storage::{
+    ExpirationUpdate, ExpireCondition, InMemoryStore, SetCondition, SetExpiration,
+};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -171,15 +173,66 @@ pub(crate) fn execute_with_snapshot(
             CommandOutput::Integer(if result { 1 } else { 0 })
         }
 
+        Command::ExpireAdvanced {
+            key,
+            seconds,
+            condition,
+        } => CommandOutput::Integer(i64::from(store.expire_duration_if(
+            &key,
+            Duration::from_secs(seconds),
+            Some(map_expire_condition(condition)),
+        ))),
+
         Command::PExpire { key, milliseconds } => {
             let result = store.pexpire(&key, milliseconds);
 
             CommandOutput::Integer(if result { 1 } else { 0 })
         }
 
+        Command::PExpireAdvanced {
+            key,
+            milliseconds,
+            condition,
+        } => CommandOutput::Integer(i64::from(store.expire_duration_if(
+            &key,
+            Duration::from_millis(milliseconds),
+            Some(map_expire_condition(condition)),
+        ))),
+
+        Command::ExpireAt {
+            key,
+            unix_seconds,
+            condition,
+        } => match execute_expire_at(store, &key, Duration::from_secs(unix_seconds), condition) {
+            Ok(applied) => CommandOutput::Integer(i64::from(applied)),
+            Err(error) => CommandOutput::Error(error),
+        },
+
+        Command::PExpireAt {
+            key,
+            unix_milliseconds,
+            condition,
+        } => match execute_expire_at(
+            store,
+            &key,
+            Duration::from_millis(unix_milliseconds),
+            condition,
+        ) {
+            Ok(applied) => CommandOutput::Integer(i64::from(applied)),
+            Err(error) => CommandOutput::Error(error),
+        },
+
         Command::Ttl { key } => CommandOutput::Integer(store.ttl(&key)),
 
         Command::PTtl { key } => CommandOutput::Integer(store.pttl(&key)),
+
+        Command::ExpireTime { key } => {
+            CommandOutput::Integer(store.expiration_unix_time(&key, SystemTime::now(), false))
+        }
+
+        Command::PExpireTime { key } => {
+            CommandOutput::Integer(store.expiration_unix_time(&key, SystemTime::now(), true))
+        }
 
         Command::Persist { key } => CommandOutput::Integer(if store.persist(&key) { 1 } else { 0 }),
 
@@ -361,4 +414,23 @@ fn resolve_getex_expiration(
         }
     };
     Ok(Some(ExpirationUpdate::Set(duration)))
+}
+
+fn map_expire_condition(condition: CommandExpireCondition) -> ExpireCondition {
+    match condition {
+        CommandExpireCondition::NoExpiration => ExpireCondition::NoExpiration,
+        CommandExpireCondition::HasExpiration => ExpireCondition::HasExpiration,
+        CommandExpireCondition::Greater => ExpireCondition::Greater,
+        CommandExpireCondition::Less => ExpireCondition::Less,
+    }
+}
+
+fn execute_expire_at(
+    store: &mut InMemoryStore,
+    key: &[u8],
+    timestamp: Duration,
+    condition: Option<CommandExpireCondition>,
+) -> Result<bool, String> {
+    let duration = absolute_expiration(timestamp)?;
+    Ok(store.expire_duration_if(key, duration, condition.map(map_expire_condition)))
 }

@@ -227,10 +227,14 @@ clients receive the corresponding protocol-specific typed value.
 | `EXISTS key [key ...]` | Count existing, non-expired keys; duplicate keys are counted repeatedly | Number of matches |
 | `DEL key [key ...]` | Delete one or more keys; duplicate keys are removed once | Number deleted |
 | `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
-| `EXPIRE key seconds` | Set expiration in seconds | `1` if set, otherwise `0` |
-| `PEXPIRE key milliseconds` | Set expiration in milliseconds | `1` if set, otherwise `0` |
+| `EXPIRE key seconds [NX\|XX\|GT\|LT]` | Set a relative expiration in seconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
+| `PEXPIRE key milliseconds [NX\|XX\|GT\|LT]` | Set a relative expiration in milliseconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
+| `EXPIREAT key unix-seconds [NX\|XX\|GT\|LT]` | Set an absolute Unix expiration in seconds | `1` if set, otherwise `0` |
+| `PEXPIREAT key unix-milliseconds [NX\|XX\|GT\|LT]` | Set an absolute Unix expiration in milliseconds | `1` if set, otherwise `0` |
 | `TTL key` | Read remaining lifetime in seconds | Remaining TTL, `-1`, or `-2` |
 | `PTTL key` | Read remaining lifetime in milliseconds | Remaining TTL, `-1`, or `-2` |
+| `EXPIRETIME key` | Read the absolute Unix expiration in seconds | Unix timestamp, `-1`, or `-2` |
+| `PEXPIRETIME key` | Read the absolute Unix expiration in milliseconds | Unix timestamp, `-1`, or `-2` |
 | `PERSIST key` | Remove an expiration | `1` if removed, otherwise `0` |
 | `STRLEN key` | Count bytes in a string | Byte count |
 | `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
@@ -274,6 +278,12 @@ means it does not exist. Expired values are removed lazily when accessed or
 when collection-wide operations run. Server mode also performs bounded active-
 expiration work between connection accept attempts, reclaiming expired keys
 even when clients never access them.
+
+Expiration conditions are mutually exclusive. `NX` applies only when the key
+has no expiration, `XX` only when it already has one, and `GT`/`LT` compare the
+new deadline with the current deadline. A persistent key is treated as having
+an infinite deadline for those comparisons. `EXPIRETIME` and `PEXPIRETIME` use
+the same `-1` and `-2` sentinel values as `TTL` and `PTTL`.
 
 Snapshots store expirations as Unix-time millisecond timestamps. Loading turns
 future timestamps back into monotonic runtime deadlines and omits keys that

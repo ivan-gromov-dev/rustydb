@@ -1012,3 +1012,51 @@ fn getex_and_msetnx_reject_malformed_arguments() {
         ));
     }
 }
+
+#[test]
+fn parses_absolute_and_conditional_expiration_commands() {
+    assert_eq!(
+        Command::parse("EXPIRE key 10 GT"),
+        Ok(Command::ExpireAdvanced {
+            key: b"key".to_vec(),
+            seconds: 10,
+            condition: ExpireCondition::Greater,
+        })
+    );
+    assert_eq!(
+        Command::parse("PEXPIREAT key 1234 NX"),
+        Ok(Command::PExpireAt {
+            key: b"key".to_vec(),
+            unix_milliseconds: 1234,
+            condition: Some(ExpireCondition::NoExpiration),
+        })
+    );
+    assert_eq!(
+        Command::parse("EXPIRETIME key"),
+        Ok(Command::ExpireTime {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::parse("PEXPIRETIME key"),
+        Ok(Command::PExpireTime {
+            key: b"key".to_vec()
+        })
+    );
+}
+
+#[test]
+fn expiration_conditions_reject_unknown_or_repeated_options() {
+    for command in [
+        "EXPIRE key 10 NX XX",
+        "PEXPIRE key 10 UNKNOWN",
+        "EXPIREAT key 10 GT LT",
+        "PEXPIREAT key",
+        "EXPIRETIME key extra",
+    ] {
+        assert!(matches!(
+            Command::parse(command),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}

@@ -31,6 +31,14 @@ pub(crate) enum GetExExpiration {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpireCondition {
+    NoExpiration,
+    HasExpiration,
+    Greater,
+    Less,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClientInfoAttribute {
     LibraryName,
     LibraryVersion,
@@ -121,14 +129,40 @@ pub(crate) enum Command {
         key: Vec<u8>,
         seconds: u64,
     },
+    ExpireAdvanced {
+        key: Vec<u8>,
+        seconds: u64,
+        condition: ExpireCondition,
+    },
+    PExpireAdvanced {
+        key: Vec<u8>,
+        milliseconds: u64,
+        condition: ExpireCondition,
+    },
     PExpire {
         key: Vec<u8>,
         milliseconds: u64,
+    },
+    ExpireAt {
+        key: Vec<u8>,
+        unix_seconds: u64,
+        condition: Option<ExpireCondition>,
+    },
+    PExpireAt {
+        key: Vec<u8>,
+        unix_milliseconds: u64,
+        condition: Option<ExpireCondition>,
     },
     Ttl {
         key: Vec<u8>,
     },
     PTtl {
+        key: Vec<u8>,
+    },
+    ExpireTime {
+        key: Vec<u8>,
+    },
+    PExpireTime {
         key: Vec<u8>,
     },
     Persist {
@@ -246,9 +280,15 @@ impl Command {
             Self::Delete { .. } => "DEL",
             Self::Rename { .. } => "RENAME",
             Self::Expire { .. } => "EXPIRE",
+            Self::ExpireAdvanced { .. } => "EXPIRE",
             Self::PExpire { .. } => "PEXPIRE",
+            Self::PExpireAdvanced { .. } => "PEXPIRE",
+            Self::ExpireAt { .. } => "EXPIREAT",
+            Self::PExpireAt { .. } => "PEXPIREAT",
             Self::Ttl { .. } => "TTL",
             Self::PTtl { .. } => "PTTL",
+            Self::ExpireTime { .. } => "EXPIRETIME",
+            Self::PExpireTime { .. } => "PEXPIRETIME",
             Self::Persist { .. } => "PERSIST",
             Self::StrLen { .. } => "STRLEN",
             Self::GetRange { .. } => "GETRANGE",
@@ -388,9 +428,27 @@ impl Command {
             Self::Expire { key, seconds } => {
                 vec![b"EXPIRE".to_vec(), key.clone(), unsigned(*seconds)]
             }
+            Self::ExpireAdvanced { key, seconds, .. } => {
+                vec![b"EXPIRE".to_vec(), key.clone(), unsigned(*seconds)]
+            }
             Self::PExpire { key, milliseconds } => {
                 vec![b"PEXPIRE".to_vec(), key.clone(), unsigned(*milliseconds)]
             }
+            Self::PExpireAdvanced {
+                key, milliseconds, ..
+            } => vec![b"PEXPIRE".to_vec(), key.clone(), unsigned(*milliseconds)],
+            Self::ExpireAt {
+                key, unix_seconds, ..
+            } => vec![b"EXPIREAT".to_vec(), key.clone(), unsigned(*unix_seconds)],
+            Self::PExpireAt {
+                key,
+                unix_milliseconds,
+                ..
+            } => vec![
+                b"PEXPIREAT".to_vec(),
+                key.clone(),
+                unsigned(*unix_milliseconds),
+            ],
             Self::Persist { key } => vec![b"PERSIST".to_vec(), key.clone()],
             Self::SetRange {
                 key,
@@ -416,6 +474,8 @@ impl Command {
             | Self::Exists { .. }
             | Self::Ttl { .. }
             | Self::PTtl { .. }
+            | Self::ExpireTime { .. }
+            | Self::PExpireTime { .. }
             | Self::StrLen { .. }
             | Self::GetRange { .. }
             | Self::LLen { .. }

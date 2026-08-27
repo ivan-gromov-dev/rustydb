@@ -4,8 +4,8 @@ mod types;
 
 pub(crate) use metadata::{COMMANDS, CommandMetadata, command_metadata};
 pub(crate) use types::{
-    ClientInfoAttribute, Command, CommandError, GetExExpiration, ProtocolVersion, SetCondition,
-    SetExpiration,
+    ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, ProtocolVersion,
+    SetCondition, SetExpiration,
 };
 
 #[cfg(test)]

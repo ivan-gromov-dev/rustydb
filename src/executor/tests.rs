@@ -1,5 +1,5 @@
 use super::execute;
-use crate::command::{Command, GetExExpiration, SetCondition, SetExpiration};
+use crate::command::{Command, ExpireCondition, GetExExpiration, SetCondition, SetExpiration};
 use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
@@ -228,6 +228,107 @@ fn execute_msetnx_is_all_or_nothing() {
     );
     assert_eq!(database.get(b"one"), Ok(Some(b"1".as_slice())));
     assert_eq!(database.get(b"two"), Ok(Some(b"2".as_slice())));
+}
+
+#[test]
+fn execute_expiration_conditions_compare_existing_deadlines() {
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"value".to_vec());
+
+    let expire = |seconds, condition| Command::ExpireAdvanced {
+        key: b"key".to_vec(),
+        seconds,
+        condition,
+    };
+    assert_eq!(
+        execute(expire(10, ExpireCondition::Greater), &mut database),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(expire(10, ExpireCondition::Less), &mut database),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(expire(20, ExpireCondition::NoExpiration), &mut database),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(expire(20, ExpireCondition::HasExpiration), &mut database),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(expire(10, ExpireCondition::Greater), &mut database),
+        Response::Integer(0)
+    );
+    assert_eq!(
+        execute(expire(30, ExpireCondition::Greater), &mut database),
+        Response::Integer(1)
+    );
+}
+
+#[test]
+fn execute_absolute_expiration_and_expiretime_use_unix_time() {
+    use std::time::SystemTime;
+
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"value".to_vec());
+    let target = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 60;
+
+    assert_eq!(
+        execute(
+            Command::ExpireAt {
+                key: b"key".to_vec(),
+                unix_seconds: target,
+                condition: None,
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    let seconds = match execute(
+        Command::ExpireTime {
+            key: b"key".to_vec(),
+        },
+        &mut database,
+    ) {
+        Response::Integer(value) => value,
+        response => panic!("unexpected response: {response:?}"),
+    };
+    assert!(((target - 1) as i64..=target as i64).contains(&seconds));
+    let milliseconds = match execute(
+        Command::PExpireTime {
+            key: b"key".to_vec(),
+        },
+        &mut database,
+    ) {
+        Response::Integer(value) => value,
+        response => panic!("unexpected response: {response:?}"),
+    };
+    assert!(((target * 1_000) as i64 - 20..=(target * 1_000) as i64).contains(&milliseconds));
+
+    database.set(b"persistent".to_vec(), b"value".to_vec());
+    assert_eq!(
+        execute(
+            Command::ExpireTime {
+                key: b"persistent".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Integer(-1)
+    );
+    assert_eq!(
+        execute(
+            Command::ExpireTime {
+                key: b"missing".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Integer(-2)
+    );
 }
 
 #[test]
