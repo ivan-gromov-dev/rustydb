@@ -16,6 +16,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Per-connection IDs, names, and client library metadata through `CLIENT ID`,
   `CLIENT SETNAME`, `CLIENT GETNAME`, and `CLIENT SETINFO`; `HELLO` now reports
   the same connection ID.
+- Deterministic metadata for the supported command set through `COMMAND`,
+  `COMMAND INFO`, and `COMMAND COUNT`, including arity, flags, and key positions.
 
 ## [0.9.0] - 2026-08-25
 

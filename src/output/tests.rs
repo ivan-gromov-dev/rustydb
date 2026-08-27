@@ -1,5 +1,5 @@
 use super::CommandOutput;
-use crate::command::ProtocolVersion;
+use crate::command::{ProtocolVersion, command_metadata};
 
 fn render(output: CommandOutput) -> String {
     let mut bytes = Vec::new();
@@ -109,6 +109,7 @@ fn help_lists_every_supported_command() {
         "CLIENT SETNAME",
         "CLIENT GETNAME",
         "CLIENT SETINFO",
+        "COMMAND",
         "KEYS",
         "LEN",
         "CLEAR",
@@ -119,4 +120,15 @@ fn help_lists_every_supported_command() {
     ] {
         assert!(help.lines().any(|line| line.trim().starts_with(command)));
     }
+}
+
+#[test]
+fn renders_command_metadata_for_the_interactive_cli() {
+    assert_eq!(
+        render(CommandOutput::CommandMetadata(vec![
+            command_metadata(b"GET"),
+            None,
+        ])),
+        "get arity:2 flags:readonly,fast keys:1/1/1\n(nil)\n"
+    );
 }

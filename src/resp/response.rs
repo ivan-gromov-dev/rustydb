@@ -36,9 +36,36 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::KeyList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::BulkString).collect())
         }
+        CommandOutput::CommandMetadata(entries) => RespFrame::Array(
+            entries
+                .into_iter()
+                .map(|entry| match entry {
+                    Some(metadata) => command_metadata_frame(metadata),
+                    None if protocol == ProtocolVersion::Resp3 => RespFrame::Null,
+                    None => RespFrame::NullBulkString,
+                })
+                .collect(),
+        ),
         CommandOutput::Error(error) => error_frame(format_args!("ERR {error}")),
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
     }
+}
+
+fn command_metadata_frame(metadata: crate::command::CommandMetadata) -> RespFrame {
+    RespFrame::Array(vec![
+        RespFrame::BulkString(metadata.name.as_bytes().to_vec()),
+        RespFrame::Integer(metadata.arity),
+        RespFrame::Array(
+            metadata
+                .flags
+                .iter()
+                .map(|flag| RespFrame::BulkString(flag.as_bytes().to_vec()))
+                .collect(),
+        ),
+        RespFrame::Integer(metadata.first_key),
+        RespFrame::Integer(metadata.last_key),
+        RespFrame::Integer(metadata.key_step),
+    ])
 }
 
 fn hello_frame(protocol: ProtocolVersion, connection_id: Option<i64>) -> RespFrame {

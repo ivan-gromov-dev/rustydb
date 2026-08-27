@@ -231,6 +231,7 @@ impl Command {
             }),
             "HELLO" => parse_hello(args),
             "CLIENT" => parse_client(args),
+            "COMMAND" => parse_command_metadata(args),
             "KEYS" => no_args(args, "KEYS", Self::Keys),
             "LEN" => no_args(args, "LEN", Self::Len),
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
@@ -384,6 +385,24 @@ fn validate_client_metadata(value: &[u8]) -> Result<(), CommandError> {
     } else {
         Err(CommandError::InvalidClientMetadata)
     }
+}
+
+fn parse_command_metadata(args: &[&[u8]]) -> Result<Command, CommandError> {
+    let Some(subcommand) = args.get(1) else {
+        return Ok(Command::MetadataList);
+    };
+    if subcommand.eq_ignore_ascii_case(b"COUNT") {
+        exact(args, 2, "COMMAND COUNT")?;
+        return Ok(Command::MetadataCount);
+    }
+    if subcommand.eq_ignore_ascii_case(b"INFO") {
+        return Ok(Command::MetadataInfo {
+            names: args[2..].iter().map(|name| owned(name)).collect(),
+        });
+    }
+    Err(CommandError::InvalidArguments(
+        "COMMAND [INFO [command ...]|COUNT]",
+    ))
 }
 
 fn key_i64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64), CommandError> {

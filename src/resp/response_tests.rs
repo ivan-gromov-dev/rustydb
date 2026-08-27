@@ -129,3 +129,20 @@ fn hello_uses_a_flat_array_in_resp2_and_a_map_in_resp3() {
         RespFrame::Map(entries) if entries.len() == 6
     ));
 }
+
+#[test]
+fn command_metadata_uses_six_field_entries_and_protocol_nulls() {
+    let get = crate::command::command_metadata(b"GET");
+    let output = || CommandOutput::CommandMetadata(vec![get, None]);
+
+    assert!(matches!(
+        frame_from_output_for_protocol(output(), ProtocolVersion::Resp2),
+        RespFrame::Array(entries)
+            if matches!(&entries[0], RespFrame::Array(fields) if fields.len() == 6)
+                && entries[1] == RespFrame::NullBulkString
+    ));
+    assert!(matches!(
+        frame_from_output_for_protocol(output(), ProtocolVersion::Resp3),
+        RespFrame::Array(entries) if entries[1] == RespFrame::Null
+    ));
+}

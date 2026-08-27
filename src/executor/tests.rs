@@ -504,6 +504,29 @@ fn execute_control_commands_return_control_responses() {
 }
 
 #[test]
+fn execute_command_metadata_queries_use_the_shared_registry() {
+    let mut database = Database::new();
+
+    assert_eq!(
+        execute(Command::MetadataCount, &mut database),
+        Response::Integer(crate::command::COMMANDS.len() as i64)
+    );
+    assert_eq!(
+        execute(
+            Command::MetadataInfo {
+                names: vec![b"GET".to_vec(), b"missing".to_vec()],
+            },
+            &mut database,
+        ),
+        Response::CommandMetadata(vec![crate::command::command_metadata(b"get"), None])
+    );
+    assert_eq!(
+        execute(Command::MetadataInfo { names: Vec::new() }, &mut database),
+        Response::CommandMetadata(crate::command::COMMANDS.iter().copied().map(Some).collect())
+    );
+}
+
+#[test]
 fn execute_delete_returns_number_of_deleted_keys() {
     let mut database = Database::new();
 

@@ -1,4 +1,5 @@
 use crate::command::Command;
+use crate::command::{COMMANDS, command_metadata};
 use crate::output::CommandOutput;
 use crate::snapshot;
 use crate::storage::InMemoryStore;
@@ -224,6 +225,18 @@ pub(crate) fn execute_with_snapshot(
         | Command::ClientSetInfo { .. } => {
             CommandOutput::Error("CLIENT requires a server connection".to_owned())
         }
+
+        Command::MetadataList => {
+            CommandOutput::CommandMetadata(COMMANDS.iter().copied().map(Some).collect())
+        }
+
+        Command::MetadataInfo { names } => CommandOutput::CommandMetadata(if names.is_empty() {
+            COMMANDS.iter().copied().map(Some).collect()
+        } else {
+            names.iter().map(|name| command_metadata(name)).collect()
+        }),
+
+        Command::MetadataCount => CommandOutput::Integer(COMMANDS.len() as i64),
 
         Command::Len => CommandOutput::Integer(store.len() as i64),
 

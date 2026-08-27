@@ -172,7 +172,7 @@ integers, lists, sets, and expiration output through a real client.
 
 RustyDB implements RESP3 response types needed by its documented command subset,
 but does not implement authentication, database selection, transactions,
-Pub/Sub, `SCAN`, or Redis metadata commands such as `COMMAND` and `CONFIG`.
+Pub/Sub, `SCAN`, or configuration metadata commands such as `CONFIG`.
 Features of `redis-cli` that probe or depend on those commands are not supported.
 Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
 invocations to send RustyDB commands with those names. Command errors use
@@ -250,6 +250,9 @@ clients receive the corresponding protocol-specific typed value.
 | `CLIENT SETNAME name` | Set or clear the current connection name | `OK` |
 | `CLIENT GETNAME` | Read the current connection name | Name or `(nil)` |
 | `CLIENT SETINFO LIB-NAME\|LIB-VER value` | Record client library metadata for the connection | `OK` |
+| `COMMAND` | List metadata for every supported command in sorted order | Command metadata |
+| `COMMAND INFO [command ...]` | Read selected command metadata, or all metadata when omitted | Metadata or `(nil)` per name |
+| `COMMAND COUNT` | Count the commands advertised by RustyDB | Command count |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |

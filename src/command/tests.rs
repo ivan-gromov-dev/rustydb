@@ -135,6 +135,45 @@ fn connection_metadata_commands_validate_subcommands_and_values() {
 }
 
 #[test]
+fn parses_command_metadata_queries() {
+    assert_eq!(Command::parse("COMMAND"), Ok(Command::MetadataList));
+    assert_eq!(Command::parse("command count"), Ok(Command::MetadataCount));
+    assert_eq!(
+        Command::parse("COMMAND INFO GET missing"),
+        Ok(Command::MetadataInfo {
+            names: vec![b"GET".to_vec(), b"missing".to_vec()],
+        })
+    );
+    assert_eq!(
+        Command::parse("COMMAND INFO"),
+        Ok(Command::MetadataInfo { names: Vec::new() })
+    );
+    for input in ["COMMAND COUNT extra", "COMMAND unknown"] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn command_metadata_registry_is_sorted_unique_and_searchable() {
+    assert!(COMMANDS.windows(2).all(|pair| pair[0].name < pair[1].name));
+    assert_eq!(
+        command_metadata(b"GeT"),
+        Some(CommandMetadata {
+            name: "get",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            key_step: 1,
+        })
+    );
+    assert_eq!(command_metadata(b"\xff"), None);
+}
+
+#[test]
 fn save_accepts_no_arguments() {
     assert_eq!(Command::parse("SAVE"), Ok(Command::Save));
     assert_eq!(
@@ -691,6 +730,10 @@ fn parses_every_supported_command_form() {
         "CLIENT SETNAME worker",
         "CLIENT SETINFO LIB-NAME redis-rs",
         "CLIENT SETINFO LIB-VER 1.0",
+        "COMMAND",
+        "COMMAND COUNT",
+        "COMMAND INFO",
+        "COMMAND INFO GET missing",
         "KEYS",
         "LEN",
         "CLEAR",

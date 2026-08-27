@@ -174,6 +174,31 @@ fn connection_names_are_independent_between_sessions() {
 }
 
 #[test]
+fn command_count_and_info_are_encoded_for_resp_clients() {
+    let input = concat!(
+        "*2\r\n$7\r\nCOMMAND\r\n$5\r\nCOUNT\r\n",
+        "*4\r\n$7\r\nCOMMAND\r\n$4\r\nINFO\r\n$3\r\nGET\r\n$7\r\nmissing\r\n",
+    );
+    let output = run(input.as_bytes(), |command| match command {
+        Command::MetadataCount => CommandOutput::Integer(crate::command::COMMANDS.len() as i64),
+        Command::MetadataInfo { names } => CommandOutput::CommandMetadata(
+            names
+                .iter()
+                .map(|name| crate::command::command_metadata(name))
+                .collect(),
+        ),
+        other => panic!("unexpected command: {other:?}"),
+    });
+    let prefix = format!(
+        ":{}\r\n*2\r\n*6\r\n$3\r\nget\r\n:2\r\n",
+        crate::command::COMMANDS.len()
+    );
+
+    assert!(output.starts_with(prefix.as_bytes()));
+    assert!(output.ends_with(b"$-1\r\n"));
+}
+
+#[test]
 fn command_errors_do_not_stop_later_pipeline_entries() {
     let input = b"*1\r\n$3\r\nGET\r\n*2\r\n$3\r\nGET\r\n$2\r\nok\r\n";
     let mut calls = 0;

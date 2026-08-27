@@ -167,6 +167,11 @@ pub(crate) enum Command {
         attribute: ClientInfoAttribute,
         value: Vec<u8>,
     },
+    MetadataList,
+    MetadataInfo {
+        names: Vec<Vec<u8>>,
+    },
+    MetadataCount,
     Keys,
     Len,
     Clear,
@@ -222,6 +227,7 @@ impl Command {
             | Self::ClientSetName { .. }
             | Self::ClientGetName
             | Self::ClientSetInfo { .. } => "CLIENT",
+            Self::MetadataList | Self::MetadataInfo { .. } | Self::MetadataCount => "COMMAND",
             Self::Keys => "KEYS",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
@@ -321,6 +327,9 @@ impl Command {
             | Self::ClientSetName { .. }
             | Self::ClientGetName
             | Self::ClientSetInfo { .. }
+            | Self::MetadataList
+            | Self::MetadataInfo { .. }
+            | Self::MetadataCount
             | Self::Keys
             | Self::Len
             | Self::Save

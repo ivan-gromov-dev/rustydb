@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::command::ProtocolVersion;
+use crate::command::{CommandMetadata, ProtocolVersion};
 
 pub(crate) const HELP_TEXT: &str = concat!(
     "Available commands:\n",
@@ -46,6 +46,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  CLIENT SETNAME name\n",
     "  CLIENT GETNAME\n",
     "  CLIENT SETINFO LIB-NAME|LIB-VER value\n",
+    "  COMMAND [INFO [command ...]|COUNT]\n",
     "  KEYS\n",
     "  LEN\n",
     "  CLEAR\n",
@@ -70,6 +71,7 @@ pub(crate) enum CommandOutput {
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
     KeyList(Vec<Vec<u8>>),
+    CommandMetadata(Vec<Option<CommandMetadata>>),
     Error(String),
     Help,
     Exit,
@@ -123,6 +125,24 @@ impl CommandOutput {
                 for key in keys {
                     writer.write_all(key)?;
                     writer.write_all(b"\n")?;
+                }
+                Ok(())
+            }
+            Self::CommandMetadata(entries) => {
+                for entry in entries {
+                    match entry {
+                        Some(metadata) => writeln!(
+                            writer,
+                            "{} arity:{} flags:{} keys:{}/{}/{}",
+                            metadata.name,
+                            metadata.arity,
+                            metadata.flags.join(","),
+                            metadata.first_key,
+                            metadata.last_key,
+                            metadata.key_step
+                        )?,
+                        None => writeln!(writer, "(nil)")?,
+                    }
                 }
                 Ok(())
             }

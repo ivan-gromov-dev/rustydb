@@ -110,6 +110,11 @@ def main() -> int:
             b"OK",
             "CLIENT SETINFO",
         )
+        command_count = line(redis(cli, port, "COMMAND", "COUNT"))
+        if not command_count.isdigit() or int(command_count) <= 0:
+            raise AssertionError(
+                f"COMMAND COUNT: expected a positive integer, got {command_count!r}"
+            )
         expect(
             line(redis(cli, port, "PING", "hello world")),
             b"hello world",
