@@ -20,6 +20,7 @@ fn renders_scalar_outputs() {
     );
     assert_eq!(render(CommandOutput::Integer(-2)), "-2\n");
     assert_eq!(render(CommandOutput::Float(1.5)), "1.5\n");
+    assert_eq!(render(CommandOutput::SimpleString("string")), "string\n");
     assert_eq!(
         render(CommandOutput::Value("sample".to_owned().into())),
         "sample\n"

@@ -121,6 +121,15 @@ pub(crate) enum Command {
     Delete {
         keys: Vec<Vec<u8>>,
     },
+    Type {
+        key: Vec<u8>,
+    },
+    Touch {
+        keys: Vec<Vec<u8>>,
+    },
+    Unlink {
+        keys: Vec<Vec<u8>>,
+    },
     Rename {
         old_key: Vec<u8>,
         new_key: Vec<u8>,
@@ -278,6 +287,9 @@ impl Command {
             Self::IncrementByFloat { .. } => "INCRBYFLOAT",
             Self::Exists { .. } => "EXISTS",
             Self::Delete { .. } => "DEL",
+            Self::Type { .. } => "TYPE",
+            Self::Touch { .. } => "TOUCH",
+            Self::Unlink { .. } => "UNLINK",
             Self::Rename { .. } => "RENAME",
             Self::Expire { .. } => "EXPIRE",
             Self::ExpireAdvanced { .. } => "EXPIRE",
@@ -422,6 +434,7 @@ impl Command {
                 amount.to_string().into_bytes(),
             ],
             Self::Delete { keys } => with_keys(b"DEL", keys),
+            Self::Unlink { keys } => with_keys(b"DEL", keys),
             Self::Rename { old_key, new_key } => {
                 vec![b"RENAME".to_vec(), old_key.clone(), new_key.clone()]
             }
@@ -472,6 +485,8 @@ impl Command {
             Self::Get { .. }
             | Self::MGet { .. }
             | Self::Exists { .. }
+            | Self::Type { .. }
+            | Self::Touch { .. }
             | Self::Ttl { .. }
             | Self::PTtl { .. }
             | Self::ExpireTime { .. }

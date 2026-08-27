@@ -21,6 +21,9 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  INCRBYFLOAT key amount\n",
     "  EXISTS key [key ...]\n",
     "  DEL key [key ...]\n",
+    "  TYPE key\n",
+    "  TOUCH key [key ...]\n",
+    "  UNLINK key [key ...]\n",
     "  RENAME old_key new_key\n",
     "  EXPIRE key seconds [NX|XX|GT|LT]\n",
     "  PEXPIRE key milliseconds [NX|XX|GT|LT]\n",
@@ -77,6 +80,7 @@ pub(crate) enum CommandOutput {
     },
     Integer(i64),
     Float(f64),
+    SimpleString(&'static str),
     Value(Vec<u8>),
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
@@ -113,6 +117,7 @@ impl CommandOutput {
             }
             Self::Integer(value) => writeln!(writer, "{value}"),
             Self::Float(value) => writeln!(writer, "{value}"),
+            Self::SimpleString(value) => writeln!(writer, "{value}"),
             Self::Value(value) => {
                 writer.write_all(value)?;
                 writer.write_all(b"\n")

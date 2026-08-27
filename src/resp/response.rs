@@ -20,6 +20,7 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::Hello { connection_id, .. } => hello_frame(protocol, connection_id),
         CommandOutput::Integer(value) => RespFrame::Integer(value),
         CommandOutput::Float(value) => RespFrame::BulkString(value.to_string().into_bytes()),
+        CommandOutput::SimpleString(value) => RespFrame::SimpleString(value.to_owned()),
         CommandOutput::Value(value) => RespFrame::BulkString(value),
         CommandOutput::OptionalValues(values) => RespFrame::Array(
             values

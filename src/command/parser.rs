@@ -134,6 +134,15 @@ impl Command {
             "DEL" => Ok(Self::Delete {
                 keys: many(args, "DEL key [key ...]")?,
             }),
+            "TYPE" => Ok(Self::Type {
+                key: one(args, "TYPE key")?,
+            }),
+            "TOUCH" => Ok(Self::Touch {
+                keys: many(args, "TOUCH key [key ...]")?,
+            }),
+            "UNLINK" => Ok(Self::Unlink {
+                keys: many(args, "UNLINK key [key ...]")?,
+            }),
             "RENAME" => {
                 exact(args, 3, "RENAME old_key new_key")?;
                 Ok(Self::Rename {

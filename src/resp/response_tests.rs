@@ -14,6 +14,10 @@ fn converts_scalar_outputs() {
         ),
         (CommandOutput::Integer(-2), RespFrame::Integer(-2)),
         (
+            CommandOutput::SimpleString("string"),
+            RespFrame::SimpleString("string".to_owned()),
+        ),
+        (
             CommandOutput::Float(1.5),
             RespFrame::BulkString(b"1.5".to_vec()),
         ),

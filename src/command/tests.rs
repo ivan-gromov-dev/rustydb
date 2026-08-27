@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+fn parses_type_touch_and_unlink() {
+    assert_eq!(
+        Command::from_args(&["TYPE", "key"]),
+        Ok(Command::Type {
+            key: b"key".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["TOUCH", "a", "b"]),
+        Ok(Command::Touch {
+            keys: vec![b"a".to_vec(), b"b".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["UNLINK", "a", "b"]),
+        Ok(Command::Unlink {
+            keys: vec![b"a".to_vec(), b"b".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["TYPE"]),
+        Err(CommandError::InvalidArguments("TYPE key"))
+    );
+    assert_eq!(
+        Command::from_args(&["TOUCH"]),
+        Err(CommandError::InvalidArguments("TOUCH key [key ...]"))
+    );
+}
+
+#[test]
+fn unlink_is_persisted_as_del() {
+    let command = Command::Unlink {
+        keys: vec![b"a".to_vec(), b"b".to_vec()],
+    };
+
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![b"DEL".to_vec(), b"a".to_vec(), b"b".to_vec()])
+    );
+}
+
+#[test]
 fn parses_ping_with_an_optional_binary_message() {
     assert_eq!(Command::parse("PING"), Ok(Command::Ping { message: None }));
     assert_eq!(

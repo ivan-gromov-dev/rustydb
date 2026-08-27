@@ -226,6 +226,9 @@ clients receive the corresponding protocol-specific typed value.
 | `INCRBYFLOAT key amount` | Increment a finite floating-point value | Updated number |
 | `EXISTS key [key ...]` | Count existing, non-expired keys; duplicate keys are counted repeatedly | Number of matches |
 | `DEL key [key ...]` | Delete one or more keys; duplicate keys are removed once | Number deleted |
+| `TYPE key` | Report `string`, `list`, `set`, or `none` for an expired or missing key | Type name |
+| `TOUCH key [key ...]` | Count existing keys (including duplicate arguments); RustyDB has no LRU/LFU access metadata to update | Number of matches |
+| `UNLINK key [key ...]` | Delete keys synchronously; duplicate keys are removed once | Number deleted |
 | `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
 | `EXPIRE key seconds [NX\|XX\|GT\|LT]` | Set a relative expiration in seconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
 | `PEXPIRE key milliseconds [NX\|XX\|GT\|LT]` | Set a relative expiration in milliseconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |

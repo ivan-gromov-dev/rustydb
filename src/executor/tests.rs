@@ -4,6 +4,44 @@ use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
 #[test]
+fn executes_type_touch_and_unlink() {
+    let mut database = Database::new();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    database.push_left(b"list", b"value".to_vec()).unwrap();
+    database.set_add(b"set", b"value".to_vec()).unwrap();
+
+    for (key, expected) in [
+        (b"string".as_slice(), "string"),
+        (b"list".as_slice(), "list"),
+        (b"set".as_slice(), "set"),
+        (b"missing".as_slice(), "none"),
+    ] {
+        assert_eq!(
+            execute(Command::Type { key: key.to_vec() }, &mut database),
+            Response::SimpleString(expected)
+        );
+    }
+    assert_eq!(
+        execute(
+            Command::Touch {
+                keys: vec![b"string".to_vec(), b"string".to_vec(), b"missing".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::Unlink {
+                keys: vec![b"string".to_vec(), b"string".to_vec(), b"missing".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
 fn save_reports_when_persistence_is_not_configured() {
     let mut database = Database::new();
 

@@ -40,8 +40,7 @@ workloads.
   `KEEPTTL`, including valid option combinations and atomic validation.
 - Add `GETEX`, `MSETNX`, `EXPIREAT`, `PEXPIREAT`, `EXPIRETIME`, `PEXPIRETIME`,
   and the `NX`, `XX`, `GT`, and `LT` expiration conditions.
-- Add `TYPE`, `TOUCH`, glob-aware `KEYS`, `SCAN`, `RANDOMKEY`, `COPY`, and
-  synchronous `UNLINK` behavior.
+- Add glob-aware `KEYS`, `SCAN`, `RANDOMKEY`, and `COPY`.
 
 ### Done when
 

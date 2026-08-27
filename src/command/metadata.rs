@@ -86,7 +86,10 @@ pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("smembers", 2, READ, 1, 1, 1),
     metadata!("srem", 3, WRITE, 1, 1, 1),
     metadata!("strlen", 2, READ, 1, 1, 1),
+    metadata!("touch", -2, READ, 1, -1, 1),
     metadata!("ttl", 2, READ, 1, 1, 1),
+    metadata!("type", 2, READ, 1, 1, 1),
+    metadata!("unlink", -2, WRITE, 1, -1, 1),
 ];
 
 pub(crate) fn command_metadata(name: &[u8]) -> Option<CommandMetadata> {

@@ -155,6 +155,12 @@ pub(crate) fn execute_with_snapshot(
 
         Command::Delete { keys } => CommandOutput::Integer(store.delete_many(&keys) as i64),
 
+        Command::Type { key } => CommandOutput::SimpleString(store.type_name(&key)),
+
+        Command::Touch { keys } => CommandOutput::Integer(store.exists_many(&keys) as i64),
+
+        Command::Unlink { keys } => CommandOutput::Integer(store.delete_many(&keys) as i64),
+
         Command::Exists { keys } => CommandOutput::Integer(store.exists_many(&keys) as i64),
 
         Command::Keys => CommandOutput::KeyList(store.keys()),

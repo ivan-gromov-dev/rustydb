@@ -29,6 +29,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Absolute expiration through `EXPIREAT` and `PEXPIREAT`, Unix deadline reads
   through `EXPIRETIME` and `PEXPIRETIME`, and `NX`, `XX`, `GT`, and `LT`
   conditions for all four expiration setters.
+- Keyspace inspection and compatibility through `TYPE`, `TOUCH`, and
+  synchronous `UNLINK`, including Redis-compatible reply types and AOF replay.
 
 ## [0.9.0] - 2026-08-25
 

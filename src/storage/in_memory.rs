@@ -816,6 +816,12 @@ impl InMemoryStore {
         keys.iter().filter(|key| self.exists(key)).count()
     }
 
+    pub(crate) fn type_name(&mut self, key: impl AsRef<[u8]>) -> &'static str {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.storage.get(key).map_or("none", StoredValue::type_name)
+    }
+
     pub(crate) fn push_left(
         &mut self,
         key: impl AsRef<[u8]>,
