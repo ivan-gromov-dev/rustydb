@@ -20,36 +20,6 @@ moving on.
   commands.
 - Document intentional differences from Redis.
 
-## `0.10` — Client and keyspace compatibility
-
-**Goal:** let common Redis clients connect without special RESP2-only setup and
-provide the key and string operations expected by typical cache and session
-workloads.
-
-### Work
-
-- Add `PING`, `ECHO`, `HELLO 2|3`, and the RESP3 response types required by the
-  supported command set.
-- Add connection metadata commands: `CLIENT ID`, `CLIENT SETNAME`,
-  `CLIENT GETNAME`, and `CLIENT SETINFO`.
-- Add `COMMAND`, `COMMAND INFO`, and `COMMAND COUNT` metadata for the supported
-  commands.
-- Accept `SELECT 0` and reject unsupported database indexes explicitly.
-- Add `DBSIZE`, `FLUSHDB`, and `FLUSHALL`.
-- Extend `SET` with `NX`, `XX`, `GET`, `EX`, `PX`, `EXAT`, `PXAT`, and
-  `KEEPTTL`, including valid option combinations and atomic validation.
-- Add `GETEX`, `MSETNX`, `EXPIREAT`, `PEXPIREAT`, `EXPIRETIME`, `PEXPIRETIME`,
-  and the `NX`, `XX`, `GT`, and `LT` expiration conditions.
-- Add glob-aware `KEYS`, `SCAN`, `RANDOMKEY`, and `COPY`.
-
-### Done when
-
-- Supported commands return the documented RESP2 and RESP3 representations.
-- A client can negotiate its protocol, set connection metadata, and use RustyDB
-  for cache, session, counter, and idempotency-key workflows.
-- Cursor iteration and conditional writes preserve deterministic behavior, TTL,
-  and atomic validation guarantees.
-
 ## `0.11` — Hashes
 
 **Goal:** support structured records without requiring applications to encode an

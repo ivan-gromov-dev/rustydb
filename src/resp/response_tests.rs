@@ -70,6 +70,23 @@ fn converts_key_lists_to_arrays_including_the_empty_list() {
 }
 
 #[test]
+fn converts_scan_to_cursor_and_nested_key_array() {
+    assert_eq!(
+        frame_from_output(CommandOutput::Scan {
+            cursor: 12,
+            keys: vec![b"a".to_vec(), b"b\xff".to_vec()]
+        }),
+        RespFrame::Array(vec![
+            RespFrame::BulkString(b"12".to_vec()),
+            RespFrame::Array(vec![
+                RespFrame::BulkString(b"a".to_vec()),
+                RespFrame::BulkString(b"b\xff".to_vec())
+            ])
+        ])
+    );
+}
+
+#[test]
 fn prefixes_errors_and_keeps_them_on_one_resp_line() {
     assert_eq!(
         frame_from_output(CommandOutput::Error("bad\r\nargument".to_owned())),

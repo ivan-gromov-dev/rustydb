@@ -74,6 +74,7 @@ impl Database {
                     condition: Some(_),
                     ..
                 }
+                | Command::Copy { .. }
         );
         let aof_should_append = match &command {
             Command::SetAdvanced { key, condition, .. } => match condition {

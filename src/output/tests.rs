@@ -128,6 +128,17 @@ fn help_lists_every_supported_command() {
 }
 
 #[test]
+fn renders_scan_cursor_before_keys() {
+    assert_eq!(
+        render(CommandOutput::Scan {
+            cursor: 2,
+            keys: vec![b"alpha".to_vec(), b"beta".to_vec()]
+        }),
+        "2\nalpha\nbeta\n"
+    );
+}
+
+#[test]
 fn renders_command_metadata_for_the_interactive_cli() {
     assert_eq!(
         render(CommandOutput::CommandMetadata(vec![

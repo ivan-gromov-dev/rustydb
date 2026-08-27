@@ -10,6 +10,49 @@ fn set_and_get_value() {
 }
 
 #[test]
+fn key_patterns_scan_random_and_copy_cover_keyspace_semantics() {
+    let mut database = Database::new();
+    database.set(b"user:1".to_vec(), b"one".to_vec());
+    database.set(b"user:2".to_vec(), b"two".to_vec());
+    database.push_left(b"queue:1", b"job".to_vec()).unwrap();
+    assert!(database.expire(b"user:1", 60));
+
+    assert_eq!(
+        database.keys_matching(b"user:[12]"),
+        vec![b"user:1".to_vec(), b"user:2".to_vec()]
+    );
+    assert_eq!(
+        database.scan(0, Some(b"*:*"), 2, Some(b"string")),
+        (2, vec![b"user:1".to_vec()])
+    );
+    assert_eq!(
+        database.scan(2, Some(b"*:*"), 2, Some(b"string")),
+        (0, vec![b"user:2".to_vec()])
+    );
+    assert!(database.random_key().is_some());
+
+    assert_eq!(database.copy(b"user:1", b"copy".to_vec(), false), Ok(true));
+    assert_eq!(database.get(b"copy"), Ok(Some(b"one".as_slice())));
+    assert_eq!(database.ttl(b"copy"), database.ttl(b"user:1"));
+    assert_eq!(database.copy(b"user:2", b"copy".to_vec(), false), Ok(false));
+    assert_eq!(database.copy(b"user:2", b"copy".to_vec(), true), Ok(true));
+    assert_eq!(database.get(b"copy"), Ok(Some(b"two".as_slice())));
+    assert_eq!(
+        database.copy(b"copy", b"copy".to_vec(), true),
+        Err(super::super::in_memory::StoreError::SameSourceDestination)
+    );
+}
+
+#[test]
+fn random_key_and_scan_handle_empty_or_finished_keyspaces() {
+    let mut database = Database::new();
+    assert_eq!(database.random_key(), None);
+    assert_eq!(database.scan(0, None, 10, None), (0, Vec::new()));
+    database.set(b"key".to_vec(), b"value".to_vec());
+    assert_eq!(database.scan(9, None, 10, None), (0, Vec::new()));
+}
+
+#[test]
 fn set_overwrites_value() {
     let mut database = Database::new();
 

@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-27
+
 ### Added
 
 - Redis-compatible `PING [message]` and `ECHO message` commands for interactive
@@ -31,6 +33,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   conditions for all four expiration setters.
 - Keyspace inspection and compatibility through `TYPE`, `TOUCH`, and
   synchronous `UNLINK`, including Redis-compatible reply types and AOF replay.
+- Binary-safe Redis glob matching for `KEYS`, deterministic cursor iteration
+  through `SCAN MATCH/COUNT/TYPE`, pseudo-random `RANDOMKEY`, and TTL-preserving
+  `COPY` with `DB 0` validation, `REPLACE`, and replay-safe AOF records.
 
 ## [0.9.0] - 2026-08-25
 
@@ -246,7 +251,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.6.0...v0.7.0

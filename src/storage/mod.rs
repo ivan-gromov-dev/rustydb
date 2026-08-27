@@ -1,4 +1,5 @@
 mod clock;
+mod glob;
 mod in_memory;
 mod indexing;
 mod snapshot;

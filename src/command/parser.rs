@@ -257,7 +257,12 @@ impl Command {
             "DBSIZE" => no_args(args, "DBSIZE", Self::DbSize),
             "FLUSHDB" => parse_flush(args, "FLUSHDB [SYNC|ASYNC]", Self::FlushDb),
             "FLUSHALL" => parse_flush(args, "FLUSHALL [SYNC|ASYNC]", Self::FlushAll),
-            "KEYS" => no_args(args, "KEYS", Self::Keys),
+            "KEYS" => Ok(Self::Keys {
+                pattern: one(args, "KEYS pattern")?,
+            }),
+            "SCAN" => parse_scan(args),
+            "RANDOMKEY" => no_args(args, "RANDOMKEY", Self::RandomKey),
+            "COPY" => parse_copy(args),
             "LEN" => no_args(args, "LEN", Self::Len),
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
             "SAVE" => no_args(args, "SAVE", Self::Save),
@@ -339,6 +344,78 @@ fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
         .map(|entry| (owned(entry[0]), owned(entry[1])))
         .collect();
     Ok(Command::MSet { entries })
+}
+
+fn parse_scan(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]";
+    if args.len() < 2 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let cursor = parse_usize(args[1])?;
+    let mut pattern = None;
+    let mut count = None;
+    let mut type_name = None;
+    let mut index = 2;
+    while index < args.len() {
+        let option = args[index];
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if option.eq_ignore_ascii_case(b"MATCH") && pattern.is_none() {
+            pattern = Some(owned(value));
+        } else if option.eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            let parsed = parse_usize(value)?;
+            if parsed == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            count = Some(parsed);
+        } else if option.eq_ignore_ascii_case(b"TYPE") && type_name.is_none() {
+            type_name = Some(owned(value));
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::Scan {
+        cursor,
+        pattern,
+        count: count.unwrap_or(10),
+        type_name,
+    })
+}
+
+fn parse_copy(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "COPY source destination [DB destination-db] [REPLACE]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let mut replace = false;
+    let mut database = None;
+    let mut index = 3;
+    while index < args.len() {
+        if args[index].eq_ignore_ascii_case(b"REPLACE") && !replace {
+            replace = true;
+            index += 1;
+        } else if args[index].eq_ignore_ascii_case(b"DB") && database.is_none() {
+            let Some(value) = args.get(index + 1) else {
+                return Err(CommandError::InvalidArguments(USAGE));
+            };
+            database = Some(parse_i64(value)?);
+            index += 2;
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+    }
+    if let Some(index) = database
+        && index != 0
+    {
+        return Err(CommandError::UnsupportedDatabase(index));
+    }
+    Ok(Command::Copy {
+        source: owned(args[1]),
+        destination: owned(args[2]),
+        replace,
+    })
 }
 
 fn parse_msetnx(args: &[&[u8]]) -> Result<Command, CommandError> {

@@ -60,7 +60,10 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  DBSIZE\n",
     "  FLUSHDB [SYNC|ASYNC]\n",
     "  FLUSHALL [SYNC|ASYNC]\n",
-    "  KEYS\n",
+    "  KEYS pattern\n",
+    "  SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]\n",
+    "  RANDOMKEY\n",
+    "  COPY source destination [DB 0] [REPLACE]\n",
     "  LEN\n",
     "  CLEAR\n",
     "  SAVE\n",
@@ -85,6 +88,10 @@ pub(crate) enum CommandOutput {
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
     KeyList(Vec<Vec<u8>>),
+    Scan {
+        cursor: usize,
+        keys: Vec<Vec<u8>>,
+    },
     CommandMetadata(Vec<Option<CommandMetadata>>),
     Error(String),
     Help,
@@ -137,6 +144,14 @@ impl CommandOutput {
             Self::Nil => writeln!(writer, "(nil)"),
             Self::KeyList(keys) if keys.is_empty() => writeln!(writer, "(nil)"),
             Self::KeyList(keys) => {
+                for key in keys {
+                    writer.write_all(key)?;
+                    writer.write_all(b"\n")?;
+                }
+                Ok(())
+            }
+            Self::Scan { cursor, keys } => {
+                writeln!(writer, "{cursor}")?;
                 for key in keys {
                     writer.write_all(key)?;
                     writer.write_all(b"\n")?;

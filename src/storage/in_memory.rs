@@ -1,3 +1,4 @@
+use super::glob;
 use super::indexing::normalize_index;
 use super::stored_value::StoredValue;
 use crate::storage::clock::{Clock, SystemClock};
@@ -14,6 +15,7 @@ pub(crate) struct InMemoryStore {
     reclamation_metrics: ReclamationMetrics,
     pending_evictions: Vec<Vec<u8>>,
     pub(super) clock: Box<dyn Clock>,
+    random_state: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -31,6 +33,7 @@ pub(crate) enum StoreError {
     FloatIsNotFinite,
     WrongType,
     ExpirationOutOfRange,
+    SameSourceDestination,
 }
 
 impl fmt::Display for StoreError {
@@ -59,6 +62,9 @@ impl fmt::Display for StoreError {
                 )
             }
             Self::ExpirationOutOfRange => write!(formatter, "expiration is out of range"),
+            Self::SameSourceDestination => {
+                write!(formatter, "source and destination objects are the same")
+            }
         }
     }
 }
@@ -117,6 +123,7 @@ impl InMemoryStore {
             reclamation_metrics: ReclamationMetrics::default(),
             pending_evictions: Vec::new(),
             clock,
+            random_state: 0x9e37_79b9_7f4a_7c15,
         }
     }
 
@@ -282,6 +289,82 @@ impl InMemoryStore {
 
         keys.sort();
         keys
+    }
+
+    pub(crate) fn keys_matching(&mut self, pattern: &[u8]) -> Vec<Vec<u8>> {
+        self.keys()
+            .into_iter()
+            .filter(|key| glob::matches(pattern, key))
+            .collect()
+    }
+
+    pub(crate) fn scan(
+        &mut self,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+        type_name: Option<&[u8]>,
+    ) -> (usize, Vec<Vec<u8>>) {
+        let keys = self.keys();
+        if cursor >= keys.len() {
+            return (0, Vec::new());
+        }
+        let end = cursor.saturating_add(count).min(keys.len());
+        let matched = keys[cursor..end]
+            .iter()
+            .filter(|key| pattern.is_none_or(|pattern| glob::matches(pattern, key)))
+            .filter(|key| {
+                type_name.is_none_or(|expected| {
+                    self.storage.get(key.as_slice()).is_some_and(|entry| {
+                        entry.type_name().as_bytes().eq_ignore_ascii_case(expected)
+                    })
+                })
+            })
+            .cloned()
+            .collect();
+        (if end == keys.len() { 0 } else { end }, matched)
+    }
+
+    pub(crate) fn random_key(&mut self) -> Option<Vec<u8>> {
+        let keys = self.keys();
+        if keys.is_empty() {
+            return None;
+        }
+        self.random_state ^= self.random_state << 13;
+        self.random_state ^= self.random_state >> 7;
+        self.random_state ^= self.random_state << 17;
+        let index = (self.random_state as usize) % keys.len();
+        keys.get(index).cloned()
+    }
+
+    pub(crate) fn copy(
+        &mut self,
+        source: impl AsRef<[u8]>,
+        destination: Vec<u8>,
+        replace: bool,
+    ) -> Result<bool, StoreError> {
+        let source = source.as_ref();
+        if source == destination {
+            return Err(StoreError::SameSourceDestination);
+        }
+        self.remove_if_expired(source);
+        self.remove_if_expired(&destination);
+        if self.storage.contains_key(&destination) && !replace {
+            return Ok(false);
+        }
+        let Some(entry) = self.storage.get(source).cloned() else {
+            return Ok(false);
+        };
+        self.ensure_capacity_for(&destination);
+        let expires_at = entry.expires_at();
+        if self.storage.insert(destination.clone(), entry).is_some() {
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        if let Some(expires_at) = expires_at {
+            self.expirations.push(Reverse((expires_at, destination)));
+        }
+        Ok(true)
     }
 
     pub(crate) fn rename(&mut self, old_key: impl AsRef<[u8]>, new_key: Vec<u8>) -> bool {

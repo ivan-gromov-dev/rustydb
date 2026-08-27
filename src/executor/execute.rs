@@ -163,7 +163,31 @@ pub(crate) fn execute_with_snapshot(
 
         Command::Exists { keys } => CommandOutput::Integer(store.exists_many(&keys) as i64),
 
-        Command::Keys => CommandOutput::KeyList(store.keys()),
+        Command::Keys { pattern } => CommandOutput::KeyList(store.keys_matching(&pattern)),
+
+        Command::Scan {
+            cursor,
+            pattern,
+            count,
+            type_name,
+        } => {
+            let (cursor, keys) =
+                store.scan(cursor, pattern.as_deref(), count, type_name.as_deref());
+            CommandOutput::Scan { cursor, keys }
+        }
+
+        Command::RandomKey => store
+            .random_key()
+            .map_or(CommandOutput::Nil, CommandOutput::Value),
+
+        Command::Copy {
+            source,
+            destination,
+            replace,
+        } => match store.copy(source, destination, replace) {
+            Ok(copied) => CommandOutput::Integer(i64::from(copied)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::Rename { old_key, new_key } => {
             CommandOutput::Integer(if store.rename(&old_key, new_key) {

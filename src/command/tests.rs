@@ -43,6 +43,67 @@ fn unlink_is_persisted_as_del() {
 }
 
 #[test]
+fn parses_keyspace_iteration_and_copy_options() {
+    assert_eq!(
+        Command::from_args(&["KEYS", "user:*"]),
+        Ok(Command::Keys {
+            pattern: b"user:*".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["SCAN", "2", "TYPE", "list", "COUNT", "3", "MATCH", "q:*"]),
+        Ok(Command::Scan {
+            cursor: 2,
+            pattern: Some(b"q:*".to_vec()),
+            count: 3,
+            type_name: Some(b"list".to_vec())
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["COPY", "source", "destination", "REPLACE", "DB", "0"]),
+        Ok(Command::Copy {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            replace: true
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["COPY", "a", "b", "DB", "1"]),
+        Err(CommandError::UnsupportedDatabase(1))
+    );
+    for invalid in [
+        vec!["KEYS"],
+        vec!["SCAN", "0", "COUNT", "0"],
+        vec!["SCAN", "0", "MATCH"],
+        vec!["SCAN", "0", "TYPE", "set", "TYPE", "list"],
+        vec!["COPY", "a", "b", "REPLACE", "REPLACE"],
+    ] {
+        assert!(matches!(
+            Command::from_args(&invalid),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn copy_aof_record_is_replay_safe() {
+    let command = Command::Copy {
+        source: b"source".to_vec(),
+        destination: b"destination".to_vec(),
+        replace: false,
+    };
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![
+            b"COPY".to_vec(),
+            b"source".to_vec(),
+            b"destination".to_vec(),
+            b"REPLACE".to_vec()
+        ])
+    );
+}
+
+#[test]
 fn parses_ping_with_an_optional_binary_message() {
     assert_eq!(Command::parse("PING"), Ok(Command::Ping { message: None }));
     assert_eq!(
@@ -831,7 +892,7 @@ fn parses_every_supported_command_form() {
         "FLUSHDB ASYNC",
         "FLUSHALL",
         "FLUSHALL SYNC",
-        "KEYS",
+        "KEYS *",
         "LEN",
         "CLEAR",
         "SAVE",

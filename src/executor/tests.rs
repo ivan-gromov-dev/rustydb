@@ -42,6 +42,53 @@ fn executes_type_touch_and_unlink() {
 }
 
 #[test]
+fn executes_keyspace_iteration_random_and_copy() {
+    let mut database = Database::new();
+    database.set(b"a:1".to_vec(), b"one".to_vec());
+    database.set(b"b:1".to_vec(), b"two".to_vec());
+
+    assert_eq!(
+        execute(
+            Command::Keys {
+                pattern: b"a:*".to_vec()
+            },
+            &mut database
+        ),
+        Response::KeyList(vec![b"a:1".to_vec()])
+    );
+    assert_eq!(
+        execute(
+            Command::Scan {
+                cursor: 0,
+                pattern: None,
+                count: 1,
+                type_name: None
+            },
+            &mut database
+        ),
+        Response::Scan {
+            cursor: 1,
+            keys: vec![b"a:1".to_vec()]
+        }
+    );
+    assert!(matches!(
+        execute(Command::RandomKey, &mut database),
+        Response::Value(key) if key == b"a:1" || key == b"b:1"
+    ));
+    assert_eq!(
+        execute(
+            Command::Copy {
+                source: b"a:1".to_vec(),
+                destination: b"copy".to_vec(),
+                replace: false
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
 fn save_reports_when_persistence_is_not_configured() {
     let mut database = Database::new();
 
@@ -645,7 +692,12 @@ fn execute_string_and_collection_commands() {
     );
     assert_eq!(execute(Command::Len, &mut database), Response::Integer(2));
     assert_eq!(
-        execute(Command::Keys, &mut database),
+        execute(
+            Command::Keys {
+                pattern: b"*".to_vec(),
+            },
+            &mut database,
+        ),
         Response::KeyList(vec!["first".to_owned().into(), "second".to_owned().into()])
     );
     assert_eq!(

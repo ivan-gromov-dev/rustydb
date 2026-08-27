@@ -37,6 +37,10 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::KeyList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::BulkString).collect())
         }
+        CommandOutput::Scan { cursor, keys } => RespFrame::Array(vec![
+            RespFrame::BulkString(cursor.to_string().into_bytes()),
+            RespFrame::Array(keys.into_iter().map(RespFrame::BulkString).collect()),
+        ]),
         CommandOutput::CommandMetadata(entries) => RespFrame::Array(
             entries
                 .into_iter()

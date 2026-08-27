@@ -257,7 +257,21 @@ pub(crate) enum Command {
     DbSize,
     FlushDb,
     FlushAll,
-    Keys,
+    Keys {
+        pattern: Vec<u8>,
+    },
+    Scan {
+        cursor: usize,
+        pattern: Option<Vec<u8>>,
+        count: usize,
+        type_name: Option<Vec<u8>>,
+    },
+    RandomKey,
+    Copy {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        replace: bool,
+    },
     Len,
     Clear,
     Save,
@@ -328,7 +342,10 @@ impl Command {
             Self::DbSize => "DBSIZE",
             Self::FlushDb => "FLUSHDB",
             Self::FlushAll => "FLUSHALL",
-            Self::Keys => "KEYS",
+            Self::Keys { .. } => "KEYS",
+            Self::Scan { .. } => "SCAN",
+            Self::RandomKey => "RANDOMKEY",
+            Self::Copy { .. } => "COPY",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
             Self::Save => "SAVE",
@@ -435,6 +452,16 @@ impl Command {
             ],
             Self::Delete { keys } => with_keys(b"DEL", keys),
             Self::Unlink { keys } => with_keys(b"DEL", keys),
+            Self::Copy {
+                source,
+                destination,
+                ..
+            } => vec![
+                b"COPY".to_vec(),
+                source.clone(),
+                destination.clone(),
+                b"REPLACE".to_vec(),
+            ],
             Self::Rename { old_key, new_key } => {
                 vec![b"RENAME".to_vec(), old_key.clone(), new_key.clone()]
             }
@@ -510,7 +537,9 @@ impl Command {
             | Self::MetadataCount
             | Self::Select
             | Self::DbSize
-            | Self::Keys
+            | Self::Keys { .. }
+            | Self::Scan { .. }
+            | Self::RandomKey
             | Self::Len
             | Self::Save
             | Self::AofRewrite

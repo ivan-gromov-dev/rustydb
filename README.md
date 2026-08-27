@@ -173,7 +173,7 @@ integers, lists, sets, and expiration output through a real client.
 
 RustyDB implements RESP3 response types needed by its documented command subset,
 but does not implement authentication, multiple logical databases, transactions,
-Pub/Sub, `SCAN`, or configuration metadata commands such as `CONFIG`.
+Pub/Sub, or configuration metadata commands such as `CONFIG`.
 Features of `redis-cli` that probe or depend on those commands are not supported.
 Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
 invocations to send RustyDB commands with those names. Command errors use
@@ -267,7 +267,10 @@ clients receive the corresponding protocol-specific typed value.
 | `DBSIZE` | Count non-expired keys in database zero | Number of keys |
 | `FLUSHDB [SYNC\|ASYNC]` | Synchronously remove every key from database zero | `OK` |
 | `FLUSHALL [SYNC\|ASYNC]` | Synchronously remove every key from the standalone server | `OK` |
-| `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
+| `KEYS pattern` | List non-expired keys matching a binary-safe Redis glob, in sorted order | One key per line or `(nil)` |
+| `SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]` | Deterministically inspect sorted keyspace batches; `COUNT` controls examined keys | Next cursor followed by matching keys |
+| `RANDOMKEY` | Return a pseudo-random non-expired key | Key or `(nil)` |
+| `COPY source destination [DB 0] [REPLACE]` | Copy a value and its remaining TTL, optionally replacing the destination | `1` if copied, otherwise `0` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |
 | `SAVE` | Atomically write the configured snapshot | `OK` or an error |
@@ -341,6 +344,7 @@ src/
 ├── aof.rs                 Append-only record codec, writer, and replay
 ├── app/tests.rs           End-to-end CLI-loop tests
 ├── command/
+│   ├── metadata.rs        Deterministic supported-command metadata
 │   ├── parser.rs          Text and argument-vector command parser
 │   └── types.rs           Command and CommandError types
 ├── config.rs              Public memory-limit configuration
@@ -359,6 +363,7 @@ src/
 ├── snapshot.rs            Versioned snapshot codec and atomic file replacement
 └── storage/
     ├── clock.rs           Injectable monotonic clock abstraction
+    ├── glob.rs            Binary-safe Redis-style key-pattern matching
     ├── in_memory.rs       InMemoryStore and StoreError
     ├── indexing.rs        Range-index normalization
     ├── snapshot.rs        Snapshot data conversion and TTL restoration
