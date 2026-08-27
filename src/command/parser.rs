@@ -1,6 +1,9 @@
 use super::types::{
-    ClientInfoAttribute, Command, CommandError, ProtocolVersion, SetCondition, SetExpiration,
+    ClientInfoAttribute, Command, CommandError, GetExExpiration, ProtocolVersion, SetCondition,
+    SetExpiration,
 };
+
+type KeyValueEntries = Vec<(Vec<u8>, Vec<u8>)>;
 
 impl Command {
     pub(crate) fn parse(input: &str) -> Result<Self, CommandError> {
@@ -81,6 +84,7 @@ impl Command {
 
         match command.as_str() {
             "MSET" => parse_mset(args),
+            "MSETNX" => parse_msetnx(args),
             "SETNX" => {
                 exact(args, 3, "SETNX key value")?;
                 Ok(Self::SetNx {
@@ -91,6 +95,7 @@ impl Command {
             "MGET" => Ok(Self::MGet {
                 keys: many(args, "MGET key [key ...]")?,
             }),
+            "GETEX" => parse_getex(args),
             "GETSET" => {
                 exact(args, 3, "GETSET key value")?;
                 Ok(Self::GetSet {
@@ -323,6 +328,63 @@ fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
         .map(|entry| (owned(entry[0]), owned(entry[1])))
         .collect();
     Ok(Command::MSet { entries })
+}
+
+fn parse_msetnx(args: &[&[u8]]) -> Result<Command, CommandError> {
+    let entries = parse_key_value_pairs(args, "MSETNX key value [key value ...]")?;
+    Ok(Command::MSetNx { entries })
+}
+
+fn parse_key_value_pairs(
+    args: &[&[u8]],
+    usage: &'static str,
+) -> Result<KeyValueEntries, CommandError> {
+    if args.len() < 3 || args.len() % 2 == 0 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok(args[1..]
+        .chunks_exact(2)
+        .map(|entry| (owned(entry[0]), owned(entry[1])))
+        .collect())
+}
+
+fn parse_getex(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str =
+        "GETEX key [EX seconds|PX milliseconds|EXAT unix-seconds|PXAT unix-milliseconds|PERSIST]";
+    if args.len() == 2 {
+        return Ok(Command::GetEx {
+            key: owned(args[1]),
+            expiration: None,
+        });
+    }
+    if args.len() == 3 && args[2].eq_ignore_ascii_case(b"PERSIST") {
+        return Ok(Command::GetEx {
+            key: owned(args[1]),
+            expiration: Some(GetExExpiration::Persist),
+        });
+    }
+    if args.len() != 4 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let value = parse_u64(args[3])?;
+    if value == 0 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let expiration = if args[2].eq_ignore_ascii_case(b"EX") {
+        GetExExpiration::Seconds(value)
+    } else if args[2].eq_ignore_ascii_case(b"PX") {
+        GetExExpiration::Milliseconds(value)
+    } else if args[2].eq_ignore_ascii_case(b"EXAT") {
+        GetExExpiration::UnixSeconds(value)
+    } else if args[2].eq_ignore_ascii_case(b"PXAT") {
+        GetExExpiration::UnixMilliseconds(value)
+    } else {
+        return Err(CommandError::InvalidArguments(USAGE));
+    };
+    Ok(Command::GetEx {
+        key: owned(args[1]),
+        expiration: Some(expiration),
+    })
 }
 
 fn parse_set(args: &[&[u8]]) -> Result<Command, CommandError> {

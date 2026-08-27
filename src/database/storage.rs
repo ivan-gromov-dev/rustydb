@@ -68,6 +68,7 @@ impl Database {
                 Some(SetCondition::IfPresent) => self.store.exists(key),
                 None => true,
             },
+            Command::MSetNx { entries } => entries.iter().all(|(key, _)| !self.store.exists(key)),
             _ => true,
         };
         let aof_arguments = command.aof_arguments();

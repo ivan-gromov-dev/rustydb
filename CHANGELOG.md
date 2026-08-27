@@ -24,6 +24,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   synchronously.
 - Redis-compatible `SET` options `NX`, `XX`, `GET`, `EX`, `PX`, `EXAT`, `PXAT`,
   and `KEEPTTL`, with validation before mutation and expiration-aware AOF replay.
+- `GETEX` with relative, absolute, and `PERSIST` expiration updates, plus atomic
+  all-or-nothing `MSETNX` writes.
 
 ## [0.9.0] - 2026-08-25
 

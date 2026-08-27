@@ -1,5 +1,5 @@
 use super::execute;
-use crate::command::{Command, SetCondition, SetExpiration};
+use crate::command::{Command, GetExExpiration, SetCondition, SetExpiration};
 use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
@@ -134,6 +134,100 @@ fn execute_set_get_rejects_wrong_type_without_mutation() {
         database.list_values(b"key"),
         Ok(Some(vec![b"item".to_vec()]))
     );
+}
+
+#[test]
+fn execute_getex_updates_and_removes_expiration() {
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"value".to_vec());
+
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"key".to_vec(),
+                expiration: Some(GetExExpiration::Milliseconds(1_000)),
+            },
+            &mut database,
+        ),
+        Response::Value(b"value".to_vec())
+    );
+    assert!((1..=1_000).contains(&database.pttl(b"key")));
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"key".to_vec(),
+                expiration: Some(GetExExpiration::Persist),
+            },
+            &mut database,
+        ),
+        Response::Value(b"value".to_vec())
+    );
+    assert_eq!(database.pttl(b"key"), -1);
+}
+
+#[test]
+fn execute_getex_handles_missing_and_wrong_type_without_mutation() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"item".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"missing".to_vec(),
+                expiration: Some(GetExExpiration::Seconds(1)),
+            },
+            &mut database,
+        ),
+        Response::Nil
+    );
+    assert_eq!(
+        execute(
+            Command::GetEx {
+                key: b"list".to_vec(),
+                expiration: Some(GetExExpiration::Seconds(1)),
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+    assert_eq!(
+        database.list_values(b"list"),
+        Ok(Some(vec![b"item".to_vec()]))
+    );
+}
+
+#[test]
+fn execute_msetnx_is_all_or_nothing() {
+    let mut database = Database::new();
+    database.set(b"existing".to_vec(), b"old".to_vec());
+    assert_eq!(
+        execute(
+            Command::MSetNx {
+                entries: vec![
+                    (b"new".to_vec(), b"one".to_vec()),
+                    (b"existing".to_vec(), b"replacement".to_vec()),
+                ],
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+    assert_eq!(database.get(b"new"), Ok(None));
+    assert_eq!(database.get(b"existing"), Ok(Some(b"old".as_slice())));
+
+    assert_eq!(
+        execute(
+            Command::MSetNx {
+                entries: vec![
+                    (b"one".to_vec(), b"1".to_vec()),
+                    (b"two".to_vec(), b"2".to_vec()),
+                ],
+            },
+            &mut database,
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(database.get(b"one"), Ok(Some(b"1".as_slice())));
+    assert_eq!(database.get(b"two"), Ok(Some(b"2".as_slice())));
 }
 
 #[test]

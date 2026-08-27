@@ -387,6 +387,17 @@ fn adjust_expiration(command: &mut Command, elapsed_millis: u64) {
             }
             _ => {}
         },
+        Command::GetEx { expiration, .. } => match expiration {
+            Some(crate::command::GetExExpiration::Seconds(seconds)) => {
+                *expiration = Some(crate::command::GetExExpiration::Milliseconds(
+                    seconds.saturating_mul(1_000).saturating_sub(elapsed_millis),
+                ));
+            }
+            Some(crate::command::GetExExpiration::Milliseconds(milliseconds)) => {
+                *milliseconds = milliseconds.saturating_sub(elapsed_millis);
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -534,6 +545,27 @@ mod tests {
                 condition: None,
                 return_old: false,
                 expiration: Some(crate::command::SetExpiration::Milliseconds(300)),
+            }
+        );
+    }
+
+    #[test]
+    fn replay_reduces_relative_getex_expiration_by_downtime() {
+        let payload = encode_payload(
+            1_000,
+            &[
+                b"GETEX".to_vec(),
+                b"key".to_vec(),
+                b"EX".to_vec(),
+                b"2".to_vec(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            decode_payload(&payload, 1_500).unwrap(),
+            Command::GetEx {
+                key: b"key".to_vec(),
+                expiration: Some(crate::command::GetExExpiration::Milliseconds(1_500)),
             }
         );
     }

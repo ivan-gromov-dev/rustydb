@@ -52,8 +52,9 @@ Every successfully executed mutating command is appended as a binary-safe,
 checksummed record and synchronized before its result is acknowledged. RustyDB
 replays those records at startup without appending them again. Failed commands
 and read-only commands are not recorded. AOF records retain their execution
-time, so replay reduces `EXPIRE` and `PEXPIRE` lifetimes by the time elapsed
-while RustyDB was stopped. Snapshot options and `--aof` are currently mutually
+time, so replay reduces relative `SET`, `GETEX`, `EXPIRE`, and `PEXPIRE`
+lifetimes by the time elapsed while RustyDB was stopped. Snapshot options and
+`--aof` are currently mutually
 exclusive. If a crash leaves the final AOF record incomplete, startup discards
 that tail at the previous valid record boundary and continues. A checksum
 mismatch or malformed complete record remains a startup error.
@@ -210,8 +211,10 @@ clients receive the corresponding protocol-specific typed value.
 | --- | --- | --- |
 | `SET key value [NX\|XX] [GET] [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|KEEPTTL]` | Store a value with optional existence conditions, old-value return, and expiration policy | `OK`, previous value, or `(nil)` |
 | `MSET key value [key value ...]` | Store one or more key/value pairs | `OK` |
+| `MSETNX key value [key value ...]` | Atomically store all pairs only when every key is missing | `1` if all were stored, otherwise `0` |
 | `SETNX key value` | Store only when the key does not exist | `1` if stored, otherwise `0` |
 | `GET key` | Read a value | Value or `(nil)` |
+| `GETEX key [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|PERSIST]` | Read a value and optionally update or remove its expiration | Value or `(nil)` |
 | `MGET key [key ...]` | Read multiple values in request order | One value or `(nil)` per line |
 | `GETSET key value` | Replace a value and return the previous value | Previous value or `(nil)` |
 | `GETDEL key` | Delete a key and return its value | Previous value or `(nil)` |

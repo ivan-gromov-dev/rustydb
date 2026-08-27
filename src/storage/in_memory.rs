@@ -75,6 +75,12 @@ pub(crate) enum SetExpiration {
     KeepTtl,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpirationUpdate {
+    Set(Duration),
+    Persist,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SetResult {
     pub(crate) applied: bool,
@@ -174,6 +180,58 @@ impl InMemoryStore {
         self.remove_if_expired(key);
 
         self.storage.get(key).map(StoredValue::value).transpose()
+    }
+
+    pub(crate) fn get_with_expiration(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        update: Option<ExpirationUpdate>,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(None);
+        };
+        let value = entry.value()?.to_vec();
+        let expires_at = match update {
+            Some(ExpirationUpdate::Set(duration)) => Some(
+                self.clock
+                    .now()
+                    .checked_add(duration)
+                    .ok_or(StoreError::ExpirationOutOfRange)?,
+            ),
+            _ => None,
+        };
+        if let Some(update) = update {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(None);
+            };
+            match update {
+                ExpirationUpdate::Set(_) => {
+                    let expires_at = expires_at.ok_or(StoreError::ExpirationOutOfRange)?;
+                    entry.set_expires_at(expires_at);
+                    self.expirations.push(Reverse((expires_at, key.to_vec())));
+                }
+                ExpirationUpdate::Persist => entry.clear_expiration(),
+            }
+        }
+        Ok(Some(value))
+    }
+
+    pub(crate) fn mset_if_absent(&mut self, entries: Vec<(Vec<u8>, Vec<u8>)>) -> bool {
+        for (key, _) in &entries {
+            self.remove_if_expired(key);
+        }
+        if entries
+            .iter()
+            .any(|(key, _)| self.storage.contains_key(key))
+        {
+            return false;
+        }
+        for (key, value) in entries {
+            self.set(key, value);
+        }
+        true
     }
 
     pub(crate) fn exists(&mut self, key: impl AsRef<[u8]>) -> bool {

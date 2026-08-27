@@ -1,10 +1,11 @@
 use crate::command::{COMMANDS, command_metadata};
 use crate::command::{
-    Command, SetCondition as CommandSetCondition, SetExpiration as CommandSetExpiration,
+    Command, GetExExpiration, SetCondition as CommandSetCondition,
+    SetExpiration as CommandSetExpiration,
 };
 use crate::output::CommandOutput;
 use crate::snapshot;
-use crate::storage::{InMemoryStore, SetCondition, SetExpiration};
+use crate::storage::{ExpirationUpdate, InMemoryStore, SetCondition, SetExpiration};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -60,6 +61,10 @@ pub(crate) fn execute_with_snapshot(
             CommandOutput::Ok
         }
 
+        Command::MSetNx { entries } => {
+            CommandOutput::Integer(i64::from(store.mset_if_absent(entries)))
+        }
+
         Command::SetNx { key, value } => {
             CommandOutput::Integer(if store.set_if_absent(key, value) {
                 1
@@ -73,6 +78,18 @@ pub(crate) fn execute_with_snapshot(
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+
+        Command::GetEx { key, expiration } => {
+            let update = match resolve_getex_expiration(expiration) {
+                Ok(update) => update,
+                Err(error) => return CommandOutput::Error(error),
+            };
+            match store.get_with_expiration(&key, update) {
+                Ok(Some(value)) => CommandOutput::Value(value),
+                Ok(None) => CommandOutput::Nil,
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
 
         Command::MGet { keys } => {
             let values: Result<Vec<Option<Vec<u8>>>, _> = keys
@@ -326,4 +343,22 @@ fn absolute_expiration(timestamp: Duration) -> Result<Duration, String> {
         .checked_add(timestamp)
         .ok_or_else(|| "expiration is out of range".to_owned())?;
     Ok(target.duration_since(SystemTime::now()).unwrap_or_default())
+}
+
+fn resolve_getex_expiration(
+    expiration: Option<GetExExpiration>,
+) -> Result<Option<ExpirationUpdate>, String> {
+    let duration = match expiration {
+        None => return Ok(None),
+        Some(GetExExpiration::Persist) => return Ok(Some(ExpirationUpdate::Persist)),
+        Some(GetExExpiration::Seconds(value)) => Duration::from_secs(value),
+        Some(GetExExpiration::Milliseconds(value)) => Duration::from_millis(value),
+        Some(GetExExpiration::UnixSeconds(value)) => {
+            absolute_expiration(Duration::from_secs(value))?
+        }
+        Some(GetExExpiration::UnixMilliseconds(value)) => {
+            absolute_expiration(Duration::from_millis(value))?
+        }
+    };
+    Ok(Some(ExpirationUpdate::Set(duration)))
 }

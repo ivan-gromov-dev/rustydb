@@ -968,3 +968,47 @@ fn set_rejects_conflicting_or_incomplete_options() {
         Err(CommandError::InvalidArguments(_))
     ));
 }
+
+#[test]
+fn parses_getex_and_msetnx() {
+    assert_eq!(
+        Command::parse("GETEX key PXAT 2000"),
+        Ok(Command::GetEx {
+            key: b"key".to_vec(),
+            expiration: Some(GetExExpiration::UnixMilliseconds(2000)),
+        })
+    );
+    assert_eq!(
+        Command::parse("GETEX key PERSIST"),
+        Ok(Command::GetEx {
+            key: b"key".to_vec(),
+            expiration: Some(GetExExpiration::Persist),
+        })
+    );
+    assert_eq!(
+        Command::parse("MSETNX one 1 two 2"),
+        Ok(Command::MSetNx {
+            entries: vec![
+                (b"one".to_vec(), b"1".to_vec()),
+                (b"two".to_vec(), b"2".to_vec())
+            ],
+        })
+    );
+}
+
+#[test]
+fn getex_and_msetnx_reject_malformed_arguments() {
+    for command in [
+        "GETEX",
+        "GETEX key PX",
+        "GETEX key EX 0",
+        "GETEX key PERSIST EX 1",
+        "MSETNX key",
+        "MSETNX one 1 two",
+    ] {
+        assert!(matches!(
+            Command::parse(command),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}

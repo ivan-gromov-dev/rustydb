@@ -22,6 +22,15 @@ pub(crate) enum SetExpiration {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GetExExpiration {
+    Seconds(u64),
+    Milliseconds(u64),
+    UnixSeconds(u64),
+    UnixMilliseconds(u64),
+    Persist,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClientInfoAttribute {
     LibraryName,
     LibraryVersion,
@@ -52,12 +61,19 @@ pub(crate) enum Command {
     MSet {
         entries: Vec<(Vec<u8>, Vec<u8>)>,
     },
+    MSetNx {
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
+    },
     SetNx {
         key: Vec<u8>,
         value: Vec<u8>,
     },
     Get {
         key: Vec<u8>,
+    },
+    GetEx {
+        key: Vec<u8>,
+        expiration: Option<GetExExpiration>,
     },
     MGet {
         keys: Vec<Vec<u8>>,
@@ -213,8 +229,10 @@ impl Command {
         match self {
             Self::Set { .. } | Self::SetAdvanced { .. } => "SET",
             Self::MSet { .. } => "MSET",
+            Self::MSetNx { .. } => "MSETNX",
             Self::SetNx { .. } => "SETNX",
             Self::Get { .. } => "GET",
+            Self::GetEx { .. } => "GETEX",
             Self::MGet { .. } => "MGET",
             Self::GetSet { .. } => "GETSET",
             Self::GetDel { .. } => "GETDEL",
@@ -316,9 +334,37 @@ impl Command {
                 }
                 values
             }
+            Self::MSetNx { entries } => {
+                let mut values = vec![b"MSET".to_vec()];
+                for (key, value) in entries {
+                    values.push(key.clone());
+                    values.push(value.clone());
+                }
+                values
+            }
             Self::SetNx { key, value } => vec![b"SETNX".to_vec(), key.clone(), value.clone()],
             Self::GetSet { key, value } => vec![b"GETSET".to_vec(), key.clone(), value.clone()],
             Self::GetDel { key } => vec![b"GETDEL".to_vec(), key.clone()],
+            Self::GetEx { key, expiration } => {
+                let mut values = vec![b"GETEX".to_vec(), key.clone()];
+                match expiration {
+                    Some(GetExExpiration::Seconds(value)) => {
+                        values.extend([b"EX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::Milliseconds(value)) => {
+                        values.extend([b"PX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::UnixSeconds(value)) => {
+                        values.extend([b"EXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::UnixMilliseconds(value)) => {
+                        values.extend([b"PXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(GetExExpiration::Persist) => values.push(b"PERSIST".to_vec()),
+                    None => return None,
+                }
+                values
+            }
             Self::Append { key, append_value } => {
                 vec![b"APPEND".to_vec(), key.clone(), append_value.clone()]
             }
