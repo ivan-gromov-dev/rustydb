@@ -1,4 +1,6 @@
-use super::types::{ClientInfoAttribute, Command, CommandError, ProtocolVersion};
+use super::types::{
+    ClientInfoAttribute, Command, CommandError, ProtocolVersion, SetCondition, SetExpiration,
+};
 
 impl Command {
     pub(crate) fn parse(input: &str) -> Result<Self, CommandError> {
@@ -9,8 +11,18 @@ impl Command {
 
         let command = command.to_ascii_uppercase();
         let tail_after = match command.as_str() {
-            "SET" | "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "RPUSH" | "SADD" | "SREM"
-            | "SISMEMBER" => Some(2),
+            "SET" => {
+                let tokens: Vec<_> = input.split_whitespace().collect();
+                let has_options = tokens.get(3).is_some_and(|option| {
+                    ["NX", "XX", "GET", "EX", "PX", "EXAT", "PXAT", "KEEPTTL"]
+                        .iter()
+                        .any(|candidate| option.eq_ignore_ascii_case(candidate))
+                });
+                if has_options { None } else { Some(2) }
+            }
+            "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "RPUSH" | "SADD" | "SREM" | "SISMEMBER" => {
+                Some(2)
+            }
             "PING" | "ECHO" => Some(1),
             "SETRANGE" => Some(3),
             _ => None,
@@ -41,11 +53,8 @@ impl Command {
             });
         }
         if command.eq_ignore_ascii_case(b"SET") {
-            exact_owned(&args, 3, "SET key value")?;
-            let mut args = args;
-            let key = args.remove(1);
-            let value = args.remove(1);
-            return Ok(Self::Set { key, value });
+            let borrowed: Vec<_> = args.iter().map(Vec::as_slice).collect();
+            return parse_set(&borrowed);
         }
 
         let borrowed: Vec<_> = args.iter().map(Vec::as_slice).collect();
@@ -65,11 +74,7 @@ impl Command {
             });
         }
         if command.eq_ignore_ascii_case(b"SET") {
-            exact(args, 3, "SET key value")?;
-            return Ok(Self::Set {
-                key: owned(args[1]),
-                value: owned(args[2]),
-            });
+            return parse_set(args);
         }
 
         let command = String::from_utf8_lossy(command).to_ascii_uppercase();
@@ -318,6 +323,81 @@ fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
         .map(|entry| (owned(entry[0]), owned(entry[1])))
         .collect();
     Ok(Command::MSet { entries })
+}
+
+fn parse_set(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "SET key value";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    if args.len() == 3 {
+        return Ok(Command::Set {
+            key: owned(args[1]),
+            value: owned(args[2]),
+        });
+    }
+
+    let mut condition = None;
+    let mut return_old = false;
+    let mut expiration = None;
+    let mut index = 3;
+    while index < args.len() {
+        let option = args[index];
+        if option.eq_ignore_ascii_case(b"NX") || option.eq_ignore_ascii_case(b"XX") {
+            if condition.is_some() {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            condition = Some(if option.eq_ignore_ascii_case(b"NX") {
+                SetCondition::IfAbsent
+            } else {
+                SetCondition::IfPresent
+            });
+            index += 1;
+        } else if option.eq_ignore_ascii_case(b"GET") {
+            if return_old {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            return_old = true;
+            index += 1;
+        } else if option.eq_ignore_ascii_case(b"KEEPTTL") {
+            if expiration.is_some() {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            expiration = Some(SetExpiration::KeepTtl);
+            index += 1;
+        } else if option.eq_ignore_ascii_case(b"EX")
+            || option.eq_ignore_ascii_case(b"PX")
+            || option.eq_ignore_ascii_case(b"EXAT")
+            || option.eq_ignore_ascii_case(b"PXAT")
+        {
+            if expiration.is_some() || index + 1 >= args.len() {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            let value = parse_u64(args[index + 1])?;
+            if value == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            expiration = Some(if option.eq_ignore_ascii_case(b"EX") {
+                SetExpiration::Seconds(value)
+            } else if option.eq_ignore_ascii_case(b"PX") {
+                SetExpiration::Milliseconds(value)
+            } else if option.eq_ignore_ascii_case(b"EXAT") {
+                SetExpiration::UnixSeconds(value)
+            } else {
+                SetExpiration::UnixMilliseconds(value)
+            });
+            index += 2;
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+    }
+    Ok(Command::SetAdvanced {
+        key: owned(args[1]),
+        value: owned(args[2]),
+        condition,
+        return_old,
+        expiration,
+    })
 }
 
 fn parse_hello(args: &[&[u8]]) -> Result<Command, CommandError> {

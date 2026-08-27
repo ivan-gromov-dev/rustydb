@@ -7,6 +7,21 @@ pub(crate) enum ProtocolVersion {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetCondition {
+    IfAbsent,
+    IfPresent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetExpiration {
+    Seconds(u64),
+    Milliseconds(u64),
+    UnixSeconds(u64),
+    UnixMilliseconds(u64),
+    KeepTtl,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClientInfoAttribute {
     LibraryName,
     LibraryVersion,
@@ -26,6 +41,13 @@ pub(crate) enum Command {
     Set {
         key: Vec<u8>,
         value: Vec<u8>,
+    },
+    SetAdvanced {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        condition: Option<SetCondition>,
+        return_old: bool,
+        expiration: Option<SetExpiration>,
     },
     MSet {
         entries: Vec<(Vec<u8>, Vec<u8>)>,
@@ -189,7 +211,7 @@ pub(crate) enum Command {
 impl Command {
     pub(crate) fn name(&self) -> &'static str {
         match self {
-            Self::Set { .. } => "SET",
+            Self::Set { .. } | Self::SetAdvanced { .. } => "SET",
             Self::MSet { .. } => "MSET",
             Self::SetNx { .. } => "SETNX",
             Self::Get { .. } => "GET",
@@ -261,6 +283,31 @@ impl Command {
         let offset = |value: usize| value.to_string().into_bytes();
         let mut arguments = match self {
             Self::Set { key, value } => vec![b"SET".to_vec(), key.clone(), value.clone()],
+            Self::SetAdvanced {
+                key,
+                value,
+                expiration,
+                ..
+            } => {
+                let mut values = vec![b"SET".to_vec(), key.clone(), value.clone()];
+                match expiration {
+                    Some(SetExpiration::Seconds(value)) => {
+                        values.extend([b"EX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::Milliseconds(value)) => {
+                        values.extend([b"PX".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::UnixSeconds(value)) => {
+                        values.extend([b"EXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::UnixMilliseconds(value)) => {
+                        values.extend([b"PXAT".to_vec(), unsigned(*value)]);
+                    }
+                    Some(SetExpiration::KeepTtl) => values.push(b"KEEPTTL".to_vec()),
+                    None => {}
+                }
+                values
+            }
             Self::MSet { entries } => {
                 let mut values = vec![b"MSET".to_vec()];
                 for (key, value) in entries {

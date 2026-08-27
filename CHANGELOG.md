@@ -22,6 +22,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   `FLUSHALL`; unsupported database indexes are rejected explicitly and both
   flush commands accept Redis `SYNC` and `ASYNC` modifiers while clearing
   synchronously.
+- Redis-compatible `SET` options `NX`, `XX`, `GET`, `EX`, `PX`, `EXAT`, `PXAT`,
+  and `KEEPTTL`, with validation before mutation and expiration-aware AOF replay.
 
 ## [0.9.0] - 2026-08-25
 

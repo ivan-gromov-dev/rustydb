@@ -30,6 +30,7 @@ pub(crate) enum StoreError {
     ValueIsNotFloat,
     FloatIsNotFinite,
     WrongType,
+    ExpirationOutOfRange,
 }
 
 impl fmt::Display for StoreError {
@@ -57,8 +58,27 @@ impl fmt::Display for StoreError {
                     "operation against a key holding the wrong kind of value"
                 )
             }
+            Self::ExpirationOutOfRange => write!(formatter, "expiration is out of range"),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetCondition {
+    IfAbsent,
+    IfPresent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetExpiration {
+    Duration(Duration),
+    KeepTtl,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SetResult {
+    pub(crate) applied: bool,
+    pub(crate) old_value: Option<Vec<u8>>,
 }
 
 impl InMemoryStore {
@@ -90,6 +110,63 @@ impl InMemoryStore {
         self.remove_if_expired(&key);
         self.ensure_capacity_for(&key);
         self.storage.insert(key, StoredValue::new(value));
+    }
+
+    pub(crate) fn set_advanced(
+        &mut self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+        condition: Option<SetCondition>,
+        return_old: bool,
+        expiration: Option<SetExpiration>,
+    ) -> Result<SetResult, StoreError> {
+        self.remove_if_expired(&key);
+
+        let old_value = if return_old {
+            self.storage
+                .get(&key)
+                .map(|entry| entry.value().map(<[u8]>::to_vec))
+                .transpose()?
+        } else {
+            None
+        };
+        let exists = self.storage.contains_key(&key);
+        let applies = match condition {
+            Some(SetCondition::IfAbsent) => !exists,
+            Some(SetCondition::IfPresent) => exists,
+            None => true,
+        };
+        if !applies {
+            return Ok(SetResult {
+                applied: false,
+                old_value,
+            });
+        }
+
+        let expires_at = match expiration {
+            Some(SetExpiration::Duration(duration)) => Some(
+                self.clock
+                    .now()
+                    .checked_add(duration)
+                    .ok_or(StoreError::ExpirationOutOfRange)?,
+            ),
+            Some(SetExpiration::KeepTtl) => {
+                self.storage.get(&key).and_then(StoredValue::expires_at)
+            }
+            None => None,
+        };
+
+        self.ensure_capacity_for(&key);
+        let mut entry = StoredValue::new(value);
+        if let Some(expires_at) = expires_at {
+            entry.set_expires_at(expires_at);
+            self.expirations.push(Reverse((expires_at, key.clone())));
+        }
+        self.storage.insert(key, entry);
+        Ok(SetResult {
+            applied: true,
+            old_value,
+        })
     }
 
     pub(crate) fn get(&mut self, key: impl AsRef<[u8]>) -> Result<Option<&[u8]>, StoreError> {

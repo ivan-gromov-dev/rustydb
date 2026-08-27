@@ -4,7 +4,7 @@ use crate::command::{CommandMetadata, ProtocolVersion};
 
 pub(crate) const HELP_TEXT: &str = concat!(
     "Available commands:\n",
-    "  SET key value\n",
+    "  SET key value [NX|XX] [GET] [EX seconds|PX milliseconds|EXAT unix-seconds|PXAT unix-milliseconds|KEEPTTL]\n",
     "  MSET key value [key value ...]\n",
     "  SETNX key value\n",
     "  GET key\n",

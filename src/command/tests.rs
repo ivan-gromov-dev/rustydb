@@ -934,3 +934,37 @@ fn exists_requires_at_least_one_key() {
         Err(CommandError::InvalidArguments("EXISTS key [key ...]"))
     );
 }
+
+#[test]
+fn parses_set_options_in_any_supported_order() {
+    assert_eq!(
+        Command::parse("SET key value GET NX PX 1500"),
+        Ok(Command::SetAdvanced {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+            condition: Some(SetCondition::IfAbsent),
+            return_old: true,
+            expiration: Some(SetExpiration::Milliseconds(1500)),
+        })
+    );
+}
+
+#[test]
+fn set_rejects_conflicting_or_incomplete_options() {
+    for command in [
+        "SET key value NX XX",
+        "SET key value EX 1 KEEPTTL",
+        "SET key value GET GET",
+        "SET key value PX",
+        "SET key value EX 0",
+    ] {
+        assert!(matches!(
+            Command::parse(command),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+    assert!(matches!(
+        Command::from_args(&["SET", "key", "value", "UNKNOWN"]),
+        Err(CommandError::InvalidArguments(_))
+    ));
+}

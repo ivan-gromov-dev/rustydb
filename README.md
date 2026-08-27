@@ -208,7 +208,7 @@ clients receive the corresponding protocol-specific typed value.
 
 | Command | Description | Result |
 | --- | --- | --- |
-| `SET key value` | Store or overwrite a value and clear its previous expiration | `OK` |
+| `SET key value [NX\|XX] [GET] [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|KEEPTTL]` | Store a value with optional existence conditions, old-value return, and expiration policy | `OK`, previous value, or `(nil)` |
 | `MSET key value [key value ...]` | Store one or more key/value pairs | `OK` |
 | `SETNX key value` | Store only when the key does not exist | `1` if stored, otherwise `0` |
 | `GET key` | Read a value | Value or `(nil)` |

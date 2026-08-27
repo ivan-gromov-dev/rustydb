@@ -1,9 +1,12 @@
-use crate::command::Command;
 use crate::command::{COMMANDS, command_metadata};
+use crate::command::{
+    Command, SetCondition as CommandSetCondition, SetExpiration as CommandSetExpiration,
+};
 use crate::output::CommandOutput;
 use crate::snapshot;
-use crate::storage::InMemoryStore;
+use crate::storage::{InMemoryStore, SetCondition, SetExpiration};
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 #[cfg(test)]
 pub(crate) fn execute(command: Command, store: &mut InMemoryStore) -> CommandOutput {
@@ -19,6 +22,34 @@ pub(crate) fn execute_with_snapshot(
         Command::Set { key, value } => {
             store.set(key, value);
             CommandOutput::Ok
+        }
+
+        Command::SetAdvanced {
+            key,
+            value,
+            condition,
+            return_old,
+            expiration,
+        } => {
+            let condition = condition.map(|condition| match condition {
+                CommandSetCondition::IfAbsent => SetCondition::IfAbsent,
+                CommandSetCondition::IfPresent => SetCondition::IfPresent,
+            });
+            let expiration = match resolve_set_expiration(expiration) {
+                Ok(expiration) => expiration,
+                Err(error) => return CommandOutput::Error(error),
+            };
+            match store.set_advanced(key, value, condition, return_old, expiration) {
+                Ok(result) if !result.applied && return_old => result
+                    .old_value
+                    .map_or(CommandOutput::Nil, CommandOutput::Value),
+                Ok(result) if !result.applied => CommandOutput::Nil,
+                Ok(result) if return_old => result
+                    .old_value
+                    .map_or(CommandOutput::Nil, CommandOutput::Value),
+                Ok(_) => CommandOutput::Ok,
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
         }
 
         Command::MSet { entries } => {
@@ -270,4 +301,29 @@ pub(crate) fn execute_with_snapshot(
 
         Command::Exit => CommandOutput::Exit,
     }
+}
+
+fn resolve_set_expiration(
+    expiration: Option<CommandSetExpiration>,
+) -> Result<Option<SetExpiration>, String> {
+    let duration = match expiration {
+        None => return Ok(None),
+        Some(CommandSetExpiration::KeepTtl) => return Ok(Some(SetExpiration::KeepTtl)),
+        Some(CommandSetExpiration::Seconds(value)) => Duration::from_secs(value),
+        Some(CommandSetExpiration::Milliseconds(value)) => Duration::from_millis(value),
+        Some(CommandSetExpiration::UnixSeconds(value)) => {
+            absolute_expiration(Duration::from_secs(value))?
+        }
+        Some(CommandSetExpiration::UnixMilliseconds(value)) => {
+            absolute_expiration(Duration::from_millis(value))?
+        }
+    };
+    Ok(Some(SetExpiration::Duration(duration)))
+}
+
+fn absolute_expiration(timestamp: Duration) -> Result<Duration, String> {
+    let target = SystemTime::UNIX_EPOCH
+        .checked_add(timestamp)
+        .ok_or_else(|| "expiration is out of range".to_owned())?;
+    Ok(target.duration_since(SystemTime::now()).unwrap_or_default())
 }

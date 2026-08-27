@@ -73,7 +73,7 @@ pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("save", 1, ADMIN, 0, 0, 0),
     metadata!("scard", 2, READ, 1, 1, 1),
     metadata!("select", 2, CONNECTION, 0, 0, 0),
-    metadata!("set", 3, WRITE, 1, 1, 1),
+    metadata!("set", -3, WRITE, 1, 1, 1),
     metadata!("setnx", 3, WRITE, 1, 1, 1),
     metadata!("setrange", 4, WRITE, 1, 1, 1),
     metadata!("sismember", 3, READ, 1, 1, 1),

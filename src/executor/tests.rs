@@ -1,5 +1,5 @@
 use super::execute;
-use crate::command::Command;
+use crate::command::{Command, SetCondition, SetExpiration};
 use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
@@ -36,6 +36,104 @@ fn execute_set_stores_value() {
 
     assert_eq!(response, Response::Ok);
     assert_eq!(database.get("name"), Ok(Some(b"sample-value".as_slice())));
+}
+
+#[test]
+fn execute_set_nx_get_applies_only_to_a_missing_key() {
+    let mut database = Database::new();
+    let command = |value: &[u8]| Command::SetAdvanced {
+        key: b"key".to_vec(),
+        value: value.to_vec(),
+        condition: Some(SetCondition::IfAbsent),
+        return_old: true,
+        expiration: None,
+    };
+
+    assert_eq!(execute(command(b"first"), &mut database), Response::Nil);
+    assert_eq!(
+        execute(command(b"second"), &mut database),
+        Response::Value(b"first".to_vec())
+    );
+    assert_eq!(database.get(b"key"), Ok(Some(b"first".as_slice())));
+}
+
+#[test]
+fn execute_set_xx_get_returns_old_value_and_replaces_it() {
+    let mut database = Database::new();
+    database.set(b"key".to_vec(), b"old".to_vec());
+
+    let response = execute(
+        Command::SetAdvanced {
+            key: b"key".to_vec(),
+            value: b"new".to_vec(),
+            condition: Some(SetCondition::IfPresent),
+            return_old: true,
+            expiration: None,
+        },
+        &mut database,
+    );
+
+    assert_eq!(response, Response::Value(b"old".to_vec()));
+    assert_eq!(database.get(b"key"), Ok(Some(b"new".as_slice())));
+}
+
+#[test]
+fn execute_set_px_and_keepttl_manage_expiration() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"first".to_vec(),
+                condition: None,
+                return_old: false,
+                expiration: Some(SetExpiration::Milliseconds(1_000)),
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    let ttl = database.pttl(b"key");
+    assert!((1..=1_000).contains(&ttl));
+
+    assert_eq!(
+        execute(
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"second".to_vec(),
+                condition: None,
+                return_old: false,
+                expiration: Some(SetExpiration::KeepTtl),
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    assert!((0..=ttl).contains(&database.pttl(b"key")));
+}
+
+#[test]
+fn execute_set_get_rejects_wrong_type_without_mutation() {
+    let mut database = Database::new();
+    database.set_list(b"key".to_vec(), vec![b"item".to_vec()]);
+
+    assert_eq!(
+        execute(
+            Command::SetAdvanced {
+                key: b"key".to_vec(),
+                value: b"replacement".to_vec(),
+                condition: None,
+                return_old: true,
+                expiration: None,
+            },
+            &mut database,
+        ),
+        Response::Error("operation against a key holding the wrong kind of value".to_owned())
+    );
+    assert_eq!(
+        database.list_values(b"key"),
+        Ok(Some(vec![b"item".to_vec()]))
+    );
 }
 
 #[test]
