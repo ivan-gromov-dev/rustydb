@@ -189,6 +189,24 @@ fn aof_rewrite_of_empty_state_leaves_only_the_header() {
 }
 
 #[test]
+fn flushdb_is_replayed_from_aof_before_later_writes() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "SET removed value\nFLUSHDB ASYNC\nSET kept value\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+
+    let replay = run_cli_with_aof(&aof, "GET removed\nGET kept\nDBSIZE\nEXIT\n");
+    assert!(replay.status.success(), "{replay:?}");
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> (nil)\n"));
+    assert!(stdout.contains("db> value\n"));
+    assert!(stdout.contains("db> 1\n"));
+}
+
+#[test]
 fn corrupt_complete_aof_record_stops_startup() {
     let directory = TestDirectory::new();
     let aof = directory.aof();

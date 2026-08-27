@@ -157,6 +157,55 @@ fn parses_command_metadata_queries() {
 }
 
 #[test]
+fn select_accepts_only_database_zero() {
+    assert_eq!(Command::parse("SELECT 0"), Ok(Command::Select));
+    assert_eq!(
+        Command::parse("SELECT 1"),
+        Err(CommandError::UnsupportedDatabase(1))
+    );
+    assert_eq!(
+        Command::parse("SELECT -1"),
+        Err(CommandError::UnsupportedDatabase(-1))
+    );
+    assert_eq!(
+        Command::parse("SELECT nope"),
+        Err(CommandError::InvalidInteger("nope".to_owned()))
+    );
+    assert_eq!(
+        Command::parse("SELECT 0 extra"),
+        Err(CommandError::InvalidArguments("SELECT index"))
+    );
+}
+
+#[test]
+fn parses_database_size_and_flush_modes() {
+    assert_eq!(Command::parse("DBSIZE"), Ok(Command::DbSize));
+    assert_eq!(Command::parse("FLUSHDB"), Ok(Command::FlushDb));
+    assert_eq!(Command::parse("flushdb async"), Ok(Command::FlushDb));
+    assert_eq!(Command::parse("FLUSHALL SYNC"), Ok(Command::FlushAll));
+    for input in ["DBSIZE extra", "FLUSHDB unknown", "FLUSHALL SYNC extra"] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
+fn flush_commands_have_canonical_aof_records() {
+    assert_eq!(
+        Command::FlushDb.aof_arguments(),
+        Some(vec![b"FLUSHDB".to_vec()])
+    );
+    assert_eq!(
+        Command::FlushAll.aof_arguments(),
+        Some(vec![b"FLUSHALL".to_vec()])
+    );
+    assert_eq!(Command::Select.aof_arguments(), None);
+    assert_eq!(Command::DbSize.aof_arguments(), None);
+}
+
+#[test]
 fn command_metadata_registry_is_sorted_unique_and_searchable() {
     assert!(COMMANDS.windows(2).all(|pair| pair[0].name < pair[1].name));
     assert_eq!(
@@ -734,6 +783,12 @@ fn parses_every_supported_command_form() {
         "COMMAND COUNT",
         "COMMAND INFO",
         "COMMAND INFO GET missing",
+        "SELECT 0",
+        "DBSIZE",
+        "FLUSHDB",
+        "FLUSHDB ASYNC",
+        "FLUSHALL",
+        "FLUSHALL SYNC",
         "KEYS",
         "LEN",
         "CLEAR",

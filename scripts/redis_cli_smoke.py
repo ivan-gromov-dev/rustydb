@@ -115,6 +115,7 @@ def main() -> int:
             raise AssertionError(
                 f"COMMAND COUNT: expected a positive integer, got {command_count!r}"
             )
+        expect(line(redis(cli, port, "SELECT", "0")), b"OK", "SELECT 0")
         expect(
             line(redis(cli, port, "PING", "hello world")),
             b"hello world",
@@ -141,6 +142,13 @@ def main() -> int:
             "binary SET",
         )
         expect(line(redis(cli, port, "GET", "binary")), BINARY_VALUE, "binary GET")
+        database_size = line(redis(cli, port, "DBSIZE"))
+        if not database_size.isdigit() or int(database_size) <= 0:
+            raise AssertionError(
+                f"DBSIZE: expected a positive integer, got {database_size!r}"
+            )
+        expect(line(redis(cli, port, "FLUSHDB", "SYNC")), b"OK", "FLUSHDB SYNC")
+        expect(line(redis(cli, port, "DBSIZE")), b"0", "DBSIZE after FLUSHDB")
     finally:
         if server.poll() is None:
             server.kill()

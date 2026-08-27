@@ -131,6 +131,20 @@ fn unsupported_hello_protocol_does_not_change_or_close_the_connection() {
 }
 
 #[test]
+fn unsupported_database_is_rejected_without_closing_the_connection() {
+    let input = concat!("*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "*1\r\n$4\r\nPING\r\n",);
+    let mut executed = Vec::new();
+
+    let output = run(input.as_bytes(), |command| {
+        executed.push(command);
+        CommandOutput::Pong
+    });
+
+    assert_eq!(executed, vec![Command::Ping { message: None }]);
+    assert_eq!(output, b"-ERR DB index is out of range: 1\r\n+PONG\r\n");
+}
+
+#[test]
 fn connection_metadata_is_scoped_to_the_session_without_database_execution() {
     let input = concat!(
         "*2\r\n$6\r\nCLIENT\r\n$2\r\nID\r\n",

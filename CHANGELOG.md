@@ -18,6 +18,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   the same connection ID.
 - Deterministic metadata for the supported command set through `COMMAND`,
   `COMMAND INFO`, and `COMMAND COUNT`, including arity, flags, and key positions.
+- Single-database compatibility through `SELECT 0`, `DBSIZE`, `FLUSHDB`, and
+  `FLUSHALL`; unsupported database indexes are rejected explicitly and both
+  flush commands accept Redis `SYNC` and `ASYNC` modifiers while clearing
+  synchronously.
 
 ## [0.9.0] - 2026-08-25
 

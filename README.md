@@ -171,7 +171,7 @@ Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
 integers, lists, sets, and expiration output through a real client.
 
 RustyDB implements RESP3 response types needed by its documented command subset,
-but does not implement authentication, database selection, transactions,
+but does not implement authentication, multiple logical databases, transactions,
 Pub/Sub, `SCAN`, or configuration metadata commands such as `CONFIG`.
 Features of `redis-cli` that probe or depend on those commands are not supported.
 Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
@@ -253,6 +253,10 @@ clients receive the corresponding protocol-specific typed value.
 | `COMMAND` | List metadata for every supported command in sorted order | Command metadata |
 | `COMMAND INFO [command ...]` | Read selected command metadata, or all metadata when omitted | Metadata or `(nil)` per name |
 | `COMMAND COUNT` | Count the commands advertised by RustyDB | Command count |
+| `SELECT 0` | Select the only supported logical database | `OK`; other indexes are rejected |
+| `DBSIZE` | Count non-expired keys in database zero | Number of keys |
+| `FLUSHDB [SYNC\|ASYNC]` | Synchronously remove every key from database zero | `OK` |
+| `FLUSHALL [SYNC\|ASYNC]` | Synchronously remove every key from the standalone server | `OK` |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |

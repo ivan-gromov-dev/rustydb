@@ -527,6 +527,31 @@ fn execute_command_metadata_queries_use_the_shared_registry() {
 }
 
 #[test]
+fn select_size_and_flush_commands_operate_on_the_single_database() {
+    let mut database = Database::new();
+    database.set(b"one".to_vec(), b"1".to_vec());
+    database.set(b"two".to_vec(), b"2".to_vec());
+
+    assert_eq!(execute(Command::Select, &mut database), Response::Ok);
+    assert_eq!(
+        execute(Command::DbSize, &mut database),
+        Response::Integer(2)
+    );
+    assert_eq!(execute(Command::FlushDb, &mut database), Response::Ok);
+    assert_eq!(
+        execute(Command::DbSize, &mut database),
+        Response::Integer(0)
+    );
+
+    database.set(b"again".to_vec(), b"value".to_vec());
+    assert_eq!(execute(Command::FlushAll, &mut database), Response::Ok);
+    assert_eq!(
+        execute(Command::DbSize, &mut database),
+        Response::Integer(0)
+    );
+}
+
+#[test]
 fn execute_delete_returns_number_of_deleted_keys() {
     let mut database = Database::new();
 

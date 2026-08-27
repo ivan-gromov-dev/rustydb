@@ -232,6 +232,10 @@ impl Command {
             "HELLO" => parse_hello(args),
             "CLIENT" => parse_client(args),
             "COMMAND" => parse_command_metadata(args),
+            "SELECT" => parse_select(args),
+            "DBSIZE" => no_args(args, "DBSIZE", Self::DbSize),
+            "FLUSHDB" => parse_flush(args, "FLUSHDB [SYNC|ASYNC]", Self::FlushDb),
+            "FLUSHALL" => parse_flush(args, "FLUSHALL [SYNC|ASYNC]", Self::FlushAll),
             "KEYS" => no_args(args, "KEYS", Self::Keys),
             "LEN" => no_args(args, "LEN", Self::Len),
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
@@ -403,6 +407,30 @@ fn parse_command_metadata(args: &[&[u8]]) -> Result<Command, CommandError> {
     Err(CommandError::InvalidArguments(
         "COMMAND [INFO [command ...]|COUNT]",
     ))
+}
+
+fn parse_select(args: &[&[u8]]) -> Result<Command, CommandError> {
+    exact(args, 2, "SELECT index")?;
+    let index = parse_i64(args[1])?;
+    if index == 0 {
+        Ok(Command::Select)
+    } else {
+        Err(CommandError::UnsupportedDatabase(index))
+    }
+}
+
+fn parse_flush(
+    args: &[&[u8]],
+    usage: &'static str,
+    command: Command,
+) -> Result<Command, CommandError> {
+    match args {
+        [_] => Ok(command),
+        [_, mode] if mode.eq_ignore_ascii_case(b"SYNC") || mode.eq_ignore_ascii_case(b"ASYNC") => {
+            Ok(command)
+        }
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
 }
 
 fn key_i64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64), CommandError> {

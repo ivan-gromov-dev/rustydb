@@ -238,6 +238,15 @@ pub(crate) fn execute_with_snapshot(
 
         Command::MetadataCount => CommandOutput::Integer(COMMANDS.len() as i64),
 
+        Command::Select => CommandOutput::Ok,
+
+        Command::DbSize => CommandOutput::Integer(store.len() as i64),
+
+        Command::FlushDb | Command::FlushAll => {
+            store.clear();
+            CommandOutput::Ok
+        }
+
         Command::Len => CommandOutput::Integer(store.len() as i64),
 
         Command::Clear => {

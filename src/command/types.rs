@@ -172,6 +172,10 @@ pub(crate) enum Command {
         names: Vec<Vec<u8>>,
     },
     MetadataCount,
+    Select,
+    DbSize,
+    FlushDb,
+    FlushAll,
     Keys,
     Len,
     Clear,
@@ -228,6 +232,10 @@ impl Command {
             | Self::ClientGetName
             | Self::ClientSetInfo { .. } => "CLIENT",
             Self::MetadataList | Self::MetadataInfo { .. } | Self::MetadataCount => "COMMAND",
+            Self::Select => "SELECT",
+            Self::DbSize => "DBSIZE",
+            Self::FlushDb => "FLUSHDB",
+            Self::FlushAll => "FLUSHALL",
             Self::Keys => "KEYS",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
@@ -308,6 +316,8 @@ impl Command {
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
             Self::Clear => vec![b"CLEAR".to_vec()],
+            Self::FlushDb => vec![b"FLUSHDB".to_vec()],
+            Self::FlushAll => vec![b"FLUSHALL".to_vec()],
             Self::Get { .. }
             | Self::MGet { .. }
             | Self::Exists { .. }
@@ -330,6 +340,8 @@ impl Command {
             | Self::MetadataList
             | Self::MetadataInfo { .. }
             | Self::MetadataCount
+            | Self::Select
+            | Self::DbSize
             | Self::Keys
             | Self::Len
             | Self::Save
@@ -359,6 +371,7 @@ pub(crate) enum CommandError {
     InvalidFloat(String),
     UnsupportedProtocol(i64),
     InvalidClientMetadata,
+    UnsupportedDatabase(i64),
 }
 
 impl fmt::Display for CommandError {
@@ -384,6 +397,9 @@ impl fmt::Display for CommandError {
                 formatter,
                 "client metadata cannot contain spaces, newlines or special characters"
             ),
+            Self::UnsupportedDatabase(index) => {
+                write!(formatter, "DB index is out of range: {index}")
+            }
         }
     }
 }
