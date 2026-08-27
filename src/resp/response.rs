@@ -17,7 +17,7 @@ pub(crate) fn frame_from_output_for_protocol(
     match output {
         CommandOutput::Ok | CommandOutput::Exit => RespFrame::SimpleString("OK".to_owned()),
         CommandOutput::Pong => RespFrame::SimpleString("PONG".to_owned()),
-        CommandOutput::Hello { .. } => hello_frame(protocol),
+        CommandOutput::Hello { connection_id, .. } => hello_frame(protocol, connection_id),
         CommandOutput::Integer(value) => RespFrame::Integer(value),
         CommandOutput::Float(value) => RespFrame::BulkString(value.to_string().into_bytes()),
         CommandOutput::Value(value) => RespFrame::BulkString(value),
@@ -41,19 +41,24 @@ pub(crate) fn frame_from_output_for_protocol(
     }
 }
 
-fn hello_frame(protocol: ProtocolVersion) -> RespFrame {
+fn hello_frame(protocol: ProtocolVersion, connection_id: Option<i64>) -> RespFrame {
     let bulk = |value: &str| RespFrame::BulkString(value.as_bytes().to_vec());
-    let entries = vec![
+    let mut entries = vec![
         (bulk("server"), bulk("rustydb")),
         (bulk("version"), bulk(env!("CARGO_PKG_VERSION"))),
         (
             bulk("proto"),
             RespFrame::Integer(i64::from(protocol.number())),
         ),
+    ];
+    if let Some(connection_id) = connection_id {
+        entries.push((bulk("id"), RespFrame::Integer(connection_id)));
+    }
+    entries.extend([
         (bulk("mode"), bulk("standalone")),
         (bulk("role"), bulk("master")),
         (bulk("modules"), RespFrame::Array(Vec::new())),
-    ];
+    ]);
 
     match protocol {
         ProtocolVersion::Resp2 => RespFrame::Array(

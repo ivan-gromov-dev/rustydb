@@ -102,6 +102,14 @@ def main() -> int:
             b"PONG",
             "RESP3 PING",
         )
+        client_id = line(redis(cli, port, "CLIENT", "ID"))
+        if not client_id.isdigit() or int(client_id) <= 0:
+            raise AssertionError(f"CLIENT ID: expected a positive integer, got {client_id!r}")
+        expect(
+            line(redis(cli, port, "CLIENT", "SETINFO", "LIB-NAME", "rustydb-smoke")),
+            b"OK",
+            "CLIENT SETINFO",
+        )
         expect(
             line(redis(cli, port, "PING", "hello world")),
             b"hello world",

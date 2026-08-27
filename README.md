@@ -246,6 +246,10 @@ clients receive the corresponding protocol-specific typed value.
 | `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
 | `ECHO message` | Return a binary message unchanged | The message |
 | `HELLO [2\|3]` | Report connection metadata and optionally select RESP2 or RESP3 | Server metadata |
+| `CLIENT ID` | Read the connection's unique, monotonically increasing identifier | Connection ID |
+| `CLIENT SETNAME name` | Set or clear the current connection name | `OK` |
+| `CLIENT GETNAME` | Read the current connection name | Name or `(nil)` |
+| `CLIENT SETINFO LIB-NAME\|LIB-VER value` | Record client library metadata for the connection | `OK` |
 | `KEYS` | List all non-expired keys in sorted order | One key per line or `(nil)` |
 | `LEN` | Count non-expired keys | Number of keys |
 | `CLEAR` | Remove every key | `OK` |

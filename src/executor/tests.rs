@@ -496,6 +496,7 @@ fn execute_control_commands_return_control_responses() {
         ),
         Response::Hello {
             protocol: Some(crate::command::ProtocolVersion::Resp3),
+            connection_id: None,
         }
     );
     assert_eq!(execute(Command::Help, &mut database), Response::Help);

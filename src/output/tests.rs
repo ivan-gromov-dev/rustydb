@@ -14,6 +14,7 @@ fn renders_scalar_outputs() {
     assert!(
         render(CommandOutput::Hello {
             protocol: Some(ProtocolVersion::Resp3),
+            connection_id: Some(7),
         })
         .contains("proto:3\n")
     );
@@ -104,6 +105,10 @@ fn help_lists_every_supported_command() {
         "PING",
         "ECHO",
         "HELLO",
+        "CLIENT ID",
+        "CLIENT SETNAME",
+        "CLIENT GETNAME",
+        "CLIENT SETINFO",
         "KEYS",
         "LEN",
         "CLEAR",

@@ -213,7 +213,17 @@ pub(crate) fn execute_with_snapshot(
         }
         | Command::Echo { message } => CommandOutput::Value(message),
 
-        Command::Hello { protocol } => CommandOutput::Hello { protocol },
+        Command::Hello { protocol } => CommandOutput::Hello {
+            protocol,
+            connection_id: None,
+        },
+
+        Command::ClientId
+        | Command::ClientSetName { .. }
+        | Command::ClientGetName
+        | Command::ClientSetInfo { .. } => {
+            CommandOutput::Error("CLIENT requires a server connection".to_owned())
+        }
 
         Command::Len => CommandOutput::Integer(store.len() as i64),
 

@@ -6,6 +6,12 @@ pub(crate) enum ProtocolVersion {
     Resp3,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClientInfoAttribute {
+    LibraryName,
+    LibraryVersion,
+}
+
 impl ProtocolVersion {
     pub(crate) fn number(self) -> u8 {
         match self {
@@ -152,6 +158,15 @@ pub(crate) enum Command {
     Hello {
         protocol: Option<ProtocolVersion>,
     },
+    ClientId,
+    ClientSetName {
+        name: Vec<u8>,
+    },
+    ClientGetName,
+    ClientSetInfo {
+        attribute: ClientInfoAttribute,
+        value: Vec<u8>,
+    },
     Keys,
     Len,
     Clear,
@@ -203,6 +218,10 @@ impl Command {
             Self::Ping { .. } => "PING",
             Self::Echo { .. } => "ECHO",
             Self::Hello { .. } => "HELLO",
+            Self::ClientId
+            | Self::ClientSetName { .. }
+            | Self::ClientGetName
+            | Self::ClientSetInfo { .. } => "CLIENT",
             Self::Keys => "KEYS",
             Self::Len => "LEN",
             Self::Clear => "CLEAR",
@@ -298,6 +317,10 @@ impl Command {
             | Self::Ping { .. }
             | Self::Echo { .. }
             | Self::Hello { .. }
+            | Self::ClientId
+            | Self::ClientSetName { .. }
+            | Self::ClientGetName
+            | Self::ClientSetInfo { .. }
             | Self::Keys
             | Self::Len
             | Self::Save
@@ -326,6 +349,7 @@ pub(crate) enum CommandError {
     InvalidInteger(String),
     InvalidFloat(String),
     UnsupportedProtocol(i64),
+    InvalidClientMetadata,
 }
 
 impl fmt::Display for CommandError {
@@ -347,6 +371,10 @@ impl fmt::Display for CommandError {
             Self::UnsupportedProtocol(protocol) => {
                 write!(formatter, "unsupported protocol version: {protocol}")
             }
+            Self::InvalidClientMetadata => write!(
+                formatter,
+                "client metadata cannot contain spaces, newlines or special characters"
+            ),
         }
     }
 }

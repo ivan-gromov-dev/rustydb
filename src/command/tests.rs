@@ -78,6 +78,63 @@ fn hello_accepts_current_and_supported_protocol_versions() {
 }
 
 #[test]
+fn parses_connection_metadata_commands() {
+    assert_eq!(Command::parse("CLIENT ID"), Ok(Command::ClientId));
+    assert_eq!(Command::parse("client getname"), Ok(Command::ClientGetName));
+    assert_eq!(
+        Command::from_bytes(&[b"CLIENT", b"SETNAME", b"worker-1"]),
+        Ok(Command::ClientSetName {
+            name: b"worker-1".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::parse("CLIENT SETINFO LIB-NAME redis-rs"),
+        Ok(Command::ClientSetInfo {
+            attribute: ClientInfoAttribute::LibraryName,
+            value: b"redis-rs".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::parse("CLIENT SETINFO lib-ver 0.27.6"),
+        Ok(Command::ClientSetInfo {
+            attribute: ClientInfoAttribute::LibraryVersion,
+            value: b"0.27.6".to_vec(),
+        })
+    );
+}
+
+#[test]
+fn connection_metadata_commands_validate_subcommands_and_values() {
+    for input in [
+        "CLIENT",
+        "CLIENT ID extra",
+        "CLIENT GETNAME extra",
+        "CLIENT SETNAME",
+        "CLIENT SETINFO LIB-NAME",
+        "CLIENT SETINFO unknown value",
+        "CLIENT unknown",
+    ] {
+        assert!(matches!(
+            Command::parse(input),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+    for arguments in [
+        &[b"CLIENT".as_slice(), b"SETNAME", b"two words"][..],
+        &[b"CLIENT".as_slice(), b"SETINFO", b"LIB-NAME", b"bad\nname"][..],
+    ] {
+        assert_eq!(
+            Command::from_bytes(arguments),
+            Err(CommandError::InvalidClientMetadata)
+        );
+    }
+    assert_eq!(
+        Command::from_bytes(&[b"CLIENT", b"SETNAME", b""]),
+        Ok(Command::ClientSetName { name: Vec::new() })
+    );
+}
+
+#[test]
 fn save_accepts_no_arguments() {
     assert_eq!(Command::parse("SAVE"), Ok(Command::Save));
     assert_eq!(
@@ -629,6 +686,11 @@ fn parses_every_supported_command_form() {
         "HELLO",
         "HELLO 2",
         "HELLO 3",
+        "CLIENT ID",
+        "CLIENT GETNAME",
+        "CLIENT SETNAME worker",
+        "CLIENT SETINFO LIB-NAME redis-rs",
+        "CLIENT SETINFO LIB-VER 1.0",
         "KEYS",
         "LEN",
         "CLEAR",

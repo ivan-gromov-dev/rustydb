@@ -117,6 +117,7 @@ fn converts_existing_outputs_to_resp3_semantic_types() {
 fn hello_uses_a_flat_array_in_resp2_and_a_map_in_resp3() {
     let output = || CommandOutput::Hello {
         protocol: Some(ProtocolVersion::Resp3),
+        connection_id: None,
     };
 
     assert!(matches!(

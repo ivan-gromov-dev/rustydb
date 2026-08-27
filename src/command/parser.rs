@@ -1,4 +1,4 @@
-use super::types::{Command, CommandError, ProtocolVersion};
+use super::types::{ClientInfoAttribute, Command, CommandError, ProtocolVersion};
 
 impl Command {
     pub(crate) fn parse(input: &str) -> Result<Self, CommandError> {
@@ -230,6 +230,7 @@ impl Command {
                 message: one(args, "ECHO message")?,
             }),
             "HELLO" => parse_hello(args),
+            "CLIENT" => parse_client(args),
             "KEYS" => no_args(args, "KEYS", Self::Keys),
             "LEN" => no_args(args, "LEN", Self::Len),
             "CLEAR" => no_args(args, "CLEAR", Self::Clear),
@@ -330,6 +331,59 @@ fn parse_hello(args: &[&[u8]]) -> Result<Command, CommandError> {
     Ok(Command::Hello {
         protocol: Some(protocol),
     })
+}
+
+fn parse_client(args: &[&[u8]]) -> Result<Command, CommandError> {
+    let Some(subcommand) = args.get(1) else {
+        return Err(CommandError::InvalidArguments(
+            "CLIENT ID|GETNAME|SETNAME name|SETINFO LIB-NAME|LIB-VER value",
+        ));
+    };
+
+    if subcommand.eq_ignore_ascii_case(b"ID") {
+        exact(args, 2, "CLIENT ID")?;
+        return Ok(Command::ClientId);
+    }
+    if subcommand.eq_ignore_ascii_case(b"GETNAME") {
+        exact(args, 2, "CLIENT GETNAME")?;
+        return Ok(Command::ClientGetName);
+    }
+    if subcommand.eq_ignore_ascii_case(b"SETNAME") {
+        exact(args, 3, "CLIENT SETNAME name")?;
+        validate_client_metadata(args[2])?;
+        return Ok(Command::ClientSetName {
+            name: owned(args[2]),
+        });
+    }
+    if subcommand.eq_ignore_ascii_case(b"SETINFO") {
+        exact(args, 4, "CLIENT SETINFO LIB-NAME|LIB-VER value")?;
+        validate_client_metadata(args[3])?;
+        let attribute = if args[2].eq_ignore_ascii_case(b"LIB-NAME") {
+            ClientInfoAttribute::LibraryName
+        } else if args[2].eq_ignore_ascii_case(b"LIB-VER") {
+            ClientInfoAttribute::LibraryVersion
+        } else {
+            return Err(CommandError::InvalidArguments(
+                "CLIENT SETINFO LIB-NAME|LIB-VER value",
+            ));
+        };
+        return Ok(Command::ClientSetInfo {
+            attribute,
+            value: owned(args[3]),
+        });
+    }
+
+    Err(CommandError::InvalidArguments(
+        "CLIENT ID|GETNAME|SETNAME name|SETINFO LIB-NAME|LIB-VER value",
+    ))
+}
+
+fn validate_client_metadata(value: &[u8]) -> Result<(), CommandError> {
+    if value.iter().all(|byte| matches!(byte, b'!'..=b'~')) {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidClientMetadata)
+    }
 }
 
 fn key_i64(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64), CommandError> {

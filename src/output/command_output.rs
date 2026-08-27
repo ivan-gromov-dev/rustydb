@@ -42,6 +42,10 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  PING [message]\n",
     "  ECHO message\n",
     "  HELLO [2|3]\n",
+    "  CLIENT ID\n",
+    "  CLIENT SETNAME name\n",
+    "  CLIENT GETNAME\n",
+    "  CLIENT SETINFO LIB-NAME|LIB-VER value\n",
     "  KEYS\n",
     "  LEN\n",
     "  CLEAR\n",
@@ -56,7 +60,10 @@ pub(crate) const HELP_TEXT: &str = concat!(
 pub(crate) enum CommandOutput {
     Ok,
     Pong,
-    Hello { protocol: Option<ProtocolVersion> },
+    Hello {
+        protocol: Option<ProtocolVersion>,
+        connection_id: Option<i64>,
+    },
     Integer(i64),
     Float(f64),
     Value(Vec<u8>),
@@ -77,11 +84,17 @@ impl CommandOutput {
         match self {
             Self::Ok => writeln!(writer, "OK"),
             Self::Pong => writeln!(writer, "PONG"),
-            Self::Hello { protocol } => {
+            Self::Hello {
+                protocol,
+                connection_id,
+            } => {
                 let protocol = protocol.unwrap_or(ProtocolVersion::Resp2).number();
                 writeln!(writer, "server:rustydb")?;
                 writeln!(writer, "version:{}", env!("CARGO_PKG_VERSION"))?;
                 writeln!(writer, "proto:{protocol}")?;
+                if let Some(connection_id) = connection_id {
+                    writeln!(writer, "id:{connection_id}")?;
+                }
                 writeln!(writer, "mode:standalone")?;
                 writeln!(writer, "role:master")?;
                 writeln!(writer, "modules:(empty)")

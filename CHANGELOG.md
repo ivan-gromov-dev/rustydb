@@ -13,6 +13,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   and RESP clients, including binary-safe message replies.
 - `HELLO`, RESP2/RESP3 connection negotiation, and the RESP3 map and null
   response types needed by the supported command set.
+- Per-connection IDs, names, and client library metadata through `CLIENT ID`,
+  `CLIENT SETNAME`, `CLIENT GETNAME`, and `CLIENT SETINFO`; `HELLO` now reports
+  the same connection ID.
 
 ## [0.9.0] - 2026-08-25
 

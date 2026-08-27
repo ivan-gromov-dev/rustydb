@@ -1,6 +1,7 @@
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicI64, Ordering};
 
-use crate::command::{Command, ProtocolVersion};
+use crate::command::{ClientInfoAttribute, Command, ProtocolVersion};
 use crate::output::CommandOutput;
 use crate::resp::decoder::{DecodeLimits, DecodeResult, decode};
 use crate::resp::frame::RespFrame;
@@ -8,15 +9,53 @@ use crate::resp::request::command_from_frame;
 use crate::resp::response::{error_frame, frame_from_output_for_protocol};
 
 const READ_CHUNK_SIZE: usize = 8 * 1024;
+static NEXT_CONNECTION_ID: AtomicI64 = AtomicI64::new(1);
 
-pub(crate) fn run_session<R, W, F>(reader: &mut R, writer: &mut W, mut execute: F) -> io::Result<()>
+struct ConnectionState {
+    id: i64,
+    protocol: ProtocolVersion,
+    name: Option<Vec<u8>>,
+    _library_name: Option<Vec<u8>>,
+    _library_version: Option<Vec<u8>>,
+}
+
+impl ConnectionState {
+    fn new(id: i64) -> Self {
+        Self {
+            id,
+            protocol: ProtocolVersion::Resp2,
+            name: None,
+            _library_name: None,
+            _library_version: None,
+        }
+    }
+}
+
+pub(crate) fn run_session<R, W, F>(reader: &mut R, writer: &mut W, execute: F) -> io::Result<()>
+where
+    R: Read,
+    W: Write,
+    F: FnMut(Command) -> CommandOutput,
+{
+    let connection_id = NEXT_CONNECTION_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| io::Error::other("connection ID space exhausted"))?;
+    run_session_with_id(reader, writer, execute, connection_id)
+}
+
+pub(crate) fn run_session_with_id<R, W, F>(
+    reader: &mut R,
+    writer: &mut W,
+    mut execute: F,
+    connection_id: i64,
+) -> io::Result<()>
 where
     R: Read,
     W: Write,
     F: FnMut(Command) -> CommandOutput,
 {
     let limits = DecodeLimits::default();
-    let mut protocol = ProtocolVersion::Resp2;
+    let mut state = ConnectionState::new(connection_id);
     let mut buffer = Vec::new();
     let mut read_chunk = [0; READ_CHUNK_SIZE];
 
@@ -31,7 +70,7 @@ where
             };
             match decoded {
                 Ok(DecodeResult::Complete { frame, consumed }) => {
-                    let should_exit = process_frame(frame, writer, &mut execute, &mut protocol)?;
+                    let should_exit = process_frame(frame, writer, &mut execute, &mut state)?;
                     buffer.drain(..consumed);
 
                     if should_exit {
@@ -67,7 +106,7 @@ fn process_frame<F>(
     frame: RespFrame,
     writer: &mut impl Write,
     execute: &mut F,
-    protocol: &mut ProtocolVersion,
+    state: &mut ConnectionState,
 ) -> io::Result<bool>
 where
     F: FnMut(Command) -> CommandOutput,
@@ -88,13 +127,14 @@ where
         }
     };
 
-    let hello_protocol = match &command {
-        Command::Hello { protocol } => Some(*protocol),
-        _ => None,
+    let response_protocol = match &command {
+        Command::Hello { protocol } => protocol.unwrap_or(state.protocol),
+        _ => state.protocol,
     };
-    let response_protocol = hello_protocol.flatten().unwrap_or(*protocol);
-
-    let output = {
+    let connection_output = execute_connection_command(&command, state);
+    let output = if let Some(output) = connection_output {
+        output
+    } else {
         #[cfg(feature = "profiling")]
         let _scope = crate::server::profiling::profile_scope(
             crate::server::profiling::ProfilePhase::Execute,
@@ -102,6 +142,7 @@ where
         execute(command)
     };
     let should_exit = matches!(output, CommandOutput::Exit);
+    let is_hello = matches!(output, CommandOutput::Hello { .. });
     {
         #[cfg(feature = "profiling")]
         let _scope = crate::server::profiling::profile_scope(
@@ -111,11 +152,40 @@ where
         writer.flush()?;
     }
 
-    if hello_protocol.is_some() {
-        *protocol = response_protocol;
+    if is_hello {
+        state.protocol = response_protocol;
     }
 
     Ok(should_exit)
+}
+
+fn execute_connection_command(
+    command: &Command,
+    state: &mut ConnectionState,
+) -> Option<CommandOutput> {
+    match command {
+        Command::Hello { protocol } => Some(CommandOutput::Hello {
+            protocol: *protocol,
+            connection_id: Some(state.id),
+        }),
+        Command::ClientId => Some(CommandOutput::Integer(state.id)),
+        Command::ClientSetName { name } => {
+            state.name = (!name.is_empty()).then(|| name.clone());
+            Some(CommandOutput::Ok)
+        }
+        Command::ClientGetName => Some(match &state.name {
+            Some(name) => CommandOutput::Value(name.clone()),
+            None => CommandOutput::Nil,
+        }),
+        Command::ClientSetInfo { attribute, value } => {
+            match attribute {
+                ClientInfoAttribute::LibraryName => state._library_name = Some(value.clone()),
+                ClientInfoAttribute::LibraryVersion => state._library_version = Some(value.clone()),
+            }
+            Some(CommandOutput::Ok)
+        }
+        _ => None,
+    }
 }
 
 fn write_protocol_error(writer: &mut impl Write, error: impl std::fmt::Display) -> io::Result<()> {
