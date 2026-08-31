@@ -261,6 +261,11 @@ clients receive the corresponding protocol-specific typed value.
 | `HDEL key field [field ...]` | Delete one or more hash fields | Number of fields deleted |
 | `HEXISTS key field` | Test whether a hash field exists | `1` if present, otherwise `0` |
 | `HLEN key` | Read a hash's field count | Number of fields, or `0` |
+| `HKEYS key` | Read hash fields in sorted order | Fields or `(nil)` |
+| `HVALS key` | Read hash values ordered by their sorted fields | Values or `(nil)` |
+| `HINCRBY key field increment` | Increment an integer hash field | Updated integer |
+| `HINCRBYFLOAT key field increment` | Increment a finite floating-point hash field | Updated number |
+| `HSCAN key cursor [MATCH pattern] [COUNT count]` | Deterministically inspect sorted hash-field batches | Next cursor followed by field/value pairs |
 | `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
 | `ECHO message` | Return a binary message unchanged | The message |
 | `HELLO [2\|3]` | Report connection metadata and optionally select RESP2 or RESP3 | Server metadata |
@@ -337,6 +342,9 @@ request order and duplicate fields. `HGETALL` sorts fields by their binary
 representation for deterministic output; RESP3 clients receive a map and RESP2
 clients receive an alternating array. Updating a hash preserves its expiration
 while fields remain, and deleting its final field removes the key.
+`HKEYS`, `HVALS`, and `HSCAN` use the same sorted-field order. As with `SCAN`,
+`HSCAN COUNT` controls how many fields are examined, so a filtered batch may
+contain fewer results than the requested count.
 
 `INFO` reports counters accumulated since the process started. `connected_clients`
 is the number of currently open RESP connections, while `total_connections` is

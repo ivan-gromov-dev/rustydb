@@ -55,6 +55,17 @@ pub(crate) fn frame_from_output_for_protocol(
                 })
                 .collect(),
         ),
+        CommandOutput::HashScan { cursor, entries } => RespFrame::Array(vec![
+            RespFrame::BulkString(cursor.to_string().into_bytes()),
+            RespFrame::Array(
+                entries
+                    .into_iter()
+                    .flat_map(|(field, value)| {
+                        [RespFrame::BulkString(field), RespFrame::BulkString(value)]
+                    })
+                    .collect(),
+            ),
+        ]),
         CommandOutput::Scan { cursor, keys } => RespFrame::Array(vec![
             RespFrame::BulkString(cursor.to_string().into_bytes()),
             RespFrame::Array(keys.into_iter().map(RespFrame::BulkString).collect()),

@@ -90,3 +90,83 @@ fn hash_commands_reject_wrong_types_without_mutation() {
     );
     assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
 }
+
+#[test]
+fn hash_numeric_mutations_validate_before_mutation_and_preserve_ttl() {
+    let mut database = Database::new();
+    database
+        .hash_set(
+            "hash",
+            vec![
+                (b"integer".to_vec(), i64::MAX.to_string().into_bytes()),
+                (b"float".to_vec(), b"1.5".to_vec()),
+                (b"invalid".to_vec(), b"nope".to_vec()),
+            ],
+        )
+        .unwrap();
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("hash", expires_at));
+    assert_eq!(
+        database.hash_increment_by("hash", b"integer".to_vec(), 1),
+        Err(StoreError::IntegerOverflow)
+    );
+    assert_eq!(
+        database.hash_increment_by("hash", b"invalid".to_vec(), 1),
+        Err(StoreError::ValueIsNotInteger)
+    );
+    assert_eq!(
+        database.hash_increment_by_float("hash", b"float".to_vec(), 0.25),
+        Ok(1.75)
+    );
+    assert_eq!(
+        database.hash_increment_by_float("hash", b"invalid".to_vec(), 1.0),
+        Err(StoreError::ValueIsNotFloat)
+    );
+    assert_eq!(database.expiration("hash"), Some(expires_at));
+    assert_eq!(
+        database.hash_get("hash", "integer"),
+        Ok(Some(i64::MAX.to_string().into_bytes()))
+    );
+}
+
+#[test]
+fn hash_keys_values_and_scan_follow_sorted_field_order() {
+    let mut database = Database::new();
+    database
+        .hash_set(
+            "hash",
+            vec![
+                (b"z:2".to_vec(), b"last".to_vec()),
+                (b"a:1".to_vec(), b"first".to_vec()),
+                (b"m:1".to_vec(), b"middle".to_vec()),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        database.hash_keys("hash"),
+        Ok(vec![b"a:1".to_vec(), b"m:1".to_vec(), b"z:2".to_vec()])
+    );
+    assert_eq!(
+        database.hash_values("hash"),
+        Ok(vec![
+            b"first".to_vec(),
+            b"middle".to_vec(),
+            b"last".to_vec()
+        ])
+    );
+    assert_eq!(
+        database.hash_scan("hash", 0, Some(b"*:1"), 2),
+        Ok((
+            2,
+            vec![
+                (b"a:1".to_vec(), b"first".to_vec()),
+                (b"m:1".to_vec(), b"middle".to_vec())
+            ]
+        ))
+    );
+    assert_eq!(
+        database.hash_scan("hash", 2, Some(b"*:1"), 2),
+        Ok((0, Vec::new()))
+    );
+    assert_eq!(database.hash_scan("hash", 99, None, 2), Ok((0, Vec::new())));
+}

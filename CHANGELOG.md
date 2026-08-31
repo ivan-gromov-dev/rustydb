@@ -7,6 +7,16 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Binary-safe hashes through `HSET`, `HSETNX`, `HGET`, `HMGET`, `HGETALL`,
+  `HDEL`, `HEXISTS`, `HLEN`, `HKEYS`, and `HVALS`, with deterministic
+  field-order output and TTL preservation while fields remain.
+- Hash numeric updates through `HINCRBY` and `HINCRBYFLOAT`, including integer
+  overflow, invalid-number, and non-finite-result validation before mutation.
+- Deterministic hash iteration through `HSCAN MATCH/COUNT`, plus hash support in
+  RESP2, RESP3, snapshots, AOF replay, and AOF rewriting.
+
 ## [0.10.0] - 2026-08-27
 
 ### Added

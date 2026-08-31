@@ -834,6 +834,76 @@ fn parses_hash_commands_and_validates_arity() {
 }
 
 #[test]
+fn parses_hash_numeric_and_scan_commands() {
+    assert_eq!(
+        Command::from_args(&["HINCRBY", "hash", "count", "-2"]),
+        Ok(Command::HIncrementBy {
+            key: b"hash".to_vec(),
+            field: b"count".to_vec(),
+            amount: -2
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["HINCRBYFLOAT", "hash", "score", "1.5"]),
+        Ok(Command::HIncrementByFloat {
+            key: b"hash".to_vec(),
+            field: b"score".to_vec(),
+            amount: 1.5
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["HSCAN", "hash", "2", "COUNT", "5", "MATCH", "user:*"]),
+        Ok(Command::HScan {
+            key: b"hash".to_vec(),
+            cursor: 2,
+            pattern: Some(b"user:*".to_vec()),
+            count: 5
+        })
+    );
+    for command in [
+        "HINCRBY hash field nope",
+        "HINCRBYFLOAT hash field inf",
+        "HSCAN hash",
+        "HSCAN hash 0 COUNT 0",
+        "HSCAN hash 0 TYPE string",
+    ] {
+        assert!(Command::parse(command).is_err(), "accepted {command}");
+    }
+}
+
+#[test]
+fn hash_numeric_mutations_have_replayable_aof_arguments() {
+    assert_eq!(
+        Command::HIncrementBy {
+            key: b"hash".to_vec(),
+            field: b"count".to_vec(),
+            amount: -2
+        }
+        .aof_arguments(),
+        Some(vec![
+            b"HINCRBY".to_vec(),
+            b"hash".to_vec(),
+            b"count".to_vec(),
+            b"-2".to_vec()
+        ])
+    );
+    assert_eq!(
+        Command::HIncrementByFloat {
+            key: b"hash".to_vec(),
+            field: b"score".to_vec(),
+            amount: 1.5
+        }
+        .aof_arguments(),
+        Some(vec![
+            b"HINCRBYFLOAT".to_vec(),
+            b"hash".to_vec(),
+            b"score".to_vec(),
+            b"1.5".to_vec()
+        ])
+    );
+}
+
+#[test]
 fn set_collection_commands_validate_arguments() {
     for input in [
         "SADD",

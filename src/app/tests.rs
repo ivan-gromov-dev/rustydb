@@ -56,6 +56,16 @@ fn runs_hash_commands() {
 }
 
 #[test]
+fn runs_hash_numeric_and_iteration_commands() {
+    let output = run_script(
+        "HSET stats z 9 a 1\nHINCRBY stats a 2\nHINCRBYFLOAT stats score 1.5\nHKEYS stats\nHVALS stats\nHSCAN stats 0 MATCH a COUNT 2\nEXIT\n",
+    );
+    assert!(
+        output.contains("db> 2\ndb> 3\ndb> 1.5\ndb> a\nscore\nz\ndb> 3\n1.5\n9\ndb> 2\na\n3\n")
+    );
+}
+
+#[test]
 fn reports_parse_errors_and_ignores_empty_input() {
     let output = run_script("\nUNKNOWN\nEXIT\n");
 

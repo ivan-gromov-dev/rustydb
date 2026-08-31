@@ -1269,6 +1269,103 @@ impl InMemoryStore {
             .map(Option::unwrap_or_default)
     }
 
+    pub(crate) fn hash_keys(&mut self, key: impl AsRef<[u8]>) -> Result<Vec<Vec<u8>>, StoreError> {
+        Ok(self
+            .hash_entries(key)?
+            .into_iter()
+            .map(|(field, _)| field)
+            .collect())
+    }
+
+    pub(crate) fn hash_values(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        Ok(self
+            .hash_entries(key)?
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect())
+    }
+
+    pub(crate) fn hash_increment_by(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: Vec<u8>,
+        amount: i64,
+    ) -> Result<i64, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let number = match self.storage.get(key) {
+            Some(entry) => entry
+                .hash()?
+                .get(&field)
+                .map_or(Ok(0), |value| parse_integer(value))?,
+            None => 0,
+        };
+        let result = number
+            .checked_add(amount)
+            .ok_or(StoreError::IntegerOverflow)?;
+        self.ensure_capacity_for(key);
+        self.storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_hash)
+            .hash_mut()?
+            .insert(field, result.to_string().into_bytes());
+        Ok(result)
+    }
+
+    pub(crate) fn hash_increment_by_float(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: Vec<u8>,
+        amount: f64,
+    ) -> Result<f64, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let number = match self.storage.get(key) {
+            Some(entry) => entry
+                .hash()?
+                .get(&field)
+                .map_or(Ok(0.0), |value| parse_float(value))?,
+            None => 0.0,
+        };
+        if !number.is_finite() {
+            return Err(StoreError::ValueIsNotFloat);
+        }
+        let result = number + amount;
+        if !result.is_finite() {
+            return Err(StoreError::FloatIsNotFinite);
+        }
+        self.ensure_capacity_for(key);
+        self.storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_hash)
+            .hash_mut()?
+            .insert(field, result.to_string().into_bytes());
+        Ok(result)
+    }
+
+    pub(crate) fn hash_scan(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+    ) -> Result<(usize, HashEntries), StoreError> {
+        let entries = self.hash_entries(key)?;
+        if cursor >= entries.len() {
+            return Ok((0, Vec::new()));
+        }
+        let end = cursor.saturating_add(count).min(entries.len());
+        let matched = entries[cursor..end]
+            .iter()
+            .filter(|(field, _)| pattern.is_none_or(|pattern| glob::matches(pattern, field)))
+            .cloned()
+            .collect();
+        Ok((if end == entries.len() { 0 } else { end }, matched))
+    }
+
     #[cfg(test)]
     pub(crate) fn expiration(&self, key: impl AsRef<[u8]>) -> Option<Instant> {
         self.storage

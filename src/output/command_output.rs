@@ -56,6 +56,11 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  HDEL key field [field ...]\n",
     "  HEXISTS key field\n",
     "  HLEN key\n",
+    "  HKEYS key\n",
+    "  HVALS key\n",
+    "  HINCRBY key field increment\n",
+    "  HINCRBYFLOAT key field increment\n",
+    "  HSCAN key cursor [MATCH pattern] [COUNT count]\n",
     "  PING [message]\n",
     "  ECHO message\n",
     "  HELLO [2|3]\n",
@@ -97,6 +102,10 @@ pub(crate) enum CommandOutput {
     Nil,
     KeyList(Vec<Vec<u8>>),
     HashEntries(Vec<(Vec<u8>, Vec<u8>)>),
+    HashScan {
+        cursor: usize,
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
+    },
     Scan {
         cursor: usize,
         keys: Vec<Vec<u8>>,
@@ -161,6 +170,16 @@ impl CommandOutput {
             }
             Self::HashEntries(entries) if entries.is_empty() => writeln!(writer, "(nil)"),
             Self::HashEntries(entries) => {
+                for (field, value) in entries {
+                    writer.write_all(field)?;
+                    writer.write_all(b"\n")?;
+                    writer.write_all(value)?;
+                    writer.write_all(b"\n")?;
+                }
+                Ok(())
+            }
+            Self::HashScan { cursor, entries } => {
+                writeln!(writer, "{cursor}")?;
                 for (field, value) in entries {
                     writer.write_all(field)?;
                     writer.write_all(b"\n")?;

@@ -372,6 +372,35 @@ pub(crate) fn execute_with_snapshot(
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::HKeys { key } => match store.hash_keys(&key) {
+            Ok(fields) => CommandOutput::KeyList(fields),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HVals { key } => match store.hash_values(&key) {
+            Ok(values) => CommandOutput::KeyList(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HIncrementBy { key, field, amount } => {
+            match store.hash_increment_by(&key, field, amount) {
+                Ok(value) => CommandOutput::Integer(value),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::HIncrementByFloat { key, field, amount } => {
+            match store.hash_increment_by_float(&key, field, amount) {
+                Ok(value) => CommandOutput::Float(value),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::HScan {
+            key,
+            cursor,
+            pattern,
+            count,
+        } => match store.hash_scan(&key, cursor, pattern.as_deref(), count) {
+            Ok((cursor, entries)) => CommandOutput::HashScan { cursor, entries },
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::Ping { message: None } => CommandOutput::Pong,
 

@@ -261,6 +261,28 @@ pub(crate) enum Command {
     HLen {
         key: Vec<u8>,
     },
+    HKeys {
+        key: Vec<u8>,
+    },
+    HVals {
+        key: Vec<u8>,
+    },
+    HIncrementBy {
+        key: Vec<u8>,
+        field: Vec<u8>,
+        amount: i64,
+    },
+    HIncrementByFloat {
+        key: Vec<u8>,
+        field: Vec<u8>,
+        amount: f64,
+    },
+    HScan {
+        key: Vec<u8>,
+        cursor: usize,
+        pattern: Option<Vec<u8>>,
+        count: usize,
+    },
     Ping {
         message: Option<Vec<u8>>,
     },
@@ -369,6 +391,11 @@ impl Command {
             Self::HDel { .. } => "HDEL",
             Self::HExists { .. } => "HEXISTS",
             Self::HLen { .. } => "HLEN",
+            Self::HKeys { .. } => "HKEYS",
+            Self::HVals { .. } => "HVALS",
+            Self::HIncrementBy { .. } => "HINCRBY",
+            Self::HIncrementByFloat { .. } => "HINCRBYFLOAT",
+            Self::HScan { .. } => "HSCAN",
             Self::Ping { .. } => "PING",
             Self::Echo { .. } => "ECHO",
             Self::Hello { .. } => "HELLO",
@@ -565,6 +592,18 @@ impl Command {
                 values.extend(fields.iter().cloned());
                 values
             }
+            Self::HIncrementBy { key, field, amount } => vec![
+                b"HINCRBY".to_vec(),
+                key.clone(),
+                field.clone(),
+                number(*amount),
+            ],
+            Self::HIncrementByFloat { key, field, amount } => vec![
+                b"HINCRBYFLOAT".to_vec(),
+                key.clone(),
+                field.clone(),
+                amount.to_string().into_bytes(),
+            ],
             Self::Clear => vec![b"CLEAR".to_vec()],
             Self::FlushDb => vec![b"FLUSHDB".to_vec()],
             Self::FlushAll => vec![b"FLUSHALL".to_vec()],
@@ -589,6 +628,9 @@ impl Command {
             | Self::HGetAll { .. }
             | Self::HExists { .. }
             | Self::HLen { .. }
+            | Self::HKeys { .. }
+            | Self::HVals { .. }
+            | Self::HScan { .. }
             | Self::Ping { .. }
             | Self::Echo { .. }
             | Self::Hello { .. }
