@@ -1374,3 +1374,33 @@ fn parses_and_persists_conditional_variadic_pushes() {
         ))
     ));
 }
+
+#[test]
+fn parses_list_index_and_set_with_replayable_binary_values() {
+    assert_eq!(
+        Command::parse("LINDEX list -1"),
+        Ok(Command::LIndex {
+            key: b"list".to_vec(),
+            index: -1,
+        })
+    );
+    let command = Command::from_owned_bytes(vec![
+        b"LSET".to_vec(),
+        b"list".to_vec(),
+        b"-2".to_vec(),
+        b"binary\0value".to_vec(),
+    ])
+    .unwrap();
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![
+            b"LSET".to_vec(),
+            b"list".to_vec(),
+            b"-2".to_vec(),
+            b"binary\0value".to_vec(),
+        ])
+    );
+    for input in ["LINDEX list", "LINDEX list nope", "LSET list 0"] {
+        assert!(Command::parse(input).is_err());
+    }
+}

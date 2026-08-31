@@ -401,3 +401,60 @@ fn conditional_pushes_reject_non_lists_without_mutation() {
     );
     assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
 }
+
+#[test]
+fn list_index_supports_negative_indexes_and_missing_boundaries() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"zero".to_vec(), b"one".to_vec(), b"two".to_vec()],
+    );
+    assert_eq!(database.list_index("list", 0), Ok(Some(b"zero".to_vec())));
+    assert_eq!(database.list_index("list", -1), Ok(Some(b"two".to_vec())));
+    assert_eq!(database.list_index("list", -3), Ok(Some(b"zero".to_vec())));
+    assert_eq!(database.list_index("list", 3), Ok(None));
+    assert_eq!(database.list_index("list", -4), Ok(None));
+    assert_eq!(database.list_index("missing", 0), Ok(None));
+}
+
+#[test]
+fn list_set_validates_before_mutation_and_preserves_ttl() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"zero".to_vec(), b"one".to_vec(), b"two".to_vec()],
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(database.list_set("list", -2, b"changed".to_vec()), Ok(()));
+    assert_eq!(
+        database.list_index("list", 1),
+        Ok(Some(b"changed".to_vec()))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+
+    assert_eq!(
+        database.list_set("list", 3, b"invalid".to_vec()),
+        Err(StoreError::IndexOutOfRange)
+    );
+    assert_eq!(
+        database.list_index("list", 1),
+        Ok(Some(b"changed".to_vec()))
+    );
+    assert_eq!(
+        database.list_set("missing", 0, b"invalid".to_vec()),
+        Err(StoreError::NoSuchKey)
+    );
+}
+
+#[test]
+fn list_index_and_set_reject_wrong_types_without_mutation() {
+    let mut database = Database::new();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    assert_eq!(database.list_index("string", 0), Err(StoreError::WrongType));
+    assert_eq!(
+        database.list_set("string", 0, b"changed".to_vec()),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
+}

@@ -1399,3 +1399,41 @@ fn execute_conditional_pushes_return_lengths() {
         Response::Integer(3)
     );
 }
+
+#[test]
+fn execute_list_index_and_set_map_values_and_errors() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"one".to_vec(), b"two".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::LIndex {
+                key: b"list".to_vec(),
+                index: -1,
+            },
+            &mut database,
+        ),
+        Response::Value(b"two".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::LSet {
+                key: b"list".to_vec(),
+                index: 0,
+                value: b"changed".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    assert_eq!(
+        execute(
+            Command::LSet {
+                key: b"missing".to_vec(),
+                index: 0,
+                value: b"changed".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Error("no such key".to_owned())
+    );
+}

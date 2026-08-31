@@ -34,6 +34,8 @@ pub(crate) enum StoreError {
     ValueIsNotFloat,
     FloatIsNotFinite,
     WrongType,
+    NoSuchKey,
+    IndexOutOfRange,
     ExpirationOutOfRange,
     SameSourceDestination,
 }
@@ -63,6 +65,8 @@ impl fmt::Display for StoreError {
                     "operation against a key holding the wrong kind of value"
                 )
             }
+            Self::NoSuchKey => write!(formatter, "no such key"),
+            Self::IndexOutOfRange => write!(formatter, "index out of range"),
             Self::ExpirationOutOfRange => write!(formatter, "expiration is out of range"),
             Self::SameSourceDestination => {
                 write!(formatter, "source and destination objects are the same")
@@ -1021,6 +1025,47 @@ impl InMemoryStore {
             Some(entry) => Ok(entry.list()?.len()),
             None => Ok(0),
         }
+    }
+
+    pub(crate) fn list_index(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        index: i64,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(None);
+        };
+        let list = entry.list()?;
+        let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+        let index = normalize_index(index, length);
+        let Ok(index) = usize::try_from(index) else {
+            return Ok(None);
+        };
+        Ok(list.get(index).cloned())
+    }
+
+    pub(crate) fn list_set(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        index: i64,
+        value: Vec<u8>,
+    ) -> Result<(), StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Err(StoreError::NoSuchKey);
+        };
+        let list = entry.list_mut()?;
+        let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+        let index = normalize_index(index, length);
+        let index = usize::try_from(index).map_err(|_| StoreError::IndexOutOfRange)?;
+        let Some(element) = list.get_mut(index) else {
+            return Err(StoreError::IndexOutOfRange);
+        };
+        *element = value;
+        Ok(())
     }
 
     pub(crate) fn pop_left(

@@ -217,6 +217,15 @@ pub(crate) enum Command {
     LLen {
         key: Vec<u8>,
     },
+    LIndex {
+        key: Vec<u8>,
+        index: i64,
+    },
+    LSet {
+        key: Vec<u8>,
+        index: i64,
+        value: Vec<u8>,
+    },
     LPop {
         key: Vec<u8>,
     },
@@ -409,6 +418,8 @@ impl Command {
             Self::RPush { .. } | Self::RPushMany { .. } => "RPUSH",
             Self::RPushX { .. } => "RPUSHX",
             Self::LLen { .. } => "LLEN",
+            Self::LIndex { .. } => "LINDEX",
+            Self::LSet { .. } => "LSET",
             Self::LPop { .. } | Self::LPopCount { .. } => "LPOP",
             Self::RPop { .. } | Self::RPopCount { .. } => "RPOP",
             Self::LRange { .. } => "LRANGE",
@@ -614,6 +625,9 @@ impl Command {
             Self::RPopCount { key, count } => {
                 vec![b"RPOP".to_vec(), key.clone(), offset(*count)]
             }
+            Self::LSet { key, index, value } => {
+                vec![b"LSET".to_vec(), key.clone(), number(*index), value.clone()]
+            }
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
             Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
@@ -665,6 +679,7 @@ impl Command {
             | Self::StrLen { .. }
             | Self::GetRange { .. }
             | Self::LLen { .. }
+            | Self::LIndex { .. }
             | Self::LRange { .. }
             | Self::SIsMember { .. }
             | Self::SMembers { .. }

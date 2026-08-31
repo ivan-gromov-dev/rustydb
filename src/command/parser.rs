@@ -26,7 +26,7 @@ impl Command {
             "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "LPUSHX" | "RPUSH" | "RPUSHX" | "SADD"
             | "SREM" | "SISMEMBER" => Some(2),
             "PING" | "ECHO" => Some(1),
-            "SETRANGE" => Some(3),
+            "SETRANGE" | "LSET" => Some(3),
             _ => None,
         };
         let args = match tail_after {
@@ -217,6 +217,18 @@ impl Command {
             "LLEN" => Ok(Self::LLen {
                 key: one(args, "LLEN key")?,
             }),
+            "LINDEX" => {
+                let (key, index) = key_i64(args, "LINDEX key index")?;
+                Ok(Self::LIndex { key, index })
+            }
+            "LSET" => {
+                exact(args, 4, "LSET key index value")?;
+                Ok(Self::LSet {
+                    key: owned(args[1]),
+                    index: parse_i64(args[2])?,
+                    value: owned(args[3]),
+                })
+            }
             "LPOP" => parse_pop(args, false),
             "RPOP" => parse_pop(args, true),
             "LRANGE" => {

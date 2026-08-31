@@ -43,6 +43,8 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  RPUSHX key value [value ...]\n",
     "  LRANGE key start end\n",
     "  LLEN key\n",
+    "  LINDEX key index\n",
+    "  LSET key index value\n",
     "  LPOP key [count]\n",
     "  RPOP key [count]\n",
     "  SADD key member [member ...]\n",

@@ -249,6 +249,8 @@ clients receive the corresponding protocol-specific typed value.
 | `RPUSH key value [value ...]` | Append one or more values to a list, creating it if necessary | New list length |
 | `RPUSHX key value [value ...]` | Append values only when the list already exists | New list length, or `0` for a missing key |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
+| `LINDEX key index` | Read a list value by zero-based index; negative indexes count from the end | Value or `(nil)` |
+| `LSET key index value` | Replace a list value by zero-based index; negative indexes count from the end | `OK` or an error |
 | `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
 | `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
