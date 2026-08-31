@@ -20,31 +20,6 @@ moving on.
   commands.
 - Document intentional differences from Redis.
 
-## `0.12` — Complete lists and sets
-
-**Goal:** make the existing collection types sufficient for queues, workers,
-tags, membership, and set algebra.
-
-### Work
-
-- Support multiple values in `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `SADD`, and
-  `SREM` where the Redis command accepts them.
-- Add `LPUSHX`, `RPUSHX`, `LINDEX`, `LSET`, `LINSERT`, `LTRIM`, `LREM`,
-  `LPOS`, `LMOVE`, and `RPOPLPUSH`.
-- Add blocking `BLPOP`, `BRPOP`, and `BLMOVE` with per-client timeouts and
-  wakeups after relevant mutations.
-- Add `SMISMEMBER`, `SPOP`, `SRANDMEMBER`, `SMOVE`, `SDIFF`, `SINTER`,
-  `SUNION`, their `STORE` variants, and `SSCAN`.
-- Define deterministic tie-breaking for results whose order Redis leaves
-  unspecified.
-
-### Done when
-
-- Applications can implement FIFO/LIFO worker queues and set-based tag or
-  permission workflows without polling or client-side set algebra.
-- Blocking operations handle disconnects, expiration, timeouts, and competing
-  consumers without losing or duplicating values.
-
 ## `0.13` — Sorted sets
 
 **Goal:** support leaderboards, rankings, priority queues, and delayed work.

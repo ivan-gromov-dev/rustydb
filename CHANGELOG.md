@@ -7,16 +7,22 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-31
+
 ### Added
 
-- Atomic set-member moves through `SMOVE`, including TTL preservation and
-  validation before mutation.
-- Deterministic set algebra through `SDIFF`, `SINTER`, and `SUNION`, atomic
-  destination replacement through their `STORE` variants, and sorted cursor
-  iteration through `SSCAN MATCH/COUNT`.
+- Complete list operations through variadic `LPUSH`, `RPUSH`, `LPOP`, and
+  `RPOP`; conditional `LPUSHX` and `RPUSHX`; and `LINDEX`, `LSET`, `LINSERT`,
+  `LTRIM`, `LREM`, `LPOS`, `LMOVE`, and `RPOPLPUSH`.
 - Blocking queue consumption through `BLPOP`, `BRPOP`, and `BLMOVE`, with
   fractional per-client timeouts, mutation wakeups, disconnect cancellation,
   and atomic competition between consumers.
+- Extended set operations through variadic `SADD` and `SREM`, `SMISMEMBER`,
+  deterministic `SPOP` and `SRANDMEMBER`, and atomic `SMOVE` with TTL
+  preservation and validation before mutation.
+- Deterministic set algebra through `SDIFF`, `SINTER`, and `SUNION`, atomic
+  destination replacement through their `STORE` variants, and sorted cursor
+  iteration through `SSCAN MATCH/COUNT`.
 
 ## [0.11.0] - 2026-08-31
 
@@ -274,7 +280,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.8.0...v0.9.0
