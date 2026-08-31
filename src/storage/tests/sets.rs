@@ -117,3 +117,24 @@ fn set_commands_reject_other_types_without_mutation() {
         Ok(Some(vec!["value".to_owned().into()]))
     );
 }
+
+#[test]
+fn variadic_set_mutations_count_distinct_changes_and_remove_empty_key() {
+    let mut database = Database::new();
+    assert_eq!(
+        database.set_add_many(
+            "set",
+            vec![b"one".to_vec(), b"two".to_vec(), b"one".to_vec()]
+        ),
+        Ok(2)
+    );
+    assert_eq!(
+        database.set_remove_many(
+            "set",
+            &[b"one".to_vec(), b"one".to_vec(), b"missing".to_vec()]
+        ),
+        Ok(1)
+    );
+    assert_eq!(database.set_remove_many("set", &[b"two".to_vec()]), Ok(1));
+    assert!(!database.exists("set"));
+}

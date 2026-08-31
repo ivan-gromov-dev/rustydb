@@ -284,3 +284,28 @@ fn list_range_does_not_change_a_lists_expiration() {
     assert_eq!(database.list_range("key", 0, 1).unwrap().len(), 2);
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
+
+#[test]
+fn variadic_pushes_follow_redis_argument_order_and_preserve_ttl() {
+    let mut database = Database::new();
+    assert_eq!(
+        database.push_left_many("list", vec![b"one".to_vec(), b"two".to_vec()]),
+        Ok(2)
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(
+        database.push_right_many("list", vec![b"three".to_vec(), b"four".to_vec()]),
+        Ok(4)
+    );
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![
+            b"two".to_vec(),
+            b"one".to_vec(),
+            b"three".to_vec(),
+            b"four".to_vec()
+        ]))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+}

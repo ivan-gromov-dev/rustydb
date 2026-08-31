@@ -244,14 +244,14 @@ clients receive the corresponding protocol-specific typed value.
 | `STRLEN key` | Count bytes in a string | Byte count |
 | `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
 | `SETRANGE key offset value` | Replace bytes starting at an offset | New byte length |
-| `LPUSH key value` | Prepend a value to a list, creating it if necessary | New list length |
-| `RPUSH key value` | Append a value to a list, creating it if necessary | New list length |
+| `LPUSH key value [value ...]` | Prepend one or more values to a list, creating it if necessary | New list length |
+| `RPUSH key value [value ...]` | Append one or more values to a list, creating it if necessary | New list length |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
 | `LPOP key` | Remove and return the first list value | Value or `(nil)` |
 | `RPOP key` | Remove and return the last list value | Value or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
-| `SADD key member` | Add a member to a set, creating it if necessary | `1` if added, otherwise `0` |
-| `SREM key member` | Remove a member from a set | `1` if removed, otherwise `0` |
+| `SADD key member [member ...]` | Add one or more members to a set, creating it if necessary | Number of members added |
+| `SREM key member [member ...]` | Remove one or more members from a set | Number of members removed |
 | `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
@@ -323,7 +323,9 @@ so an element may contain spaces. RESP clients provide the element as one
 bulk-string argument.
 Pushing to an existing list preserves its expiration. List commands applied to
 a string, and string or numeric commands applied to a list, return a wrong-type
-error without changing the value or its expiration. Popping from a non-empty
+error without changing the value or its expiration. For multi-value pushes,
+`LPUSH` processes arguments from left to right, so the last value becomes the
+list head; `RPUSH` preserves argument order. Popping from a non-empty
 list preserves its expiration while values remain; removing the final value
 also removes the key.
 

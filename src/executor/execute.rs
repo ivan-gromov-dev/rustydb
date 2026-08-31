@@ -285,8 +285,16 @@ pub(crate) fn execute_with_snapshot(
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::LPushMany { key, values } => match store.push_left_many(&key, values) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::RPush { key, value } => match store.push_right(&key, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPushMany { key, values } => match store.push_right_many(&key, values) {
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
@@ -317,9 +325,17 @@ pub(crate) fn execute_with_snapshot(
             Ok(added) => CommandOutput::Integer(i64::from(added)),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::SAddMany { key, members } => match store.set_add_many(&key, members) {
+            Ok(added) => CommandOutput::Integer(added as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::SRem { key, member } => match store.set_remove(&key, &member) {
             Ok(removed) => CommandOutput::Integer(i64::from(removed)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SRemMany { key, members } => match store.set_remove_many(&key, &members) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 

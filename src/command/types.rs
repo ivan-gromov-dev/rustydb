@@ -194,9 +194,17 @@ pub(crate) enum Command {
         key: Vec<u8>,
         value: Vec<u8>,
     },
+    LPushMany {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
     RPush {
         key: Vec<u8>,
         value: Vec<u8>,
+    },
+    RPushMany {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
     },
     LLen {
         key: Vec<u8>,
@@ -216,9 +224,17 @@ pub(crate) enum Command {
         key: Vec<u8>,
         member: Vec<u8>,
     },
+    SAddMany {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
     SRem {
         key: Vec<u8>,
         member: Vec<u8>,
+    },
+    SRemMany {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
     },
     SIsMember {
         key: Vec<u8>,
@@ -372,14 +388,14 @@ impl Command {
             Self::StrLen { .. } => "STRLEN",
             Self::GetRange { .. } => "GETRANGE",
             Self::SetRange { .. } => "SETRANGE",
-            Self::LPush { .. } => "LPUSH",
-            Self::RPush { .. } => "RPUSH",
+            Self::LPush { .. } | Self::LPushMany { .. } => "LPUSH",
+            Self::RPush { .. } | Self::RPushMany { .. } => "RPUSH",
             Self::LLen { .. } => "LLEN",
             Self::LPop { .. } => "LPOP",
             Self::RPop { .. } => "RPOP",
             Self::LRange { .. } => "LRANGE",
-            Self::SAdd { .. } => "SADD",
-            Self::SRem { .. } => "SREM",
+            Self::SAdd { .. } | Self::SAddMany { .. } => "SADD",
+            Self::SRem { .. } | Self::SRemMany { .. } => "SREM",
             Self::SIsMember { .. } => "SISMEMBER",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
@@ -567,11 +583,15 @@ impl Command {
                 value.clone(),
             ],
             Self::LPush { key, value } => vec![b"LPUSH".to_vec(), key.clone(), value.clone()],
+            Self::LPushMany { key, values } => with_values(b"LPUSH", key, values),
             Self::RPush { key, value } => vec![b"RPUSH".to_vec(), key.clone(), value.clone()],
+            Self::RPushMany { key, values } => with_values(b"RPUSH", key, values),
             Self::LPop { key } => vec![b"LPOP".to_vec(), key.clone()],
             Self::RPop { key } => vec![b"RPOP".to_vec(), key.clone()],
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
+            Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
+            Self::SRemMany { key, members } => with_values(b"SREM", key, members),
             Self::HSet { key, entries } => {
                 let mut values = vec![b"HSET".to_vec(), key.clone()];
                 for (field, value) in entries {
@@ -662,6 +682,14 @@ fn with_keys(name: &[u8], keys: &[Vec<u8>]) -> Vec<Vec<u8>> {
     let mut arguments = Vec::with_capacity(keys.len() + 1);
     arguments.push(name.to_vec());
     arguments.extend(keys.iter().cloned());
+    arguments
+}
+
+fn with_values(name: &[u8], key: &[u8], values: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut arguments = Vec::with_capacity(values.len() + 2);
+    arguments.push(name.to_vec());
+    arguments.push(key.to_vec());
+    arguments.extend(values.iter().cloned());
     arguments
 }
 

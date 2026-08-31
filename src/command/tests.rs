@@ -1276,3 +1276,43 @@ fn expiration_conditions_reject_unknown_or_repeated_options() {
         ));
     }
 }
+
+#[test]
+fn parses_and_persists_variadic_collection_mutations() {
+    let lpush = Command::from_owned_bytes(vec![
+        b"LPUSH".to_vec(),
+        b"list".to_vec(),
+        b"one".to_vec(),
+        b"two".to_vec(),
+    ])
+    .unwrap();
+    assert_eq!(
+        lpush,
+        Command::LPushMany {
+            key: b"list".to_vec(),
+            values: vec![b"one".to_vec(), b"two".to_vec()],
+        }
+    );
+    assert_eq!(
+        lpush.aof_arguments(),
+        Some(vec![
+            b"LPUSH".to_vec(),
+            b"list".to_vec(),
+            b"one".to_vec(),
+            b"two".to_vec()
+        ])
+    );
+
+    assert_eq!(
+        Command::from_owned_bytes(vec![
+            b"SREM".to_vec(),
+            b"set".to_vec(),
+            b"one".to_vec(),
+            b"two".to_vec(),
+        ]),
+        Ok(Command::SRemMany {
+            key: b"set".to_vec(),
+            members: vec![b"one".to_vec(), b"two".to_vec()],
+        })
+    );
+}

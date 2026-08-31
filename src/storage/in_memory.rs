@@ -926,6 +926,25 @@ impl InMemoryStore {
         Ok(list.len())
     }
 
+    pub(crate) fn push_left_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
+        let list = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+        for value in values {
+            list.push_front(value);
+        }
+        Ok(list.len())
+    }
+
     pub(crate) fn push_right(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -942,6 +961,23 @@ impl InMemoryStore {
             .list_mut()?;
 
         list.push_back(value);
+        Ok(list.len())
+    }
+
+    pub(crate) fn push_right_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
+        let list = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+        list.extend(values);
         Ok(list.len())
     }
 
@@ -1060,6 +1096,24 @@ impl InMemoryStore {
             .map(|set| set.insert(member))
     }
 
+    pub(crate) fn set_add_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
+        let set = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_set)
+            .set_mut()?;
+        Ok(members
+            .into_iter()
+            .fold(0, |count, member| count + usize::from(set.insert(member))))
+    }
+
     pub(crate) fn set_remove(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -1085,6 +1139,32 @@ impl InMemoryStore {
                 self.reclamation_metrics.deletions.saturating_add(1);
         }
 
+        Ok(removed)
+    }
+
+    pub(crate) fn set_remove_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: &[Vec<u8>],
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (removed, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(0);
+            };
+            let set = entry.set_mut()?;
+            let removed = members
+                .iter()
+                .filter(|member| set.remove(member.as_slice()))
+                .count();
+            (removed, set.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
         Ok(removed)
     }
 

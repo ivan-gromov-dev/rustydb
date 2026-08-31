@@ -186,18 +186,26 @@ impl Command {
                 })
             }
             "LPUSH" => {
-                exact(args, 3, "LPUSH key value")?;
-                Ok(Self::LPush {
-                    key: owned(args[1]),
-                    value: owned(args[2]),
-                })
+                let (key, mut values) = collection_values(args, "LPUSH key value [value ...]")?;
+                if values.len() == 1 {
+                    Ok(Self::LPush {
+                        key,
+                        value: values.remove(0),
+                    })
+                } else {
+                    Ok(Self::LPushMany { key, values })
+                }
             }
             "RPUSH" => {
-                exact(args, 3, "RPUSH key value")?;
-                Ok(Self::RPush {
-                    key: owned(args[1]),
-                    value: owned(args[2]),
-                })
+                let (key, mut values) = collection_values(args, "RPUSH key value [value ...]")?;
+                if values.len() == 1 {
+                    Ok(Self::RPush {
+                        key,
+                        value: values.remove(0),
+                    })
+                } else {
+                    Ok(Self::RPushMany { key, values })
+                }
             }
             "LLEN" => Ok(Self::LLen {
                 key: one(args, "LLEN key")?,
@@ -213,18 +221,26 @@ impl Command {
                 Ok(Self::LRange { key, start, end })
             }
             "SADD" => {
-                exact(args, 3, "SADD key member")?;
-                Ok(Self::SAdd {
-                    key: owned(args[1]),
-                    member: owned(args[2]),
-                })
+                let (key, mut members) = collection_values(args, "SADD key member [member ...]")?;
+                if members.len() == 1 {
+                    Ok(Self::SAdd {
+                        key,
+                        member: members.remove(0),
+                    })
+                } else {
+                    Ok(Self::SAddMany { key, members })
+                }
             }
             "SREM" => {
-                exact(args, 3, "SREM key member")?;
-                Ok(Self::SRem {
-                    key: owned(args[1]),
-                    member: owned(args[2]),
-                })
+                let (key, mut members) = collection_values(args, "SREM key member [member ...]")?;
+                if members.len() == 1 {
+                    Ok(Self::SRem {
+                        key,
+                        member: members.remove(0),
+                    })
+                } else {
+                    Ok(Self::SRemMany { key, members })
+                }
             }
             "SISMEMBER" => {
                 exact(args, 3, "SISMEMBER key member")?;
@@ -403,6 +419,19 @@ fn many(args: &[&[u8]], usage: &'static str) -> Result<Vec<Vec<u8>>, CommandErro
         return Err(CommandError::InvalidArguments(usage));
     }
     Ok(args[1..].iter().map(|value| owned(value)).collect())
+}
+
+fn collection_values(
+    args: &[&[u8]],
+    usage: &'static str,
+) -> Result<(Vec<u8>, Vec<Vec<u8>>), CommandError> {
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok((
+        owned(args[1]),
+        args[2..].iter().map(|value| owned(value)).collect(),
+    ))
 }
 
 fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
