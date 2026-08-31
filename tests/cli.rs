@@ -118,6 +118,22 @@ fn hashes_survive_aof_replay_and_rewrite() {
 }
 
 #[test]
+fn set_algebra_store_survives_aof_replay() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "SADD first a\nSADD first b\nSADD second b\nSADD second c\nSUNIONSTORE result first second\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+
+    let second = run_cli_with_aof(&aof, "SMEMBERS result\nEXIT\n");
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> a\nb\nc\n"), "{stdout}");
+}
+
+#[test]
 fn aof_discards_a_truncated_final_record_and_remains_appendable() {
     let directory = TestDirectory::new();
     let aof = directory.aof();
@@ -319,7 +335,7 @@ fn executes_list_commands() {
 #[test]
 fn executes_set_collection_commands() {
     let output = run_cli(
-        "SADD tags zeta\nSADD tags alpha value\nSADD tags alpha value\nSISMEMBER tags alpha value\nSCARD tags\nSMEMBERS tags\nSREM tags alpha value\nSCARD tags\nEXIT\n",
+        "SADD tags zeta\nSADD tags alpha value\nSADD tags alpha value\nSISMEMBER tags alpha value\nSCARD tags\nSMEMBERS tags\nSREM tags alpha value\nSCARD tags\nSMOVE tags archive zeta\nSCARD tags\nSCARD archive\nEXIT\n",
     );
 
     assert!(output.status.success());
@@ -337,6 +353,9 @@ fn executes_set_collection_commands() {
             "db> alpha value\n",
             "zeta\n",
             "db> 1\n",
+            "db> 1\n",
+            "db> 1\n",
+            "db> 0\n",
             "db> 1\n",
             "db> Bye!\n",
         )

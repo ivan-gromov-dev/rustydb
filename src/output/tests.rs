@@ -34,6 +34,12 @@ fn renders_scalar_outputs() {
 }
 
 #[test]
+fn renders_integer_lists() {
+    assert_eq!(render(CommandOutput::IntegerList(vec![3, 1])), "3\n1\n");
+    assert_eq!(render(CommandOutput::IntegerList(Vec::new())), "(nil)\n");
+}
+
+#[test]
 fn renders_binary_values_without_utf8_conversion() {
     let mut bytes = Vec::new();
     CommandOutput::Value(b"a\0\xff".to_vec())

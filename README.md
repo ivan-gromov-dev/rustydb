@@ -244,15 +244,39 @@ clients receive the corresponding protocol-specific typed value.
 | `STRLEN key` | Count bytes in a string | Byte count |
 | `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
 | `SETRANGE key offset value` | Replace bytes starting at an offset | New byte length |
-| `LPUSH key value` | Prepend a value to a list, creating it if necessary | New list length |
-| `RPUSH key value` | Append a value to a list, creating it if necessary | New list length |
+| `LPUSH key value [value ...]` | Prepend one or more values to a list, creating it if necessary | New list length |
+| `LPUSHX key value [value ...]` | Prepend values only when the list already exists | New list length, or `0` for a missing key |
+| `RPUSH key value [value ...]` | Append one or more values to a list, creating it if necessary | New list length |
+| `RPUSHX key value [value ...]` | Append values only when the list already exists | New list length, or `0` for a missing key |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
-| `LPOP key` | Remove and return the first list value | Value or `(nil)` |
-| `RPOP key` | Remove and return the last list value | Value or `(nil)` |
+| `LINDEX key index` | Read a list value by zero-based index; negative indexes count from the end | Value or `(nil)` |
+| `LSET key index value` | Replace a list value by zero-based index; negative indexes count from the end | `OK` or an error |
+| `LINSERT key BEFORE\|AFTER pivot element` | Insert an element relative to the first matching pivot | New length, `0` for a missing key, or `-1` when the pivot is absent |
+| `LTRIM key start stop` | Keep only the inclusive list range | `OK` |
+| `LREM key count element` | Remove matching elements from the head, tail, or whole list according to `count` | Number removed |
+| `LPOS key element [RANK rank] [COUNT count] [MAXLEN len]` | Find matching element indexes with optional occurrence, result-count, and scan limits | Index, indexes, or `(nil)` |
+| `LMOVE source destination LEFT\|RIGHT LEFT\|RIGHT` | Atomically move one list element between selected ends | Moved value or `(nil)` |
+| `RPOPLPUSH source destination` | Atomically move the source tail to the destination head | Moved value or `(nil)` |
+| `BLPOP key [key ...] timeout` | Wait for and remove the first value from the first ready list | Key and value, or `(nil)` on timeout |
+| `BRPOP key [key ...] timeout` | Wait for and remove the last value from the first ready list | Key and value, or `(nil)` on timeout |
+| `BLMOVE source destination LEFT\|RIGHT LEFT\|RIGHT timeout` | Wait for and atomically move one list element between selected ends | Moved value or `(nil)` on timeout |
+| `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
+| `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
-| `SADD key member` | Add a member to a set, creating it if necessary | `1` if added, otherwise `0` |
-| `SREM key member` | Remove a member from a set | `1` if removed, otherwise `0` |
+| `SADD key member [member ...]` | Add one or more members to a set, creating it if necessary | Number of members added |
+| `SREM key member [member ...]` | Remove one or more members from a set | Number of members removed |
 | `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
+| `SMISMEMBER key member [member ...]` | Test multiple members in request order | One `1` or `0` per member |
+| `SPOP key [count]` | Remove one or up to `count` members in sorted binary order | Member, members, or `(nil)` |
+| `SRANDMEMBER key [count]` | Return members without removing them; negative counts allow repeats | Member, members, or `(nil)` |
+| `SMOVE source destination member` | Atomically move a member between sets | `1` if moved, otherwise `0` |
+| `SDIFF key [key ...]` | Return members of the first set absent from every later set | Members in sorted order or `(nil)` |
+| `SINTER key [key ...]` | Return members present in every set | Members in sorted order or `(nil)` |
+| `SUNION key [key ...]` | Return members present in any set | Members in sorted order or `(nil)` |
+| `SDIFFSTORE destination key [key ...]` | Store the difference, replacing destination | Stored cardinality |
+| `SINTERSTORE destination key [key ...]` | Store the intersection, replacing destination | Stored cardinality |
+| `SUNIONSTORE destination key [key ...]` | Store the union, replacing destination | Stored cardinality |
+| `SSCAN key cursor [MATCH pattern] [COUNT count]` | Deterministically inspect sorted set-member batches | Next cursor followed by members |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
@@ -323,9 +347,18 @@ so an element may contain spaces. RESP clients provide the element as one
 bulk-string argument.
 Pushing to an existing list preserves its expiration. List commands applied to
 a string, and string or numeric commands applied to a list, return a wrong-type
-error without changing the value or its expiration. Popping from a non-empty
+error without changing the value or its expiration. For multi-value pushes,
+`LPUSH` processes arguments from left to right, so the last value becomes the
+list head; `RPUSH` preserves argument order. Popping from a non-empty
 list preserves its expiration while values remain; removing the final value
 also removes the key.
+
+`BLPOP`, `BRPOP`, and `BLMOVE` are available to RESP server clients. A timeout
+of zero waits indefinitely; positive timeouts may include fractional seconds.
+Waiting does not hold the shared database lock. Relevant mutations wake all
+waiters, which compete through a new atomic attempt, so one list element is
+delivered to at most one consumer. Disconnects cancel waits, and expired lists
+are treated as missing while a client waits.
 
 `LRANGE` uses inclusive indexes. Negative indexes count backward from the end
 of the list, and indexes outside the list are clamped to its bounds. An empty
@@ -335,9 +368,17 @@ change the list or its expiration.
 Set members are unique byte strings. In the interactive CLI, `SADD`, `SREM`, and
 `SISMEMBER` accept the remainder of the command line as one member, so members
 may contain spaces. RESP clients provide the member as one bulk-string argument.
-`SMEMBERS` sorts members for deterministic output. Mutating an existing set
-preserves its expiration while members remain; removing the final member also
-removes the key. Set commands reject strings and lists without mutation.
+`SMEMBERS` sorts members for deterministic output. `SPOP` also removes members
+in sorted binary order so AOF replay selects the
+same members. `SRANDMEMBER` uses RustyDB's deterministic process-local
+pseudo-random sequence and never mutates the set.
+Set algebra results use sorted binary order. The `STORE` variants validate all
+source types before replacing the destination, clear the destination TTL, and
+remove the destination when the result is empty. `SSCAN` uses the same sorted
+order, and `COUNT` controls examined members, so `MATCH` may produce a smaller
+batch. Mutating an existing set preserves its expiration while members remain;
+removing the final member also removes the key. Set commands reject strings and
+lists without mutation.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary

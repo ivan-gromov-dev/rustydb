@@ -6,7 +6,7 @@ use crate::command::{
 use crate::output::CommandOutput;
 use crate::snapshot;
 use crate::storage::{
-    ExpirationUpdate, ExpireCondition, InMemoryStore, SetCondition, SetExpiration,
+    ExpirationUpdate, ExpireCondition, InMemoryStore, SetCondition, SetExpiration, SetOperation,
 };
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -285,8 +285,24 @@ pub(crate) fn execute_with_snapshot(
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::LPushMany { key, values } => match store.push_left_many(&key, values) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LPushX { key, values } => match store.push_left_if_exists(&key, values) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::RPush { key, value } => match store.push_right(&key, value) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPushMany { key, values } => match store.push_right_many(&key, values) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPushX { key, values } => match store.push_right_if_exists(&key, values) {
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
@@ -301,10 +317,93 @@ pub(crate) fn execute_with_snapshot(
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::LIndex { key, index } => match store.list_index(&key, index) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LSet { key, index, value } => match store.list_set(&key, index, value) {
+            Ok(()) => CommandOutput::Ok,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LInsert {
+            key,
+            position,
+            pivot,
+            value,
+        } => match store.list_insert(
+            &key,
+            matches!(position, crate::command::InsertPosition::Before),
+            &pivot,
+            value,
+        ) {
+            Ok(length) => CommandOutput::Integer(length),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LTrim { key, start, end } => match store.list_trim(&key, start, end) {
+            Ok(()) => CommandOutput::Ok,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LRem { key, count, value } => match store.list_remove(&key, count, &value) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LPos {
+            key,
+            value,
+            rank,
+            count,
+            max_len,
+        } => match store.list_positions(&key, &value, rank, count, max_len) {
+            Ok(positions) if count.is_some() => CommandOutput::IntegerList(
+                positions.into_iter().map(|value| value as i64).collect(),
+            ),
+            Ok(positions) => positions
+                .into_iter()
+                .next()
+                .map_or(CommandOutput::Nil, |value| {
+                    CommandOutput::Integer(value as i64)
+                }),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LMove {
+            source,
+            destination,
+            source_end,
+            destination_end,
+        } => match store.list_move(
+            &source,
+            &destination,
+            matches!(source_end, crate::command::ListEnd::Right),
+            matches!(destination_end, crate::command::ListEnd::Right),
+        ) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPopLPush {
+            source,
+            destination,
+        } => match store.list_move(&source, &destination, true, false) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::BLPop { .. } | Command::BRPop { .. } | Command::BLMove { .. } => {
+            CommandOutput::Error("blocking commands require server mode".to_owned())
+        }
+        Command::LPopCount { key, count } => match store.pop_left_many(&key, count) {
+            Ok(values) => CommandOutput::KeyList(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::RPop { key } => match store.pop_right(&key) {
             Ok(Some(value)) => CommandOutput::Value(value),
             Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPopCount { key, count } => match store.pop_right_many(&key, count) {
+            Ok(values) => CommandOutput::KeyList(values),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
@@ -317,14 +416,71 @@ pub(crate) fn execute_with_snapshot(
             Ok(added) => CommandOutput::Integer(i64::from(added)),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::SAddMany { key, members } => match store.set_add_many(&key, members) {
+            Ok(added) => CommandOutput::Integer(added as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::SRem { key, member } => match store.set_remove(&key, &member) {
             Ok(removed) => CommandOutput::Integer(i64::from(removed)),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::SRemMany { key, members } => match store.set_remove_many(&key, &members) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::SIsMember { key, member } => match store.set_contains(&key, &member) {
             Ok(found) => CommandOutput::Integer(i64::from(found)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SMIsMember { key, members } => match store.set_contains_many(&key, &members) {
+            Ok(found) => CommandOutput::IntegerList(found.into_iter().map(i64::from).collect()),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SPop { key, count } => match store.set_pop(&key, count.unwrap_or(1)) {
+            Ok(mut values) if count.is_none() => values
+                .pop()
+                .map_or(CommandOutput::Nil, CommandOutput::Value),
+            Ok(values) => CommandOutput::KeyList(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SRandMember { key, count } => {
+            match store.set_random_members(&key, count.unwrap_or(1)) {
+                Ok(mut values) if count.is_none() => values
+                    .pop()
+                    .map_or(CommandOutput::Nil, CommandOutput::Value),
+                Ok(values) => CommandOutput::KeyList(values),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::SMove {
+            source,
+            destination,
+            member,
+        } => match store.set_move(&source, &destination, &member) {
+            Ok(moved) => CommandOutput::Integer(i64::from(moved)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SDiff { keys } => set_algebra(store, &keys, SetOperation::Difference),
+        Command::SInter { keys } => set_algebra(store, &keys, SetOperation::Intersection),
+        Command::SUnion { keys } => set_algebra(store, &keys, SetOperation::Union),
+        Command::SDiffStore { destination, keys } => {
+            set_algebra_store(store, destination, &keys, SetOperation::Difference)
+        }
+        Command::SInterStore { destination, keys } => {
+            set_algebra_store(store, destination, &keys, SetOperation::Intersection)
+        }
+        Command::SUnionStore { destination, keys } => {
+            set_algebra_store(store, destination, &keys, SetOperation::Union)
+        }
+        Command::SScan {
+            key,
+            cursor,
+            pattern,
+            count,
+        } => match store.set_scan(&key, cursor, pattern.as_deref(), count) {
+            Ok((cursor, keys)) => CommandOutput::Scan { cursor, keys },
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
@@ -464,6 +620,29 @@ pub(crate) fn execute_with_snapshot(
         Command::Help => CommandOutput::Help,
 
         Command::Exit => CommandOutput::Exit,
+    }
+}
+
+fn set_algebra(
+    store: &mut InMemoryStore,
+    keys: &[Vec<u8>],
+    operation: SetOperation,
+) -> CommandOutput {
+    match store.set_algebra(keys, operation) {
+        Ok(members) => CommandOutput::KeyList(members),
+        Err(error) => CommandOutput::Error(error.to_string()),
+    }
+}
+
+fn set_algebra_store(
+    store: &mut InMemoryStore,
+    destination: Vec<u8>,
+    keys: &[Vec<u8>],
+    operation: SetOperation,
+) -> CommandOutput {
+    match store.set_algebra_store(destination, keys, operation) {
+        Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
+        Err(error) => CommandOutput::Error(error.to_string()),
     }
 }
 

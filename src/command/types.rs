@@ -44,6 +44,18 @@ pub(crate) enum ClientInfoAttribute {
     LibraryVersion,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ListEnd {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InsertPosition {
+    Before,
+    After,
+}
+
 impl ProtocolVersion {
     pub(crate) fn number(self) -> u8 {
         match self {
@@ -194,18 +206,99 @@ pub(crate) enum Command {
         key: Vec<u8>,
         value: Vec<u8>,
     },
+    LPushMany {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
+    LPushX {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
     RPush {
         key: Vec<u8>,
         value: Vec<u8>,
     },
+    RPushMany {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
+    RPushX {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
     LLen {
         key: Vec<u8>,
+    },
+    LIndex {
+        key: Vec<u8>,
+        index: i64,
+    },
+    LSet {
+        key: Vec<u8>,
+        index: i64,
+        value: Vec<u8>,
+    },
+    LInsert {
+        key: Vec<u8>,
+        position: InsertPosition,
+        pivot: Vec<u8>,
+        value: Vec<u8>,
+    },
+    LTrim {
+        key: Vec<u8>,
+        start: i64,
+        end: i64,
+    },
+    LRem {
+        key: Vec<u8>,
+        count: i64,
+        value: Vec<u8>,
+    },
+    LPos {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        rank: i64,
+        count: Option<usize>,
+        max_len: Option<usize>,
+    },
+    LMove {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        source_end: ListEnd,
+        destination_end: ListEnd,
+    },
+    RPopLPush {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+    },
+    BLPop {
+        keys: Vec<Vec<u8>>,
+        timeout: f64,
+    },
+    BRPop {
+        keys: Vec<Vec<u8>>,
+        timeout: f64,
+    },
+    BLMove {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        source_end: ListEnd,
+        destination_end: ListEnd,
+        timeout: f64,
     },
     LPop {
         key: Vec<u8>,
     },
+    LPopCount {
+        key: Vec<u8>,
+        count: usize,
+    },
     RPop {
         key: Vec<u8>,
+    },
+    RPopCount {
+        key: Vec<u8>,
+        count: usize,
     },
     LRange {
         key: Vec<u8>,
@@ -216,13 +309,65 @@ pub(crate) enum Command {
         key: Vec<u8>,
         member: Vec<u8>,
     },
+    SAddMany {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
     SRem {
         key: Vec<u8>,
         member: Vec<u8>,
     },
+    SRemMany {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
     SIsMember {
         key: Vec<u8>,
         member: Vec<u8>,
+    },
+    SMIsMember {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
+    SPop {
+        key: Vec<u8>,
+        count: Option<usize>,
+    },
+    SRandMember {
+        key: Vec<u8>,
+        count: Option<i64>,
+    },
+    SMove {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        member: Vec<u8>,
+    },
+    SDiff {
+        keys: Vec<Vec<u8>>,
+    },
+    SInter {
+        keys: Vec<Vec<u8>>,
+    },
+    SUnion {
+        keys: Vec<Vec<u8>>,
+    },
+    SDiffStore {
+        destination: Vec<u8>,
+        keys: Vec<Vec<u8>>,
+    },
+    SInterStore {
+        destination: Vec<u8>,
+        keys: Vec<Vec<u8>>,
+    },
+    SUnionStore {
+        destination: Vec<u8>,
+        keys: Vec<Vec<u8>>,
+    },
+    SScan {
+        key: Vec<u8>,
+        cursor: usize,
+        pattern: Option<Vec<u8>>,
+        count: usize,
     },
     SMembers {
         key: Vec<u8>,
@@ -372,15 +517,39 @@ impl Command {
             Self::StrLen { .. } => "STRLEN",
             Self::GetRange { .. } => "GETRANGE",
             Self::SetRange { .. } => "SETRANGE",
-            Self::LPush { .. } => "LPUSH",
-            Self::RPush { .. } => "RPUSH",
+            Self::LPush { .. } | Self::LPushMany { .. } => "LPUSH",
+            Self::LPushX { .. } => "LPUSHX",
+            Self::RPush { .. } | Self::RPushMany { .. } => "RPUSH",
+            Self::RPushX { .. } => "RPUSHX",
             Self::LLen { .. } => "LLEN",
-            Self::LPop { .. } => "LPOP",
-            Self::RPop { .. } => "RPOP",
+            Self::LIndex { .. } => "LINDEX",
+            Self::LSet { .. } => "LSET",
+            Self::LInsert { .. } => "LINSERT",
+            Self::LTrim { .. } => "LTRIM",
+            Self::LRem { .. } => "LREM",
+            Self::LPos { .. } => "LPOS",
+            Self::LMove { .. } => "LMOVE",
+            Self::RPopLPush { .. } => "RPOPLPUSH",
+            Self::BLPop { .. } => "BLPOP",
+            Self::BRPop { .. } => "BRPOP",
+            Self::BLMove { .. } => "BLMOVE",
+            Self::LPop { .. } | Self::LPopCount { .. } => "LPOP",
+            Self::RPop { .. } | Self::RPopCount { .. } => "RPOP",
             Self::LRange { .. } => "LRANGE",
-            Self::SAdd { .. } => "SADD",
-            Self::SRem { .. } => "SREM",
+            Self::SAdd { .. } | Self::SAddMany { .. } => "SADD",
+            Self::SRem { .. } | Self::SRemMany { .. } => "SREM",
             Self::SIsMember { .. } => "SISMEMBER",
+            Self::SMIsMember { .. } => "SMISMEMBER",
+            Self::SPop { .. } => "SPOP",
+            Self::SRandMember { .. } => "SRANDMEMBER",
+            Self::SMove { .. } => "SMOVE",
+            Self::SDiff { .. } => "SDIFF",
+            Self::SInter { .. } => "SINTER",
+            Self::SUnion { .. } => "SUNION",
+            Self::SDiffStore { .. } => "SDIFFSTORE",
+            Self::SInterStore { .. } => "SINTERSTORE",
+            Self::SUnionStore { .. } => "SUNIONSTORE",
+            Self::SScan { .. } => "SSCAN",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
             Self::HSet { .. } => "HSET",
@@ -567,11 +736,89 @@ impl Command {
                 value.clone(),
             ],
             Self::LPush { key, value } => vec![b"LPUSH".to_vec(), key.clone(), value.clone()],
+            Self::LPushMany { key, values } => with_values(b"LPUSH", key, values),
+            Self::LPushX { key, values } => with_values(b"LPUSHX", key, values),
             Self::RPush { key, value } => vec![b"RPUSH".to_vec(), key.clone(), value.clone()],
+            Self::RPushMany { key, values } => with_values(b"RPUSH", key, values),
+            Self::RPushX { key, values } => with_values(b"RPUSHX", key, values),
             Self::LPop { key } => vec![b"LPOP".to_vec(), key.clone()],
+            Self::LPopCount { key, count } => {
+                vec![b"LPOP".to_vec(), key.clone(), offset(*count)]
+            }
             Self::RPop { key } => vec![b"RPOP".to_vec(), key.clone()],
+            Self::RPopCount { key, count } => {
+                vec![b"RPOP".to_vec(), key.clone(), offset(*count)]
+            }
+            Self::LSet { key, index, value } => {
+                vec![b"LSET".to_vec(), key.clone(), number(*index), value.clone()]
+            }
+            Self::LInsert {
+                key,
+                position,
+                pivot,
+                value,
+            } => vec![
+                b"LINSERT".to_vec(),
+                key.clone(),
+                match position {
+                    InsertPosition::Before => b"BEFORE".to_vec(),
+                    InsertPosition::After => b"AFTER".to_vec(),
+                },
+                pivot.clone(),
+                value.clone(),
+            ],
+            Self::LTrim { key, start, end } => {
+                vec![b"LTRIM".to_vec(), key.clone(), number(*start), number(*end)]
+            }
+            Self::LRem { key, count, value } => {
+                vec![b"LREM".to_vec(), key.clone(), number(*count), value.clone()]
+            }
+            Self::LMove {
+                source,
+                destination,
+                source_end,
+                destination_end,
+            } => vec![
+                b"LMOVE".to_vec(),
+                source.clone(),
+                destination.clone(),
+                list_end_argument(*source_end),
+                list_end_argument(*destination_end),
+            ],
+            Self::RPopLPush {
+                source,
+                destination,
+            } => vec![b"RPOPLPUSH".to_vec(), source.clone(), destination.clone()],
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
+            Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
+            Self::SRemMany { key, members } => with_values(b"SREM", key, members),
+            Self::SPop { key, count } => {
+                let mut values = vec![b"SPOP".to_vec(), key.clone()];
+                if let Some(count) = count {
+                    values.push(offset(*count));
+                }
+                values
+            }
+            Self::SMove {
+                source,
+                destination,
+                member,
+            } => vec![
+                b"SMOVE".to_vec(),
+                source.clone(),
+                destination.clone(),
+                member.clone(),
+            ],
+            Self::SDiffStore { destination, keys } => {
+                with_destination_and_keys(b"SDIFFSTORE", destination, keys)
+            }
+            Self::SInterStore { destination, keys } => {
+                with_destination_and_keys(b"SINTERSTORE", destination, keys)
+            }
+            Self::SUnionStore { destination, keys } => {
+                with_destination_and_keys(b"SUNIONSTORE", destination, keys)
+            }
             Self::HSet { key, entries } => {
                 let mut values = vec![b"HSET".to_vec(), key.clone()];
                 for (field, value) in entries {
@@ -608,6 +855,9 @@ impl Command {
             Self::FlushDb => vec![b"FLUSHDB".to_vec()],
             Self::FlushAll => vec![b"FLUSHALL".to_vec()],
             Self::Get { .. }
+            | Self::BLPop { .. }
+            | Self::BRPop { .. }
+            | Self::BLMove { .. }
             | Self::MGet { .. }
             | Self::Exists { .. }
             | Self::Type { .. }
@@ -619,8 +869,16 @@ impl Command {
             | Self::StrLen { .. }
             | Self::GetRange { .. }
             | Self::LLen { .. }
+            | Self::LIndex { .. }
+            | Self::LPos { .. }
             | Self::LRange { .. }
             | Self::SIsMember { .. }
+            | Self::SMIsMember { .. }
+            | Self::SRandMember { .. }
+            | Self::SDiff { .. }
+            | Self::SInter { .. }
+            | Self::SUnion { .. }
+            | Self::SScan { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
             | Self::HGet { .. }
@@ -663,6 +921,28 @@ fn with_keys(name: &[u8], keys: &[Vec<u8>]) -> Vec<Vec<u8>> {
     arguments.push(name.to_vec());
     arguments.extend(keys.iter().cloned());
     arguments
+}
+
+fn with_values(name: &[u8], key: &[u8], values: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut arguments = Vec::with_capacity(values.len() + 2);
+    arguments.push(name.to_vec());
+    arguments.push(key.to_vec());
+    arguments.extend(values.iter().cloned());
+    arguments
+}
+
+fn with_destination_and_keys(name: &[u8], destination: &[u8], keys: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut arguments = Vec::with_capacity(keys.len() + 2);
+    arguments.extend([name.to_vec(), destination.to_vec()]);
+    arguments.extend(keys.iter().cloned());
+    arguments
+}
+
+fn list_end_argument(end: ListEnd) -> Vec<u8> {
+    match end {
+        ListEnd::Left => b"LEFT".to_vec(),
+        ListEnd::Right => b"RIGHT".to_vec(),
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

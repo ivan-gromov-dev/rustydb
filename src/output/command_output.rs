@@ -37,15 +37,39 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  STRLEN key\n",
     "  GETRANGE key start end\n",
     "  SETRANGE key offset value\n",
-    "  LPUSH key value\n",
-    "  RPUSH key value\n",
+    "  LPUSH key value [value ...]\n",
+    "  LPUSHX key value [value ...]\n",
+    "  RPUSH key value [value ...]\n",
+    "  RPUSHX key value [value ...]\n",
     "  LRANGE key start end\n",
     "  LLEN key\n",
-    "  LPOP key\n",
-    "  RPOP key\n",
-    "  SADD key member\n",
-    "  SREM key member\n",
+    "  LINDEX key index\n",
+    "  LSET key index value\n",
+    "  LINSERT key BEFORE|AFTER pivot element\n",
+    "  LTRIM key start stop\n",
+    "  LREM key count element\n",
+    "  LPOS key element [RANK rank] [COUNT count] [MAXLEN len]\n",
+    "  LMOVE source destination LEFT|RIGHT LEFT|RIGHT\n",
+    "  RPOPLPUSH source destination\n",
+    "  BLPOP key [key ...] timeout\n",
+    "  BRPOP key [key ...] timeout\n",
+    "  BLMOVE source destination LEFT|RIGHT LEFT|RIGHT timeout\n",
+    "  LPOP key [count]\n",
+    "  RPOP key [count]\n",
+    "  SADD key member [member ...]\n",
+    "  SREM key member [member ...]\n",
     "  SISMEMBER key member\n",
+    "  SMISMEMBER key member [member ...]\n",
+    "  SPOP key [count]\n",
+    "  SRANDMEMBER key [count]\n",
+    "  SMOVE source destination member\n",
+    "  SDIFF key [key ...]\n",
+    "  SINTER key [key ...]\n",
+    "  SUNION key [key ...]\n",
+    "  SDIFFSTORE destination key [key ...]\n",
+    "  SINTERSTORE destination key [key ...]\n",
+    "  SUNIONSTORE destination key [key ...]\n",
+    "  SSCAN key cursor [MATCH pattern] [COUNT count]\n",
     "  SMEMBERS key\n",
     "  SCARD key\n",
     "  HSET key field value [field value ...]\n",
@@ -95,11 +119,13 @@ pub(crate) enum CommandOutput {
         connection_id: Option<i64>,
     },
     Integer(i64),
+    IntegerList(Vec<i64>),
     Float(f64),
     SimpleString(&'static str),
     Value(Vec<u8>),
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
+    NullArray,
     KeyList(Vec<Vec<u8>>),
     HashEntries(Vec<(Vec<u8>, Vec<u8>)>),
     HashScan {
@@ -141,6 +167,13 @@ impl CommandOutput {
                 writeln!(writer, "modules:(empty)")
             }
             Self::Integer(value) => writeln!(writer, "{value}"),
+            Self::IntegerList(values) if values.is_empty() => writeln!(writer, "(nil)"),
+            Self::IntegerList(values) => {
+                for value in values {
+                    writeln!(writer, "{value}")?;
+                }
+                Ok(())
+            }
             Self::Float(value) => writeln!(writer, "{value}"),
             Self::SimpleString(value) => writeln!(writer, "{value}"),
             Self::Value(value) => {
@@ -160,6 +193,7 @@ impl CommandOutput {
                 Ok(())
             }
             Self::Nil => writeln!(writer, "(nil)"),
+            Self::NullArray => writeln!(writer, "(nil)"),
             Self::KeyList(keys) if keys.is_empty() => writeln!(writer, "(nil)"),
             Self::KeyList(keys) => {
                 for key in keys {

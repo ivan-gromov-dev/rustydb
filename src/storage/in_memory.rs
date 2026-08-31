@@ -3,7 +3,7 @@ use super::indexing::normalize_index;
 use super::stored_value::StoredValue;
 use crate::storage::clock::{Clock, SystemClock};
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, hash_map::Entry as HashMapEntry};
+use std::collections::{BinaryHeap, HashMap, HashSet, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::str;
 use std::time::{Duration, Instant, SystemTime};
@@ -20,6 +20,13 @@ pub(crate) struct InMemoryStore {
 
 type HashEntries = Vec<(Vec<u8>, Vec<u8>)>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetOperation {
+    Difference,
+    Intersection,
+    Union,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ReclamationMetrics {
     pub(crate) deletions: u64,
@@ -34,6 +41,8 @@ pub(crate) enum StoreError {
     ValueIsNotFloat,
     FloatIsNotFinite,
     WrongType,
+    NoSuchKey,
+    IndexOutOfRange,
     ExpirationOutOfRange,
     SameSourceDestination,
 }
@@ -63,6 +72,8 @@ impl fmt::Display for StoreError {
                     "operation against a key holding the wrong kind of value"
                 )
             }
+            Self::NoSuchKey => write!(formatter, "no such key"),
+            Self::IndexOutOfRange => write!(formatter, "index out of range"),
             Self::ExpirationOutOfRange => write!(formatter, "expiration is out of range"),
             Self::SameSourceDestination => {
                 write!(formatter, "source and destination objects are the same")
@@ -926,6 +937,42 @@ impl InMemoryStore {
         Ok(list.len())
     }
 
+    pub(crate) fn push_left_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
+        let list = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+        for value in values {
+            list.push_front(value);
+        }
+        Ok(list.len())
+    }
+
+    pub(crate) fn push_left_if_exists(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Ok(0);
+        };
+        let list = entry.list_mut()?;
+        for value in values {
+            list.push_front(value);
+        }
+        Ok(list.len())
+    }
+
     pub(crate) fn push_right(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -945,6 +992,38 @@ impl InMemoryStore {
         Ok(list.len())
     }
 
+    pub(crate) fn push_right_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
+        let list = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+        list.extend(values);
+        Ok(list.len())
+    }
+
+    pub(crate) fn push_right_if_exists(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Ok(0);
+        };
+        let list = entry.list_mut()?;
+        list.extend(values);
+        Ok(list.len())
+    }
+
     pub(crate) fn list_length(&mut self, key: impl AsRef<[u8]>) -> Result<usize, StoreError> {
         let key = key.as_ref();
         self.remove_if_expired(key);
@@ -953,6 +1032,286 @@ impl InMemoryStore {
             Some(entry) => Ok(entry.list()?.len()),
             None => Ok(0),
         }
+    }
+
+    pub(crate) fn list_index(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        index: i64,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(None);
+        };
+        let list = entry.list()?;
+        let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+        let index = normalize_index(index, length);
+        let Ok(index) = usize::try_from(index) else {
+            return Ok(None);
+        };
+        Ok(list.get(index).cloned())
+    }
+
+    pub(crate) fn list_set(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        index: i64,
+        value: Vec<u8>,
+    ) -> Result<(), StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Err(StoreError::NoSuchKey);
+        };
+        let list = entry.list_mut()?;
+        let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+        let index = normalize_index(index, length);
+        let index = usize::try_from(index).map_err(|_| StoreError::IndexOutOfRange)?;
+        let Some(element) = list.get_mut(index) else {
+            return Err(StoreError::IndexOutOfRange);
+        };
+        *element = value;
+        Ok(())
+    }
+
+    pub(crate) fn list_insert(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        before: bool,
+        pivot: &[u8],
+        value: Vec<u8>,
+    ) -> Result<i64, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Ok(0);
+        };
+        let list = entry.list_mut()?;
+        let Some(pivot_index) = list.iter().position(|element| element == pivot) else {
+            return Ok(-1);
+        };
+        let index = pivot_index + usize::from(!before);
+        list.insert(index, value);
+        Ok(i64::try_from(list.len()).unwrap_or(i64::MAX))
+    }
+
+    pub(crate) fn list_trim(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        start: i64,
+        end: i64,
+    ) -> Result<(), StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let became_empty = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(());
+            };
+            let list = entry.list_mut()?;
+            let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+            let start = normalize_index(start, length).max(0);
+            let end = normalize_index(end, length).min(length.saturating_sub(1));
+            if start >= length || end < 0 || start > end {
+                list.clear();
+            } else {
+                list.truncate((end + 1) as usize);
+                list.drain(..start as usize);
+            }
+            list.is_empty()
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn list_remove(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: i64,
+        value: &[u8],
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (removed, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(0);
+            };
+            let list = entry.list_mut()?;
+            let limit = usize::try_from(count.unsigned_abs()).unwrap_or(usize::MAX);
+            let mut removed = 0;
+            if count >= 0 {
+                let mut index = 0;
+                while index < list.len() && (count == 0 || removed < limit) {
+                    if list[index].as_slice() == value {
+                        list.remove(index);
+                        removed += 1;
+                    } else {
+                        index += 1;
+                    }
+                }
+            } else {
+                let mut index = list.len();
+                while index > 0 && removed < limit {
+                    index -= 1;
+                    if list[index].as_slice() == value {
+                        list.remove(index);
+                        removed += 1;
+                    }
+                }
+            }
+            (removed, list.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(removed)
+    }
+
+    pub(crate) fn list_positions(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        value: &[u8],
+        rank: i64,
+        count: Option<usize>,
+        max_len: Option<usize>,
+    ) -> Result<Vec<usize>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let list = entry.list()?;
+        let examined = max_len.unwrap_or(usize::MAX).min(list.len());
+        let rank_target = usize::try_from(rank.unsigned_abs()).unwrap_or(usize::MAX);
+        let result_limit = match count {
+            Some(0) | None => usize::MAX,
+            Some(value) => value,
+        };
+        let mut matches = 0;
+        let mut positions = Vec::new();
+        let indexes: Box<dyn Iterator<Item = usize>> = if rank > 0 {
+            Box::new(0..examined)
+        } else {
+            Box::new((list.len().saturating_sub(examined)..list.len()).rev())
+        };
+        for index in indexes {
+            if list[index].as_slice() != value {
+                continue;
+            }
+            matches += 1;
+            if matches >= rank_target && positions.len() < result_limit {
+                positions.push(index);
+            }
+            if positions.len() == result_limit {
+                break;
+            }
+        }
+        Ok(positions)
+    }
+
+    pub(crate) fn list_move(
+        &mut self,
+        source: impl AsRef<[u8]>,
+        destination: impl AsRef<[u8]>,
+        source_right: bool,
+        destination_right: bool,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        self.remove_if_expired(source);
+        if source != destination {
+            self.remove_if_expired(destination);
+        }
+        let Some(source_entry) = self.storage.get(source) else {
+            return Ok(None);
+        };
+        source_entry.list()?;
+        if source != destination
+            && let Some(destination_entry) = self.storage.get(destination)
+        {
+            destination_entry.list()?;
+        }
+        if source == destination {
+            let list = self
+                .storage
+                .get_mut(source)
+                .ok_or(StoreError::NoSuchKey)?
+                .list_mut()?;
+            let value = if source_right {
+                list.pop_back()
+            } else {
+                list.pop_front()
+            };
+            if let Some(value) = value.as_ref() {
+                if destination_right {
+                    list.push_back(value.clone());
+                } else {
+                    list.push_front(value.clone());
+                }
+            }
+            return Ok(value);
+        }
+        let (value, source_empty) = {
+            let list = self
+                .storage
+                .get_mut(source)
+                .ok_or(StoreError::NoSuchKey)?
+                .list_mut()?;
+            let value = if source_right {
+                list.pop_back()
+            } else {
+                list.pop_front()
+            };
+            let empty = list.is_empty();
+            (value, empty)
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        if source_empty {
+            self.storage.remove(source);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        self.ensure_capacity_for(destination);
+        let list = self
+            .storage
+            .entry(destination.to_vec())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+        if destination_right {
+            list.push_back(value.clone());
+        } else {
+            list.push_front(value.clone());
+        }
+        Ok(Some(value))
+    }
+
+    pub(crate) fn first_nonempty_list(
+        &mut self,
+        keys: &[Vec<u8>],
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        for key in keys {
+            self.remove_if_expired(key);
+        }
+        for key in keys {
+            if let Some(entry) = self.storage.get(key.as_slice()) {
+                entry.list()?;
+            }
+        }
+        Ok(keys.iter().find_map(|key| {
+            self.storage
+                .get(key.as_slice())
+                .and_then(|entry| entry.list().ok())
+                .filter(|list| !list.is_empty())
+                .map(|_| key.clone())
+        }))
     }
 
     pub(crate) fn pop_left(
@@ -981,6 +1340,29 @@ impl InMemoryStore {
         Ok(value)
     }
 
+    pub(crate) fn pop_left_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (values, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(Vec::new());
+            };
+            let list = entry.list_mut()?;
+            let values = (0..count).filter_map(|_| list.pop_front()).collect();
+            (values, list.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(values)
+    }
+
     pub(crate) fn pop_right(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -1005,6 +1387,29 @@ impl InMemoryStore {
         }
 
         Ok(value)
+    }
+
+    pub(crate) fn pop_right_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (values, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(Vec::new());
+            };
+            let list = entry.list_mut()?;
+            let values = (0..count).filter_map(|_| list.pop_back()).collect();
+            (values, list.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(values)
     }
 
     pub(crate) fn list_range(
@@ -1060,6 +1465,24 @@ impl InMemoryStore {
             .map(|set| set.insert(member))
     }
 
+    pub(crate) fn set_add_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.ensure_capacity_for(key);
+        let set = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_set)
+            .set_mut()?;
+        Ok(members
+            .into_iter()
+            .fold(0, |count, member| count + usize::from(set.insert(member))))
+    }
+
     pub(crate) fn set_remove(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -1088,6 +1511,32 @@ impl InMemoryStore {
         Ok(removed)
     }
 
+    pub(crate) fn set_remove_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: &[Vec<u8>],
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (removed, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(0);
+            };
+            let set = entry.set_mut()?;
+            let removed = members
+                .iter()
+                .filter(|member| set.remove(member.as_slice()))
+                .count();
+            (removed, set.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(removed)
+    }
+
     pub(crate) fn set_contains(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -1101,6 +1550,220 @@ impl InMemoryStore {
             Some(entry) => Ok(entry.set()?.contains(member)),
             None => Ok(false),
         }
+    }
+
+    pub(crate) fn set_contains_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: &[Vec<u8>],
+    ) -> Result<Vec<bool>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(vec![false; members.len()]);
+        };
+        let set = entry.set()?;
+        Ok(members
+            .iter()
+            .map(|member| set.contains(member.as_slice()))
+            .collect())
+    }
+
+    pub(crate) fn set_pop(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (values, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(Vec::new());
+            };
+            let set = entry.set_mut()?;
+            let mut values: Vec<_> = set.iter().cloned().collect();
+            values.sort();
+            values.truncate(count);
+            for value in &values {
+                set.remove(value.as_slice());
+            }
+            (values, set.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(values)
+    }
+
+    pub(crate) fn set_random_members(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: i64,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let mut members: Vec<_> = entry.set()?.iter().cloned().collect();
+        members.sort();
+        if members.is_empty() || count == 0 {
+            return Ok(Vec::new());
+        }
+        self.random_state ^= self.random_state << 13;
+        self.random_state ^= self.random_state >> 7;
+        self.random_state ^= self.random_state << 17;
+        let start = (self.random_state as usize) % members.len();
+        members.rotate_left(start);
+        let requested = usize::try_from(count.unsigned_abs()).unwrap_or(usize::MAX);
+        if count > 0 {
+            members.truncate(requested);
+            return Ok(members);
+        }
+        Ok((0..requested)
+            .map(|index| members[index % members.len()].clone())
+            .collect())
+    }
+
+    pub(crate) fn set_move(
+        &mut self,
+        source: impl AsRef<[u8]>,
+        destination: impl AsRef<[u8]>,
+        member: impl AsRef<[u8]>,
+    ) -> Result<bool, StoreError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        let member = member.as_ref();
+        self.remove_if_expired(source);
+        if source != destination {
+            self.remove_if_expired(destination);
+        }
+        let Some(source_entry) = self.storage.get(source) else {
+            return Ok(false);
+        };
+        let source_set = source_entry.set()?;
+        if !source_set.contains(member) {
+            return Ok(false);
+        }
+        if source == destination {
+            return Ok(true);
+        }
+        if let Some(destination_entry) = self.storage.get(destination) {
+            destination_entry.set()?;
+        }
+
+        let source_empty = {
+            let source_set = self
+                .storage
+                .get_mut(source)
+                .ok_or(StoreError::NoSuchKey)?
+                .set_mut()?;
+            source_set.remove(member);
+            source_set.is_empty()
+        };
+        if source_empty {
+            self.storage.remove(source);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        self.ensure_capacity_for(destination);
+        self.storage
+            .entry(destination.to_vec())
+            .or_insert_with(StoredValue::new_set)
+            .set_mut()?
+            .insert(member.to_vec());
+        Ok(true)
+    }
+
+    pub(crate) fn set_algebra(
+        &mut self,
+        keys: &[Vec<u8>],
+        operation: SetOperation,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        for key in keys {
+            self.remove_if_expired(key);
+        }
+        let sets: Vec<Option<HashSet<Vec<u8>>>> = keys
+            .iter()
+            .map(|key| {
+                self.storage
+                    .get(key.as_slice())
+                    .map(|entry| entry.set().cloned())
+                    .transpose()
+            })
+            .collect::<Result<_, _>>()?;
+        let mut result = match operation {
+            SetOperation::Difference | SetOperation::Intersection => {
+                sets.first().cloned().flatten().unwrap_or_default()
+            }
+            SetOperation::Union => HashSet::new(),
+        };
+        match operation {
+            SetOperation::Difference => {
+                for set in sets.iter().skip(1).flatten() {
+                    result.retain(|member| !set.contains(member));
+                }
+            }
+            SetOperation::Intersection => {
+                for set in sets.iter().skip(1) {
+                    let Some(set) = set else {
+                        result.clear();
+                        break;
+                    };
+                    result.retain(|member| set.contains(member));
+                }
+            }
+            SetOperation::Union => {
+                for set in sets.into_iter().flatten() {
+                    result.extend(set);
+                }
+            }
+        }
+        let mut result: Vec<_> = result.into_iter().collect();
+        result.sort();
+        Ok(result)
+    }
+
+    pub(crate) fn set_algebra_store(
+        &mut self,
+        destination: Vec<u8>,
+        keys: &[Vec<u8>],
+        operation: SetOperation,
+    ) -> Result<usize, StoreError> {
+        let result = self.set_algebra(keys, operation)?;
+        if result.is_empty() {
+            self.delete(&destination);
+            return Ok(0);
+        }
+        self.remove_if_expired(&destination);
+        self.ensure_capacity_for(&destination);
+        let count = result.len();
+        let mut entry = StoredValue::new_set();
+        entry.set_mut()?.extend(result);
+        self.storage.insert(destination, entry);
+        Ok(count)
+    }
+
+    pub(crate) fn set_scan(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+    ) -> Result<(usize, Vec<Vec<u8>>), StoreError> {
+        let members = self.set_members(key)?;
+        if cursor >= members.len() {
+            return Ok((0, Vec::new()));
+        }
+        let end = cursor.saturating_add(count).min(members.len());
+        let matched = members[cursor..end]
+            .iter()
+            .filter(|member| pattern.is_none_or(|pattern| glob::matches(pattern, member)))
+            .cloned()
+            .collect();
+        Ok((if end == members.len() { 0 } else { end }, matched))
     }
 
     pub(crate) fn set_members(

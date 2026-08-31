@@ -284,3 +284,340 @@ fn list_range_does_not_change_a_lists_expiration() {
     assert_eq!(database.list_range("key", 0, 1).unwrap().len(), 2);
     assert_eq!(database.expiration("key"), Some(expires_at));
 }
+
+#[test]
+fn variadic_pushes_follow_redis_argument_order_and_preserve_ttl() {
+    let mut database = Database::new();
+    assert_eq!(
+        database.push_left_many("list", vec![b"one".to_vec(), b"two".to_vec()]),
+        Ok(2)
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(
+        database.push_right_many("list", vec![b"three".to_vec(), b"four".to_vec()]),
+        Ok(4)
+    );
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![
+            b"two".to_vec(),
+            b"one".to_vec(),
+            b"three".to_vec(),
+            b"four".to_vec()
+        ]))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+}
+
+#[test]
+fn counted_pops_return_removal_order_preserve_ttl_and_remove_empty_keys() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()],
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+
+    assert_eq!(
+        database.pop_right_many("list", 2),
+        Ok(vec![b"three".to_vec(), b"two".to_vec()])
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+    assert_eq!(
+        database.pop_left_many("list", 10),
+        Ok(vec![b"one".to_vec()])
+    );
+    assert!(!database.exists("list"));
+    assert_eq!(database.pop_left_many("missing", 2), Ok(Vec::new()));
+}
+
+#[test]
+fn zero_count_does_not_mutate_a_list_and_still_validates_type() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"one".to_vec()]);
+    database.set(b"string".to_vec(), b"value".to_vec());
+
+    assert_eq!(database.pop_left_many("list", 0), Ok(Vec::new()));
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![b"one".to_vec()]))
+    );
+    assert_eq!(
+        database.pop_right_many("string", 0),
+        Err(StoreError::WrongType)
+    );
+}
+
+#[test]
+fn conditional_pushes_require_a_live_list_and_preserve_ttl() {
+    let mut database = Database::new();
+    assert_eq!(
+        database.push_left_if_exists("missing", vec![b"value".to_vec()]),
+        Ok(0)
+    );
+    assert!(!database.exists("missing"));
+
+    database.set_list(b"list".to_vec(), vec![b"middle".to_vec()]);
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(
+        database.push_left_if_exists("list", vec![b"one".to_vec(), b"two".to_vec()]),
+        Ok(3)
+    );
+    assert_eq!(
+        database.push_right_if_exists("list", vec![b"three".to_vec(), b"four".to_vec()]),
+        Ok(5)
+    );
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![
+            b"two".to_vec(),
+            b"one".to_vec(),
+            b"middle".to_vec(),
+            b"three".to_vec(),
+            b"four".to_vec(),
+        ]))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+
+    database.set_list(b"expired".to_vec(), vec![b"old".to_vec()]);
+    assert!(database.expire("expired", 0));
+    assert_eq!(
+        database.push_right_if_exists("expired", vec![b"new".to_vec()]),
+        Ok(0)
+    );
+    assert!(!database.exists("expired"));
+}
+
+#[test]
+fn conditional_pushes_reject_non_lists_without_mutation() {
+    let mut database = Database::new();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    assert_eq!(
+        database.push_left_if_exists("string", vec![b"one".to_vec(), b"two".to_vec()]),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
+}
+
+#[test]
+fn list_index_supports_negative_indexes_and_missing_boundaries() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"zero".to_vec(), b"one".to_vec(), b"two".to_vec()],
+    );
+    assert_eq!(database.list_index("list", 0), Ok(Some(b"zero".to_vec())));
+    assert_eq!(database.list_index("list", -1), Ok(Some(b"two".to_vec())));
+    assert_eq!(database.list_index("list", -3), Ok(Some(b"zero".to_vec())));
+    assert_eq!(database.list_index("list", 3), Ok(None));
+    assert_eq!(database.list_index("list", -4), Ok(None));
+    assert_eq!(database.list_index("missing", 0), Ok(None));
+}
+
+#[test]
+fn list_set_validates_before_mutation_and_preserves_ttl() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"zero".to_vec(), b"one".to_vec(), b"two".to_vec()],
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(database.list_set("list", -2, b"changed".to_vec()), Ok(()));
+    assert_eq!(
+        database.list_index("list", 1),
+        Ok(Some(b"changed".to_vec()))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+
+    assert_eq!(
+        database.list_set("list", 3, b"invalid".to_vec()),
+        Err(StoreError::IndexOutOfRange)
+    );
+    assert_eq!(
+        database.list_index("list", 1),
+        Ok(Some(b"changed".to_vec()))
+    );
+    assert_eq!(
+        database.list_set("missing", 0, b"invalid".to_vec()),
+        Err(StoreError::NoSuchKey)
+    );
+}
+
+#[test]
+fn list_index_and_set_reject_wrong_types_without_mutation() {
+    let mut database = Database::new();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    assert_eq!(database.list_index("string", 0), Err(StoreError::WrongType));
+    assert_eq!(
+        database.list_set("string", 0, b"changed".to_vec()),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
+}
+
+#[test]
+fn insert_trim_and_remove_cover_order_ranges_and_ttl() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"a".to_vec(), b"b".to_vec(), b"a".to_vec(), b"c".to_vec()],
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(
+        database.list_insert("list", false, b"b", b"x".to_vec()),
+        Ok(5)
+    );
+    assert_eq!(
+        database.list_insert("list", true, b"missing", b"x".to_vec()),
+        Ok(-1)
+    );
+    assert_eq!(database.list_remove("list", -1, b"a"), Ok(1));
+    assert_eq!(database.list_trim("list", 1, -1), Ok(()));
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![b"b".to_vec(), b"x".to_vec(), b"c".to_vec()]))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+    assert_eq!(
+        database.list_insert("missing", true, b"x", b"y".to_vec()),
+        Ok(0)
+    );
+}
+
+#[test]
+fn trim_and_remove_delete_empty_lists_and_validate_types() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"a".to_vec(), b"a".to_vec()]);
+    assert_eq!(database.list_remove("list", 0, b"a"), Ok(2));
+    assert!(!database.exists("list"));
+    database.set_list(b"trim".to_vec(), vec![b"a".to_vec()]);
+    assert_eq!(database.list_trim("trim", 2, 3), Ok(()));
+    assert!(!database.exists("trim"));
+    database.set(b"string".to_vec(), b"value".to_vec());
+    assert_eq!(
+        database.list_trim("string", 0, 1),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        database.list_remove("string", 0, b"value"),
+        Err(StoreError::WrongType)
+    );
+}
+
+#[test]
+fn list_positions_support_rank_count_maxlen_and_reverse_search() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"x".to_vec(), b"a".to_vec(), b"x".to_vec(), b"x".to_vec()],
+    );
+    assert_eq!(
+        database.list_positions("list", b"x", 1, None, None),
+        Ok(vec![0, 2, 3])
+    );
+    assert_eq!(
+        database.list_positions("list", b"x", 2, Some(1), None),
+        Ok(vec![2])
+    );
+    assert_eq!(
+        database.list_positions("list", b"x", -1, Some(0), None),
+        Ok(vec![3, 2, 0])
+    );
+    assert_eq!(
+        database.list_positions("list", b"x", 1, Some(0), Some(2)),
+        Ok(vec![0])
+    );
+    assert_eq!(
+        database.list_positions("missing", b"x", 1, None, None),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn list_move_is_atomic_preserves_ttl_and_supports_same_key_rotation() {
+    let mut database = Database::new();
+    database.set_list(b"source".to_vec(), vec![b"one".to_vec(), b"two".to_vec()]);
+    database.set_list(b"destination".to_vec(), vec![b"three".to_vec()]);
+    let source_expiration = Instant::now() + Duration::from_secs(30);
+    let destination_expiration = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("source", source_expiration));
+    assert!(database.expire_at("destination", destination_expiration));
+    assert_eq!(
+        database.list_move("source", "destination", true, false),
+        Ok(Some(b"two".to_vec()))
+    );
+    assert_eq!(
+        database.list_values("source"),
+        Ok(Some(vec![b"one".to_vec()]))
+    );
+    assert_eq!(
+        database.list_values("destination"),
+        Ok(Some(vec![b"two".to_vec(), b"three".to_vec()]))
+    );
+    assert_eq!(database.expiration("source"), Some(source_expiration));
+    assert_eq!(
+        database.expiration("destination"),
+        Some(destination_expiration)
+    );
+    assert_eq!(
+        database.list_move("destination", "destination", false, true),
+        Ok(Some(b"two".to_vec()))
+    );
+    assert_eq!(
+        database.list_values("destination"),
+        Ok(Some(vec![b"three".to_vec(), b"two".to_vec()]))
+    );
+    assert_eq!(
+        database.expiration("destination"),
+        Some(destination_expiration)
+    );
+}
+
+#[test]
+fn list_move_validates_destination_before_removing_source() {
+    let mut database = Database::new();
+    database.set_list(b"source".to_vec(), vec![b"value".to_vec()]);
+    database.set(b"destination".to_vec(), b"string".to_vec());
+    assert_eq!(
+        database.list_move("source", "destination", true, false),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        database.list_values("source"),
+        Ok(Some(vec![b"value".to_vec()]))
+    );
+    assert_eq!(
+        database.list_move("missing", "destination", true, false),
+        Ok(None)
+    );
+}
+
+#[test]
+fn first_nonempty_list_respects_key_order_expiration_and_type_validation() {
+    let mut database = Database::new();
+    database.set_list(b"second".to_vec(), vec![b"value".to_vec()]);
+    assert_eq!(
+        database.first_nonempty_list(&[b"missing".to_vec(), b"second".to_vec()]),
+        Ok(Some(b"second".to_vec()))
+    );
+    assert!(database.expire("second", 0));
+    assert_eq!(
+        database.first_nonempty_list(&[b"second".to_vec()]),
+        Ok(None)
+    );
+    database.set_list(b"valid".to_vec(), vec![b"value".to_vec()]);
+    database.set(b"wrong".to_vec(), b"string".to_vec());
+    assert_eq!(
+        database.first_nonempty_list(&[b"valid".to_vec(), b"wrong".to_vec()]),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        database.list_values("valid"),
+        Ok(Some(vec![b"value".to_vec()]))
+    );
+}

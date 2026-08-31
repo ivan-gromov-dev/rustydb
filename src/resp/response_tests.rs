@@ -70,6 +70,26 @@ fn converts_key_lists_to_arrays_including_the_empty_list() {
 }
 
 #[test]
+fn blocking_pop_timeout_uses_protocol_specific_null() {
+    assert_eq!(
+        frame_from_output(CommandOutput::NullArray),
+        RespFrame::NullArray
+    );
+    assert_eq!(
+        frame_from_output_for_protocol(CommandOutput::NullArray, ProtocolVersion::Resp3),
+        RespFrame::Null
+    );
+}
+
+#[test]
+fn converts_integer_lists_to_integer_arrays() {
+    assert_eq!(
+        frame_from_output(CommandOutput::IntegerList(vec![3, 1])),
+        RespFrame::Array(vec![RespFrame::Integer(3), RespFrame::Integer(1)])
+    );
+}
+
+#[test]
 fn converts_scan_to_cursor_and_nested_key_array() {
     assert_eq!(
         frame_from_output(CommandOutput::Scan {

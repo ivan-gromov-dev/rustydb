@@ -1,7 +1,8 @@
 use super::types::{
-    ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, ProtocolVersion,
-    SetCondition, SetExpiration,
+    ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, InsertPosition,
+    ListEnd, ProtocolVersion, SetCondition, SetExpiration,
 };
+use std::time::Duration;
 
 type KeyValueEntries = Vec<(Vec<u8>, Vec<u8>)>;
 
@@ -23,11 +24,11 @@ impl Command {
                 });
                 if has_options { None } else { Some(2) }
             }
-            "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "RPUSH" | "SADD" | "SREM" | "SISMEMBER" => {
-                Some(2)
-            }
+            "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "LPUSHX" | "RPUSH" | "RPUSHX" | "SADD"
+            | "SREM" | "SISMEMBER" => Some(2),
             "PING" | "ECHO" => Some(1),
-            "SETRANGE" => Some(3),
+            "SETRANGE" | "LSET" | "LREM" => Some(3),
+            "LINSERT" => Some(4),
             _ => None,
         };
         let args = match tail_after {
@@ -186,45 +187,102 @@ impl Command {
                 })
             }
             "LPUSH" => {
-                exact(args, 3, "LPUSH key value")?;
-                Ok(Self::LPush {
-                    key: owned(args[1]),
-                    value: owned(args[2]),
-                })
+                let (key, mut values) = collection_values(args, "LPUSH key value [value ...]")?;
+                if values.len() == 1 {
+                    Ok(Self::LPush {
+                        key,
+                        value: values.remove(0),
+                    })
+                } else {
+                    Ok(Self::LPushMany { key, values })
+                }
+            }
+            "LPUSHX" => {
+                let (key, values) = collection_values(args, "LPUSHX key value [value ...]")?;
+                Ok(Self::LPushX { key, values })
             }
             "RPUSH" => {
-                exact(args, 3, "RPUSH key value")?;
-                Ok(Self::RPush {
-                    key: owned(args[1]),
-                    value: owned(args[2]),
-                })
+                let (key, mut values) = collection_values(args, "RPUSH key value [value ...]")?;
+                if values.len() == 1 {
+                    Ok(Self::RPush {
+                        key,
+                        value: values.remove(0),
+                    })
+                } else {
+                    Ok(Self::RPushMany { key, values })
+                }
+            }
+            "RPUSHX" => {
+                let (key, values) = collection_values(args, "RPUSHX key value [value ...]")?;
+                Ok(Self::RPushX { key, values })
             }
             "LLEN" => Ok(Self::LLen {
                 key: one(args, "LLEN key")?,
             }),
-            "LPOP" => Ok(Self::LPop {
-                key: one(args, "LPOP key")?,
-            }),
-            "RPOP" => Ok(Self::RPop {
-                key: one(args, "RPOP key")?,
-            }),
+            "LINDEX" => {
+                let (key, index) = key_i64(args, "LINDEX key index")?;
+                Ok(Self::LIndex { key, index })
+            }
+            "LSET" => {
+                exact(args, 4, "LSET key index value")?;
+                Ok(Self::LSet {
+                    key: owned(args[1]),
+                    index: parse_i64(args[2])?,
+                    value: owned(args[3]),
+                })
+            }
+            "LINSERT" => parse_linsert(args),
+            "LTRIM" => {
+                let (key, start, end) = range_args(args, "LTRIM key start stop")?;
+                Ok(Self::LTrim { key, start, end })
+            }
+            "LREM" => {
+                exact(args, 4, "LREM key count element")?;
+                Ok(Self::LRem {
+                    key: owned(args[1]),
+                    count: parse_i64(args[2])?,
+                    value: owned(args[3]),
+                })
+            }
+            "LPOS" => parse_lpos(args),
+            "LMOVE" => parse_lmove(args),
+            "RPOPLPUSH" => {
+                exact(args, 3, "RPOPLPUSH source destination")?;
+                Ok(Self::RPopLPush {
+                    source: owned(args[1]),
+                    destination: owned(args[2]),
+                })
+            }
+            "BLPOP" => parse_blocking_pop(args, false),
+            "BRPOP" => parse_blocking_pop(args, true),
+            "BLMOVE" => parse_blocking_move(args),
+            "LPOP" => parse_pop(args, false),
+            "RPOP" => parse_pop(args, true),
             "LRANGE" => {
                 let (key, start, end) = range_args(args, "LRANGE key start end")?;
                 Ok(Self::LRange { key, start, end })
             }
             "SADD" => {
-                exact(args, 3, "SADD key member")?;
-                Ok(Self::SAdd {
-                    key: owned(args[1]),
-                    member: owned(args[2]),
-                })
+                let (key, mut members) = collection_values(args, "SADD key member [member ...]")?;
+                if members.len() == 1 {
+                    Ok(Self::SAdd {
+                        key,
+                        member: members.remove(0),
+                    })
+                } else {
+                    Ok(Self::SAddMany { key, members })
+                }
             }
             "SREM" => {
-                exact(args, 3, "SREM key member")?;
-                Ok(Self::SRem {
-                    key: owned(args[1]),
-                    member: owned(args[2]),
-                })
+                let (key, mut members) = collection_values(args, "SREM key member [member ...]")?;
+                if members.len() == 1 {
+                    Ok(Self::SRem {
+                        key,
+                        member: members.remove(0),
+                    })
+                } else {
+                    Ok(Self::SRemMany { key, members })
+                }
             }
             "SISMEMBER" => {
                 exact(args, 3, "SISMEMBER key member")?;
@@ -233,6 +291,57 @@ impl Command {
                     member: owned(args[2]),
                 })
             }
+            "SMISMEMBER" => {
+                if args.len() < 3 {
+                    return Err(CommandError::InvalidArguments(
+                        "SMISMEMBER key member [member ...]",
+                    ));
+                }
+                Ok(Self::SMIsMember {
+                    key: owned(args[1]),
+                    members: args[2..].iter().map(|value| owned(value)).collect(),
+                })
+            }
+            "SPOP" => parse_optional_usize(args, "SPOP key [count]", |key, count| Self::SPop {
+                key,
+                count,
+            }),
+            "SRANDMEMBER" => parse_optional_i64(args, "SRANDMEMBER key [count]", |key, count| {
+                Self::SRandMember { key, count }
+            }),
+            "SMOVE" => {
+                exact(args, 4, "SMOVE source destination member")?;
+                Ok(Self::SMove {
+                    source: owned(args[1]),
+                    destination: owned(args[2]),
+                    member: owned(args[3]),
+                })
+            }
+            "SDIFF" => Ok(Self::SDiff {
+                keys: many(args, "SDIFF key [key ...]")?,
+            }),
+            "SINTER" => Ok(Self::SInter {
+                keys: many(args, "SINTER key [key ...]")?,
+            }),
+            "SUNION" => Ok(Self::SUnion {
+                keys: many(args, "SUNION key [key ...]")?,
+            }),
+            "SDIFFSTORE" => parse_set_store(
+                args,
+                "SDIFFSTORE destination key [key ...]",
+                |destination, keys| Self::SDiffStore { destination, keys },
+            ),
+            "SINTERSTORE" => parse_set_store(
+                args,
+                "SINTERSTORE destination key [key ...]",
+                |destination, keys| Self::SInterStore { destination, keys },
+            ),
+            "SUNIONSTORE" => parse_set_store(
+                args,
+                "SUNIONSTORE destination key [key ...]",
+                |destination, keys| Self::SUnionStore { destination, keys },
+            ),
+            "SSCAN" => parse_sscan(args),
             "SMEMBERS" => Ok(Self::SMembers {
                 key: one(args, "SMEMBERS key")?,
             }),
@@ -405,6 +514,182 @@ fn many(args: &[&[u8]], usage: &'static str) -> Result<Vec<Vec<u8>>, CommandErro
     Ok(args[1..].iter().map(|value| owned(value)).collect())
 }
 
+fn collection_values(
+    args: &[&[u8]],
+    usage: &'static str,
+) -> Result<(Vec<u8>, Vec<Vec<u8>>), CommandError> {
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok((
+        owned(args[1]),
+        args[2..].iter().map(|value| owned(value)).collect(),
+    ))
+}
+
+fn parse_pop(args: &[&[u8]], right: bool) -> Result<Command, CommandError> {
+    let usage = if right {
+        "RPOP key [count]"
+    } else {
+        "LPOP key [count]"
+    };
+    match args {
+        [_, key] if right => Ok(Command::RPop { key: owned(key) }),
+        [_, key] => Ok(Command::LPop { key: owned(key) }),
+        [_, key, count] if right => Ok(Command::RPopCount {
+            key: owned(key),
+            count: parse_usize(count)?,
+        }),
+        [_, key, count] => Ok(Command::LPopCount {
+            key: owned(key),
+            count: parse_usize(count)?,
+        }),
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
+}
+
+fn parse_optional_usize(
+    args: &[&[u8]],
+    usage: &'static str,
+    build: impl FnOnce(Vec<u8>, Option<usize>) -> Command,
+) -> Result<Command, CommandError> {
+    match args {
+        [_, key] => Ok(build(owned(key), None)),
+        [_, key, count] => Ok(build(owned(key), Some(parse_usize(count)?))),
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
+}
+
+fn parse_optional_i64(
+    args: &[&[u8]],
+    usage: &'static str,
+    build: impl FnOnce(Vec<u8>, Option<i64>) -> Command,
+) -> Result<Command, CommandError> {
+    match args {
+        [_, key] => Ok(build(owned(key), None)),
+        [_, key, count] => Ok(build(owned(key), Some(parse_i64(count)?))),
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
+}
+
+fn parse_linsert(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "LINSERT key BEFORE|AFTER pivot element";
+    exact(args, 5, USAGE)?;
+    let position = if args[2].eq_ignore_ascii_case(b"BEFORE") {
+        InsertPosition::Before
+    } else if args[2].eq_ignore_ascii_case(b"AFTER") {
+        InsertPosition::After
+    } else {
+        return Err(CommandError::InvalidArguments(USAGE));
+    };
+    Ok(Command::LInsert {
+        key: owned(args[1]),
+        position,
+        pivot: owned(args[3]),
+        value: owned(args[4]),
+    })
+}
+
+fn parse_lpos(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "LPOS key element [RANK rank] [COUNT count] [MAXLEN len]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let mut rank = 1;
+    let mut rank_seen = false;
+    let mut count = None;
+    let mut max_len = None;
+    let mut index = 3;
+    while index < args.len() {
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if args[index].eq_ignore_ascii_case(b"RANK") && !rank_seen {
+            rank = parse_i64(value)?;
+            rank_seen = true;
+            if rank == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+        } else if args[index].eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            count = Some(parse_usize(value)?);
+        } else if args[index].eq_ignore_ascii_case(b"MAXLEN") && max_len.is_none() {
+            max_len = Some(parse_usize(value)?);
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::LPos {
+        key: owned(args[1]),
+        value: owned(args[2]),
+        rank,
+        count,
+        max_len,
+    })
+}
+
+fn parse_lmove(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "LMOVE source destination LEFT|RIGHT LEFT|RIGHT";
+    exact(args, 5, USAGE)?;
+    Ok(Command::LMove {
+        source: owned(args[1]),
+        destination: owned(args[2]),
+        source_end: parse_list_end(args[3], USAGE)?,
+        destination_end: parse_list_end(args[4], USAGE)?,
+    })
+}
+
+fn parse_blocking_pop(args: &[&[u8]], right: bool) -> Result<Command, CommandError> {
+    let usage = if right {
+        "BRPOP key [key ...] timeout"
+    } else {
+        "BLPOP key [key ...] timeout"
+    };
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    let timeout = parse_timeout(args[args.len() - 1], usage)?;
+    let keys = args[1..args.len() - 1]
+        .iter()
+        .map(|key| owned(key))
+        .collect();
+    Ok(if right {
+        Command::BRPop { keys, timeout }
+    } else {
+        Command::BLPop { keys, timeout }
+    })
+}
+
+fn parse_blocking_move(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "BLMOVE source destination LEFT|RIGHT LEFT|RIGHT timeout";
+    exact(args, 6, USAGE)?;
+    Ok(Command::BLMove {
+        source: owned(args[1]),
+        destination: owned(args[2]),
+        source_end: parse_list_end(args[3], USAGE)?,
+        destination_end: parse_list_end(args[4], USAGE)?,
+        timeout: parse_timeout(args[5], USAGE)?,
+    })
+}
+
+fn parse_timeout(value: &[u8], usage: &'static str) -> Result<f64, CommandError> {
+    let timeout = parse_finite_float(value)?;
+    if timeout < 0.0 || Duration::try_from_secs_f64(timeout).is_err() {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok(timeout)
+}
+
+fn parse_list_end(value: &[u8], usage: &'static str) -> Result<ListEnd, CommandError> {
+    if value.eq_ignore_ascii_case(b"LEFT") {
+        Ok(ListEnd::Left)
+    } else if value.eq_ignore_ascii_case(b"RIGHT") {
+        Ok(ListEnd::Right)
+    } else {
+        Err(CommandError::InvalidArguments(usage))
+    }
+}
+
 fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
     let usage = "MSET key value [key value ...]";
     if args.len() < 3 || args.len() % 2 == 0 {
@@ -460,6 +745,55 @@ fn parse_hscan(args: &[&[u8]]) -> Result<Command, CommandError> {
         index += 2;
     }
     Ok(Command::HScan {
+        key,
+        cursor,
+        pattern,
+        count: count.unwrap_or(10),
+    })
+}
+
+fn parse_set_store(
+    args: &[&[u8]],
+    usage: &'static str,
+    build: impl FnOnce(Vec<u8>, Vec<Vec<u8>>) -> Command,
+) -> Result<Command, CommandError> {
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok(build(
+        owned(args[1]),
+        args[2..].iter().map(|value| owned(value)).collect(),
+    ))
+}
+
+fn parse_sscan(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "SSCAN key cursor [MATCH pattern] [COUNT count]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let key = owned(args[1]);
+    let cursor = parse_usize(args[2])?;
+    let mut pattern = None;
+    let mut count = None;
+    let mut index = 3;
+    while index < args.len() {
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if args[index].eq_ignore_ascii_case(b"MATCH") && pattern.is_none() {
+            pattern = Some(owned(value));
+        } else if args[index].eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            let parsed = parse_usize(value)?;
+            if parsed == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            count = Some(parsed);
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::SScan {
         key,
         cursor,
         pattern,

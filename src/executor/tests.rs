@@ -1344,3 +1344,264 @@ fn execute_hash_commands() {
         Response::Integer(1)
     );
 }
+
+#[test]
+fn execute_counted_list_pops_return_arrays() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()],
+    );
+    assert_eq!(
+        execute(
+            Command::LPopCount {
+                key: b"list".to_vec(),
+                count: 2,
+            },
+            &mut database,
+        ),
+        Response::KeyList(vec![b"one".to_vec(), b"two".to_vec()])
+    );
+    assert_eq!(
+        execute(
+            Command::RPopCount {
+                key: b"missing".to_vec(),
+                count: 2,
+            },
+            &mut database,
+        ),
+        Response::KeyList(Vec::new())
+    );
+}
+
+#[test]
+fn execute_conditional_pushes_return_lengths() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::LPushX {
+                key: b"missing".to_vec(),
+                values: vec![b"one".to_vec()],
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+    database.set_list(b"list".to_vec(), vec![b"one".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::RPushX {
+                key: b"list".to_vec(),
+                values: vec![b"two".to_vec(), b"three".to_vec()],
+            },
+            &mut database,
+        ),
+        Response::Integer(3)
+    );
+}
+
+#[test]
+fn execute_list_index_and_set_map_values_and_errors() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"one".to_vec(), b"two".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::LIndex {
+                key: b"list".to_vec(),
+                index: -1,
+            },
+            &mut database,
+        ),
+        Response::Value(b"two".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::LSet {
+                key: b"list".to_vec(),
+                index: 0,
+                value: b"changed".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Ok
+    );
+    assert_eq!(
+        execute(
+            Command::LSet {
+                key: b"missing".to_vec(),
+                index: 0,
+                value: b"changed".to_vec(),
+            },
+            &mut database,
+        ),
+        Response::Error("no such key".to_owned())
+    );
+}
+
+#[test]
+fn execute_extended_list_commands_map_results() {
+    let mut database = Database::new();
+    database.set_list(
+        b"source".to_vec(),
+        vec![b"a".to_vec(), b"b".to_vec(), b"a".to_vec()],
+    );
+    assert_eq!(
+        execute(
+            Command::LInsert {
+                key: b"source".to_vec(),
+                position: crate::command::InsertPosition::After,
+                pivot: b"b".to_vec(),
+                value: b"x".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(4)
+    );
+    assert_eq!(
+        execute(
+            Command::LPos {
+                key: b"source".to_vec(),
+                value: b"a".to_vec(),
+                rank: 1,
+                count: Some(0),
+                max_len: None
+            },
+            &mut database
+        ),
+        Response::IntegerList(vec![0, 3])
+    );
+    assert_eq!(
+        execute(
+            Command::LRem {
+                key: b"source".to_vec(),
+                count: 1,
+                value: b"a".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::LTrim {
+                key: b"source".to_vec(),
+                start: 0,
+                end: 1
+            },
+            &mut database
+        ),
+        Response::Ok
+    );
+    assert_eq!(
+        execute(
+            Command::LMove {
+                source: b"source".to_vec(),
+                destination: b"destination".to_vec(),
+                source_end: crate::command::ListEnd::Right,
+                destination_end: crate::command::ListEnd::Left
+            },
+            &mut database
+        ),
+        Response::Value(b"x".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::RPopLPush {
+                source: b"destination".to_vec(),
+                destination: b"source".to_vec()
+            },
+            &mut database
+        ),
+        Response::Value(b"x".to_vec())
+    );
+}
+
+#[test]
+fn execute_set_membership_and_selection_commands() {
+    let mut database = Database::new();
+    database.set_set(b"set".to_vec(), vec![b"a".to_vec(), b"b".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::SMIsMember {
+                key: b"set".to_vec(),
+                members: vec![b"b".to_vec(), b"x".to_vec()]
+            },
+            &mut database
+        ),
+        Response::IntegerList(vec![1, 0])
+    );
+    assert_eq!(
+        execute(
+            Command::SPop {
+                key: b"set".to_vec(),
+                count: None
+            },
+            &mut database
+        ),
+        Response::Value(b"a".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::SRandMember {
+                key: b"set".to_vec(),
+                count: Some(-3)
+            },
+            &mut database
+        ),
+        Response::KeyList(vec![b"b".to_vec(), b"b".to_vec(), b"b".to_vec()])
+    );
+    assert_eq!(database.set_cardinality("set"), Ok(1));
+    assert_eq!(
+        execute(
+            Command::SMove {
+                source: b"set".to_vec(),
+                destination: b"other".to_vec(),
+                member: b"b".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(database.set_contains("other", "b"), Ok(true));
+}
+
+#[test]
+fn execute_set_algebra_store_and_scan_commands() {
+    let mut database = Database::new();
+    database.set_set(b"first".to_vec(), vec![b"a".to_vec(), b"b".to_vec()]);
+    database.set_set(b"second".to_vec(), vec![b"b".to_vec(), b"c".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::SUnion {
+                keys: vec![b"first".to_vec(), b"second".to_vec()]
+            },
+            &mut database
+        ),
+        Response::KeyList(vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()])
+    );
+    assert_eq!(
+        execute(
+            Command::SInterStore {
+                destination: b"result".to_vec(),
+                keys: vec![b"first".to_vec(), b"second".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::SScan {
+                key: b"result".to_vec(),
+                cursor: 0,
+                pattern: Some(b"b*".to_vec()),
+                count: 1
+            },
+            &mut database
+        ),
+        Response::Scan {
+            cursor: 0,
+            keys: vec![b"b".to_vec()]
+        }
+    );
+}

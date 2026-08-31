@@ -29,6 +29,46 @@ struct DatabaseMetrics {
 }
 
 impl Database {
+    pub(crate) fn try_blocking_pop(&mut self, keys: &[Vec<u8>], right: bool) -> CommandOutput {
+        let key = match self.store.first_nonempty_list(keys) {
+            Ok(Some(key)) => key,
+            Ok(None) => return CommandOutput::Nil,
+            Err(error) => return CommandOutput::Error(error.to_string()),
+        };
+        let command = if right {
+            Command::RPop { key: key.clone() }
+        } else {
+            Command::LPop { key: key.clone() }
+        };
+        match self.execute(command) {
+            CommandOutput::Value(value) => CommandOutput::KeyList(vec![key, value]),
+            output => output,
+        }
+    }
+
+    pub(crate) fn try_blocking_move(
+        &mut self,
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        source_end: crate::command::ListEnd,
+        destination_end: crate::command::ListEnd,
+    ) -> CommandOutput {
+        match self
+            .store
+            .first_nonempty_list(std::slice::from_ref(&source))
+        {
+            Ok(Some(_)) => {}
+            Ok(None) => return CommandOutput::Nil,
+            Err(error) => return CommandOutput::Error(error.to_string()),
+        }
+        self.execute(Command::LMove {
+            source,
+            destination,
+            source_end,
+            destination_end,
+        })
+    }
+
     pub(crate) fn active_expire(&mut self, limit: usize) -> usize {
         self.store.active_expire(limit)
     }
@@ -75,6 +115,7 @@ impl Database {
                     ..
                 }
                 | Command::Copy { .. }
+                | Command::SMove { .. }
         );
         let aof_should_append = match &command {
             Command::SetAdvanced { key, condition, .. } => match condition {

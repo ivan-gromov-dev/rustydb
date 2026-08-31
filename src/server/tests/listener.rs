@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -10,14 +10,14 @@ use crate::output::CommandOutput;
 use crate::resp::frame::RespFrame;
 use crate::server::{
     SharedDatabase, Shutdown as ServerShutdown, execute_shared, run_server,
-    run_server_until_with_snapshot, serve_incoming,
+    run_server_until_with_snapshot, serve_incoming, shared_database,
 };
 
 fn start_server(client_count: usize) -> (SocketAddr, JoinHandle<io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
-        let database = Arc::new(Mutex::new(Database::default()));
+        let database = shared_database(Database::default());
         serve_incoming(listener.incoming().take(client_count), &database)
     });
 
@@ -73,6 +73,21 @@ fn exchange(address: SocketAddr, input: &[u8]) -> Vec<u8> {
 
     let mut output = Vec::new();
     stream.read_to_end(&mut output).unwrap();
+    output
+}
+
+fn exchange_without_half_close(address: SocketAddr, input: &[u8], response_len: usize) -> Vec<u8> {
+    let mut stream = TcpStream::connect(address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    stream.write_all(input).unwrap();
+    let mut output = vec![0; response_len];
+    stream.read_exact(&mut output).unwrap();
+    stream.write_all(&request(&[b"QUIT"])).unwrap();
+    let mut quit = [0; 5];
+    stream.read_exact(&mut quit).unwrap();
+    assert_eq!(&quit, b"+OK\r\n");
     output
 }
 
@@ -140,6 +155,113 @@ fn concurrent_increments_are_atomic_per_command() {
 }
 
 #[test]
+fn blocking_pop_times_out_and_wakes_after_push() {
+    let (address, server) = start_server(3);
+    assert_eq!(
+        exchange_without_half_close(address, &request(&[b"BLPOP", b"missing", b"0.05"]), 5),
+        b"*-1\r\n"
+    );
+
+    let blocked = thread::spawn(move || {
+        exchange_without_half_close(address, &request(&[b"BLPOP", b"queue", b"1"]), 26)
+    });
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        exchange(
+            address,
+            &pipeline(&[&[b"RPUSH", b"queue", b"value"], &[b"QUIT"]])
+        ),
+        b":1\r\n+OK\r\n"
+    );
+    assert_eq!(
+        blocked.join().unwrap(),
+        b"*2\r\n$5\r\nqueue\r\n$5\r\nvalue\r\n"
+    );
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn competing_blocking_consumers_do_not_duplicate_values() {
+    let (address, server) = start_server(3);
+    let first = thread::spawn(move || {
+        exchange_without_half_close(address, &request(&[b"BRPOP", b"queue", b"1"]), 22)
+    });
+    let second = thread::spawn(move || {
+        exchange_without_half_close(address, &request(&[b"BRPOP", b"queue", b"1"]), 22)
+    });
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        exchange(
+            address,
+            &pipeline(&[&[b"RPUSH", b"queue", b"a", b"b"], &[b"QUIT"]])
+        ),
+        b":2\r\n+OK\r\n"
+    );
+    let mut values = vec![first.join().unwrap(), second.join().unwrap()];
+    values.sort();
+    assert_eq!(
+        values,
+        vec![
+            b"*2\r\n$5\r\nqueue\r\n$1\r\na\r\n".to_vec(),
+            b"*2\r\n$5\r\nqueue\r\n$1\r\nb\r\n".to_vec()
+        ]
+    );
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn blocking_move_wakes_and_moves_exactly_once() {
+    let (address, server) = start_server(3);
+    let blocked = thread::spawn(move || {
+        exchange_without_half_close(
+            address,
+            &request(&[
+                b"BLMOVE",
+                b"source",
+                b"destination",
+                b"RIGHT",
+                b"LEFT",
+                b"1",
+            ]),
+            7,
+        )
+    });
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        exchange(
+            address,
+            &pipeline(&[&[b"RPUSH", b"source", b"x"], &[b"QUIT"]])
+        ),
+        b":1\r\n+OK\r\n"
+    );
+    assert_eq!(blocked.join().unwrap(), b"$1\r\nx\r\n");
+    assert_eq!(
+        exchange(
+            address,
+            &pipeline(&[&[b"LRANGE", b"destination", b"0", b"-1"], &[b"QUIT"]])
+        ),
+        b"*1\r\n$1\r\nx\r\n+OK\r\n"
+    );
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn disconnected_infinite_blocking_client_releases_worker() {
+    let (address, server) = start_server(2);
+    let mut blocked = TcpStream::connect(address).unwrap();
+    blocked
+        .write_all(&request(&[b"BLPOP", b"queue", b"0"]))
+        .unwrap();
+    thread::sleep(Duration::from_millis(30));
+    drop(blocked);
+    assert_eq!(
+        exchange(address, &pipeline(&[&[b"PING"], &[b"QUIT"]])),
+        b"+PONG\r\n+OK\r\n"
+    );
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
 fn fragmented_request_survives_until_end_of_input() {
     let (address, server) = start_server(2);
     let set = request(&[b"SET", b"key", b"value"]);
@@ -186,7 +308,7 @@ fn malformed_frame_closes_only_the_bad_connection() {
 fn incoming_connection_errors_stop_the_server() {
     let error = io::Error::other("accept failed");
     let incoming: Vec<io::Result<TcpStream>> = vec![Err(error)];
-    let database = Arc::new(Mutex::new(Database::default()));
+    let database = shared_database(Database::default());
 
     let error = serve_incoming(incoming, &database).unwrap_err();
 
@@ -196,12 +318,12 @@ fn incoming_connection_errors_stop_the_server() {
 
 #[test]
 fn poisoned_database_lock_is_recovered() {
-    let database: SharedDatabase = Arc::new(Mutex::new(Database::default()));
+    let database: SharedDatabase = shared_database(Database::default());
     let poisoned_database = Arc::clone(&database);
 
     assert!(
         thread::spawn(move || {
-            let _guard = poisoned_database.lock().unwrap();
+            let _guard = poisoned_database.database.lock().unwrap();
             panic!("poison database lock");
         })
         .join()

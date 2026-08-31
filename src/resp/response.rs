@@ -19,6 +19,9 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::Pong => RespFrame::SimpleString("PONG".to_owned()),
         CommandOutput::Hello { connection_id, .. } => hello_frame(protocol, connection_id),
         CommandOutput::Integer(value) => RespFrame::Integer(value),
+        CommandOutput::IntegerList(values) => {
+            RespFrame::Array(values.into_iter().map(RespFrame::Integer).collect())
+        }
         CommandOutput::Float(value) => RespFrame::BulkString(value.to_string().into_bytes()),
         CommandOutput::SimpleString(value) => RespFrame::SimpleString(value.to_owned()),
         CommandOutput::Value(value) => RespFrame::BulkString(value),
@@ -34,6 +37,8 @@ pub(crate) fn frame_from_output_for_protocol(
         ),
         CommandOutput::Nil if protocol == ProtocolVersion::Resp3 => RespFrame::Null,
         CommandOutput::Nil => RespFrame::NullBulkString,
+        CommandOutput::NullArray if protocol == ProtocolVersion::Resp3 => RespFrame::Null,
+        CommandOutput::NullArray => RespFrame::NullArray,
         CommandOutput::KeyList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::BulkString).collect())
         }

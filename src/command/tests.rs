@@ -722,10 +722,10 @@ fn list_commands_validate_arguments() {
         Err(CommandError::InvalidArguments("LLEN key"))
     );
     for (input, usage) in [
-        ("LPOP", "LPOP key"),
-        ("LPOP key extra", "LPOP key"),
-        ("RPOP", "RPOP key"),
-        ("RPOP key extra", "RPOP key"),
+        ("LPOP", "LPOP key [count]"),
+        ("LPOP key 1 extra", "LPOP key [count]"),
+        ("RPOP", "RPOP key [count]"),
+        ("RPOP key 1 extra", "RPOP key [count]"),
     ] {
         assert_eq!(
             Command::parse(input),
@@ -1274,5 +1274,380 @@ fn expiration_conditions_reject_unknown_or_repeated_options() {
             Command::parse(command),
             Err(CommandError::InvalidArguments(_))
         ));
+    }
+}
+
+#[test]
+fn parses_and_persists_variadic_collection_mutations() {
+    let lpush = Command::from_owned_bytes(vec![
+        b"LPUSH".to_vec(),
+        b"list".to_vec(),
+        b"one".to_vec(),
+        b"two".to_vec(),
+    ])
+    .unwrap();
+    assert_eq!(
+        lpush,
+        Command::LPushMany {
+            key: b"list".to_vec(),
+            values: vec![b"one".to_vec(), b"two".to_vec()],
+        }
+    );
+    assert_eq!(
+        lpush.aof_arguments(),
+        Some(vec![
+            b"LPUSH".to_vec(),
+            b"list".to_vec(),
+            b"one".to_vec(),
+            b"two".to_vec()
+        ])
+    );
+
+    assert_eq!(
+        Command::from_owned_bytes(vec![
+            b"SREM".to_vec(),
+            b"set".to_vec(),
+            b"one".to_vec(),
+            b"two".to_vec(),
+        ]),
+        Ok(Command::SRemMany {
+            key: b"set".to_vec(),
+            members: vec![b"one".to_vec(), b"two".to_vec()],
+        })
+    );
+}
+
+#[test]
+fn parses_counted_list_pops_and_rejects_invalid_counts() {
+    let command =
+        Command::from_owned_bytes(vec![b"LPOP".to_vec(), b"list".to_vec(), b"2".to_vec()]).unwrap();
+    assert_eq!(
+        command,
+        Command::LPopCount {
+            key: b"list".to_vec(),
+            count: 2,
+        }
+    );
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![b"LPOP".to_vec(), b"list".to_vec(), b"2".to_vec()])
+    );
+    assert!(matches!(
+        Command::parse("RPOP list -1"),
+        Err(CommandError::InvalidInteger(_))
+    ));
+    assert!(matches!(
+        Command::parse("LPOP list 1 extra"),
+        Err(CommandError::InvalidArguments("LPOP key [count]"))
+    ));
+}
+
+#[test]
+fn parses_and_persists_conditional_variadic_pushes() {
+    let command = Command::from_owned_bytes(vec![
+        b"LPUSHX".to_vec(),
+        b"list".to_vec(),
+        b"one".to_vec(),
+        b"two".to_vec(),
+    ])
+    .unwrap();
+    assert_eq!(
+        command,
+        Command::LPushX {
+            key: b"list".to_vec(),
+            values: vec![b"one".to_vec(), b"two".to_vec()],
+        }
+    );
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![
+            b"LPUSHX".to_vec(),
+            b"list".to_vec(),
+            b"one".to_vec(),
+            b"two".to_vec(),
+        ])
+    );
+    assert!(matches!(
+        Command::parse("RPUSHX list"),
+        Err(CommandError::InvalidArguments(
+            "RPUSHX key value [value ...]"
+        ))
+    ));
+}
+
+#[test]
+fn parses_list_index_and_set_with_replayable_binary_values() {
+    assert_eq!(
+        Command::parse("LINDEX list -1"),
+        Ok(Command::LIndex {
+            key: b"list".to_vec(),
+            index: -1,
+        })
+    );
+    let command = Command::from_owned_bytes(vec![
+        b"LSET".to_vec(),
+        b"list".to_vec(),
+        b"-2".to_vec(),
+        b"binary\0value".to_vec(),
+    ])
+    .unwrap();
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![
+            b"LSET".to_vec(),
+            b"list".to_vec(),
+            b"-2".to_vec(),
+            b"binary\0value".to_vec(),
+        ])
+    );
+    for input in ["LINDEX list", "LINDEX list nope", "LSET list 0"] {
+        assert!(Command::parse(input).is_err());
+    }
+}
+
+#[test]
+fn parses_extended_list_commands_and_options() {
+    assert!(matches!(
+        Command::parse("LINSERT list BEFORE pivot value"),
+        Ok(Command::LInsert {
+            position: InsertPosition::Before,
+            ..
+        })
+    ));
+    assert_eq!(
+        Command::parse("LTRIM list -2 -1"),
+        Ok(Command::LTrim {
+            key: b"list".to_vec(),
+            start: -2,
+            end: -1
+        })
+    );
+    assert_eq!(
+        Command::parse("LREM list -2 value"),
+        Ok(Command::LRem {
+            key: b"list".to_vec(),
+            count: -2,
+            value: b"value".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::parse("LPOS list value RANK -2 COUNT 0 MAXLEN 20"),
+        Ok(Command::LPos {
+            key: b"list".to_vec(),
+            value: b"value".to_vec(),
+            rank: -2,
+            count: Some(0),
+            max_len: Some(20)
+        })
+    );
+    assert_eq!(
+        Command::parse("LMOVE source destination RIGHT LEFT"),
+        Ok(Command::LMove {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            source_end: ListEnd::Right,
+            destination_end: ListEnd::Left
+        })
+    );
+    assert_eq!(
+        Command::parse("RPOPLPUSH source destination"),
+        Ok(Command::RPopLPush {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec()
+        })
+    );
+    for input in [
+        "LINSERT list MIDDLE pivot value",
+        "LPOS list value RANK 0",
+        "LPOS list value COUNT 1 COUNT 2",
+        "LPOS list value RANK 1 RANK 2",
+        "LMOVE source destination UP LEFT",
+        "RPOPLPUSH source",
+    ] {
+        assert!(Command::parse(input).is_err(), "{input}");
+    }
+}
+
+#[test]
+fn parses_blocking_list_commands_and_validates_timeouts() {
+    assert_eq!(
+        Command::parse("BLPOP first second 1.5"),
+        Ok(Command::BLPop {
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+            timeout: 1.5
+        })
+    );
+    assert_eq!(
+        Command::parse("BRPOP queue 0"),
+        Ok(Command::BRPop {
+            keys: vec![b"queue".to_vec()],
+            timeout: 0.0
+        })
+    );
+    assert_eq!(
+        Command::parse("BLMOVE source destination RIGHT LEFT 0.25"),
+        Ok(Command::BLMove {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            source_end: ListEnd::Right,
+            destination_end: ListEnd::Left,
+            timeout: 0.25
+        })
+    );
+    for invalid in [
+        "BLPOP 1",
+        "BLPOP key -1",
+        "BRPOP key nan",
+        "BLMOVE source destination LEFT RIGHT",
+        "BLMOVE source destination MIDDLE RIGHT 1",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn extended_list_mutations_have_replayable_aof_arguments() {
+    let commands = [
+        Command::LInsert {
+            key: b"list".to_vec(),
+            position: InsertPosition::After,
+            pivot: b"pivot".to_vec(),
+            value: b"value".to_vec(),
+        },
+        Command::LTrim {
+            key: b"list".to_vec(),
+            start: 1,
+            end: -1,
+        },
+        Command::LRem {
+            key: b"list".to_vec(),
+            count: 0,
+            value: b"value".to_vec(),
+        },
+        Command::LMove {
+            source: b"a".to_vec(),
+            destination: b"b".to_vec(),
+            source_end: ListEnd::Left,
+            destination_end: ListEnd::Right,
+        },
+        Command::RPopLPush {
+            source: b"a".to_vec(),
+            destination: b"b".to_vec(),
+        },
+    ];
+    for command in commands {
+        let arguments = command.aof_arguments().unwrap();
+        assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
+    }
+}
+
+#[test]
+fn parses_set_membership_and_selection_commands() {
+    assert_eq!(
+        Command::parse("SMISMEMBER set a b"),
+        Ok(Command::SMIsMember {
+            key: b"set".to_vec(),
+            members: vec![b"a".to_vec(), b"b".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::parse("SPOP set 2"),
+        Ok(Command::SPop {
+            key: b"set".to_vec(),
+            count: Some(2)
+        })
+    );
+    assert_eq!(
+        Command::parse("SRANDMEMBER set -3"),
+        Ok(Command::SRandMember {
+            key: b"set".to_vec(),
+            count: Some(-3)
+        })
+    );
+    assert_eq!(
+        Command::parse("SMOVE source destination member"),
+        Ok(Command::SMove {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            member: b"member".to_vec()
+        })
+    );
+    assert!(Command::parse("SMOVE source destination").is_err());
+    assert!(Command::parse("SPOP set -1").is_err());
+    assert_eq!(
+        Command::SPop {
+            key: b"set".to_vec(),
+            count: Some(2)
+        }
+        .aof_arguments(),
+        Some(vec![b"SPOP".to_vec(), b"set".to_vec(), b"2".to_vec()])
+    );
+    let move_command = Command::SMove {
+        source: b"source".to_vec(),
+        destination: b"destination".to_vec(),
+        member: b"member".to_vec(),
+    };
+    assert_eq!(
+        Command::from_owned_bytes(move_command.aof_arguments().unwrap()),
+        Ok(move_command)
+    );
+}
+
+#[test]
+fn parses_set_algebra_store_and_scan_commands() {
+    assert_eq!(
+        Command::parse("SDIFF first second missing"),
+        Ok(Command::SDiff {
+            keys: vec![b"first".to_vec(), b"second".to_vec(), b"missing".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::parse("SINTER first"),
+        Ok(Command::SInter {
+            keys: vec![b"first".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::parse("SUNION first second"),
+        Ok(Command::SUnion {
+            keys: vec![b"first".to_vec(), b"second".to_vec()]
+        })
+    );
+    let stores = [
+        Command::SDiffStore {
+            destination: b"out".to_vec(),
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+        },
+        Command::SInterStore {
+            destination: b"out".to_vec(),
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+        },
+        Command::SUnionStore {
+            destination: b"out".to_vec(),
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+        },
+    ];
+    for command in stores {
+        let arguments = command.aof_arguments().unwrap();
+        assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
+    }
+    assert_eq!(
+        Command::parse("SSCAN set 2 COUNT 3 MATCH a*"),
+        Ok(Command::SScan {
+            key: b"set".to_vec(),
+            cursor: 2,
+            pattern: Some(b"a*".to_vec()),
+            count: 3
+        })
+    );
+    for invalid in [
+        "SDIFF",
+        "SDIFFSTORE destination",
+        "SSCAN set",
+        "SSCAN set 0 COUNT 0",
+        "SSCAN set 0 MATCH",
+        "SSCAN set 0 MATCH a MATCH b",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
     }
 }
