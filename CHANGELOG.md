@@ -7,6 +7,14 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Atomic set-member moves through `SMOVE`, including TTL preservation and
+  validation before mutation.
+- Deterministic set algebra through `SDIFF`, `SINTER`, and `SUNION`, atomic
+  destination replacement through their `STORE` variants, and sorted cursor
+  iteration through `SSCAN MATCH/COUNT`.
+
 ## [0.11.0] - 2026-08-31
 
 ### Added

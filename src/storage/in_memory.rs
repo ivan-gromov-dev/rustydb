@@ -3,7 +3,7 @@ use super::indexing::normalize_index;
 use super::stored_value::StoredValue;
 use crate::storage::clock::{Clock, SystemClock};
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, hash_map::Entry as HashMapEntry};
+use std::collections::{BinaryHeap, HashMap, HashSet, hash_map::Entry as HashMapEntry};
 use std::fmt;
 use std::str;
 use std::time::{Duration, Instant, SystemTime};
@@ -19,6 +19,13 @@ pub(crate) struct InMemoryStore {
 }
 
 type HashEntries = Vec<(Vec<u8>, Vec<u8>)>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetOperation {
+    Difference,
+    Intersection,
+    Union,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ReclamationMetrics {
@@ -1597,6 +1604,145 @@ impl InMemoryStore {
         Ok((0..requested)
             .map(|index| members[index % members.len()].clone())
             .collect())
+    }
+
+    pub(crate) fn set_move(
+        &mut self,
+        source: impl AsRef<[u8]>,
+        destination: impl AsRef<[u8]>,
+        member: impl AsRef<[u8]>,
+    ) -> Result<bool, StoreError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        let member = member.as_ref();
+        self.remove_if_expired(source);
+        if source != destination {
+            self.remove_if_expired(destination);
+        }
+        let Some(source_entry) = self.storage.get(source) else {
+            return Ok(false);
+        };
+        let source_set = source_entry.set()?;
+        if !source_set.contains(member) {
+            return Ok(false);
+        }
+        if source == destination {
+            return Ok(true);
+        }
+        if let Some(destination_entry) = self.storage.get(destination) {
+            destination_entry.set()?;
+        }
+
+        let source_empty = {
+            let source_set = self
+                .storage
+                .get_mut(source)
+                .ok_or(StoreError::NoSuchKey)?
+                .set_mut()?;
+            source_set.remove(member);
+            source_set.is_empty()
+        };
+        if source_empty {
+            self.storage.remove(source);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        self.ensure_capacity_for(destination);
+        self.storage
+            .entry(destination.to_vec())
+            .or_insert_with(StoredValue::new_set)
+            .set_mut()?
+            .insert(member.to_vec());
+        Ok(true)
+    }
+
+    pub(crate) fn set_algebra(
+        &mut self,
+        keys: &[Vec<u8>],
+        operation: SetOperation,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        for key in keys {
+            self.remove_if_expired(key);
+        }
+        let sets: Vec<Option<HashSet<Vec<u8>>>> = keys
+            .iter()
+            .map(|key| {
+                self.storage
+                    .get(key.as_slice())
+                    .map(|entry| entry.set().cloned())
+                    .transpose()
+            })
+            .collect::<Result<_, _>>()?;
+        let mut result = match operation {
+            SetOperation::Difference | SetOperation::Intersection => {
+                sets.first().cloned().flatten().unwrap_or_default()
+            }
+            SetOperation::Union => HashSet::new(),
+        };
+        match operation {
+            SetOperation::Difference => {
+                for set in sets.iter().skip(1).flatten() {
+                    result.retain(|member| !set.contains(member));
+                }
+            }
+            SetOperation::Intersection => {
+                for set in sets.iter().skip(1) {
+                    let Some(set) = set else {
+                        result.clear();
+                        break;
+                    };
+                    result.retain(|member| set.contains(member));
+                }
+            }
+            SetOperation::Union => {
+                for set in sets.into_iter().flatten() {
+                    result.extend(set);
+                }
+            }
+        }
+        let mut result: Vec<_> = result.into_iter().collect();
+        result.sort();
+        Ok(result)
+    }
+
+    pub(crate) fn set_algebra_store(
+        &mut self,
+        destination: Vec<u8>,
+        keys: &[Vec<u8>],
+        operation: SetOperation,
+    ) -> Result<usize, StoreError> {
+        let result = self.set_algebra(keys, operation)?;
+        if result.is_empty() {
+            self.delete(&destination);
+            return Ok(0);
+        }
+        self.remove_if_expired(&destination);
+        self.ensure_capacity_for(&destination);
+        let count = result.len();
+        let mut entry = StoredValue::new_set();
+        entry.set_mut()?.extend(result);
+        self.storage.insert(destination, entry);
+        Ok(count)
+    }
+
+    pub(crate) fn set_scan(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+    ) -> Result<(usize, Vec<Vec<u8>>), StoreError> {
+        let members = self.set_members(key)?;
+        if cursor >= members.len() {
+            return Ok((0, Vec::new()));
+        }
+        let end = cursor.saturating_add(count).min(members.len());
+        let matched = members[cursor..end]
+            .iter()
+            .filter(|member| pattern.is_none_or(|pattern| glob::matches(pattern, member)))
+            .cloned()
+            .collect();
+        Ok((if end == members.len() { 0 } else { end }, matched))
     }
 
     pub(crate) fn set_members(

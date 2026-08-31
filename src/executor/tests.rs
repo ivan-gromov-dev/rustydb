@@ -1551,4 +1551,57 @@ fn execute_set_membership_and_selection_commands() {
         Response::KeyList(vec![b"b".to_vec(), b"b".to_vec(), b"b".to_vec()])
     );
     assert_eq!(database.set_cardinality("set"), Ok(1));
+    assert_eq!(
+        execute(
+            Command::SMove {
+                source: b"set".to_vec(),
+                destination: b"other".to_vec(),
+                member: b"b".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(database.set_contains("other", "b"), Ok(true));
+}
+
+#[test]
+fn execute_set_algebra_store_and_scan_commands() {
+    let mut database = Database::new();
+    database.set_set(b"first".to_vec(), vec![b"a".to_vec(), b"b".to_vec()]);
+    database.set_set(b"second".to_vec(), vec![b"b".to_vec(), b"c".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::SUnion {
+                keys: vec![b"first".to_vec(), b"second".to_vec()]
+            },
+            &mut database
+        ),
+        Response::KeyList(vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()])
+    );
+    assert_eq!(
+        execute(
+            Command::SInterStore {
+                destination: b"result".to_vec(),
+                keys: vec![b"first".to_vec(), b"second".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::SScan {
+                key: b"result".to_vec(),
+                cursor: 0,
+                pattern: Some(b"b*".to_vec()),
+                count: 1
+            },
+            &mut database
+        ),
+        Response::Scan {
+            cursor: 0,
+            keys: vec![b"b".to_vec()]
+        }
+    );
 }

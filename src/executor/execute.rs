@@ -6,7 +6,7 @@ use crate::command::{
 use crate::output::CommandOutput;
 use crate::snapshot;
 use crate::storage::{
-    ExpirationUpdate, ExpireCondition, InMemoryStore, SetCondition, SetExpiration,
+    ExpirationUpdate, ExpireCondition, InMemoryStore, SetCondition, SetExpiration, SetOperation,
 };
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -451,6 +451,35 @@ pub(crate) fn execute_with_snapshot(
                 Err(error) => CommandOutput::Error(error.to_string()),
             }
         }
+        Command::SMove {
+            source,
+            destination,
+            member,
+        } => match store.set_move(&source, &destination, &member) {
+            Ok(moved) => CommandOutput::Integer(i64::from(moved)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SDiff { keys } => set_algebra(store, &keys, SetOperation::Difference),
+        Command::SInter { keys } => set_algebra(store, &keys, SetOperation::Intersection),
+        Command::SUnion { keys } => set_algebra(store, &keys, SetOperation::Union),
+        Command::SDiffStore { destination, keys } => {
+            set_algebra_store(store, destination, &keys, SetOperation::Difference)
+        }
+        Command::SInterStore { destination, keys } => {
+            set_algebra_store(store, destination, &keys, SetOperation::Intersection)
+        }
+        Command::SUnionStore { destination, keys } => {
+            set_algebra_store(store, destination, &keys, SetOperation::Union)
+        }
+        Command::SScan {
+            key,
+            cursor,
+            pattern,
+            count,
+        } => match store.set_scan(&key, cursor, pattern.as_deref(), count) {
+            Ok((cursor, keys)) => CommandOutput::Scan { cursor, keys },
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::SMembers { key } => match store.set_members(&key) {
             Ok(members) => CommandOutput::KeyList(members),
@@ -588,6 +617,29 @@ pub(crate) fn execute_with_snapshot(
         Command::Help => CommandOutput::Help,
 
         Command::Exit => CommandOutput::Exit,
+    }
+}
+
+fn set_algebra(
+    store: &mut InMemoryStore,
+    keys: &[Vec<u8>],
+    operation: SetOperation,
+) -> CommandOutput {
+    match store.set_algebra(keys, operation) {
+        Ok(members) => CommandOutput::KeyList(members),
+        Err(error) => CommandOutput::Error(error.to_string()),
+    }
+}
+
+fn set_algebra_store(
+    store: &mut InMemoryStore,
+    destination: Vec<u8>,
+    keys: &[Vec<u8>],
+    operation: SetOperation,
+) -> CommandOutput {
+    match store.set_algebra_store(destination, keys, operation) {
+        Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
+        Err(error) => CommandOutput::Error(error.to_string()),
     }
 }
 

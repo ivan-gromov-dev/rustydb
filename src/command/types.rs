@@ -322,6 +322,38 @@ pub(crate) enum Command {
         key: Vec<u8>,
         count: Option<i64>,
     },
+    SMove {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        member: Vec<u8>,
+    },
+    SDiff {
+        keys: Vec<Vec<u8>>,
+    },
+    SInter {
+        keys: Vec<Vec<u8>>,
+    },
+    SUnion {
+        keys: Vec<Vec<u8>>,
+    },
+    SDiffStore {
+        destination: Vec<u8>,
+        keys: Vec<Vec<u8>>,
+    },
+    SInterStore {
+        destination: Vec<u8>,
+        keys: Vec<Vec<u8>>,
+    },
+    SUnionStore {
+        destination: Vec<u8>,
+        keys: Vec<Vec<u8>>,
+    },
+    SScan {
+        key: Vec<u8>,
+        cursor: usize,
+        pattern: Option<Vec<u8>>,
+        count: usize,
+    },
     SMembers {
         key: Vec<u8>,
     },
@@ -492,6 +524,14 @@ impl Command {
             Self::SMIsMember { .. } => "SMISMEMBER",
             Self::SPop { .. } => "SPOP",
             Self::SRandMember { .. } => "SRANDMEMBER",
+            Self::SMove { .. } => "SMOVE",
+            Self::SDiff { .. } => "SDIFF",
+            Self::SInter { .. } => "SINTER",
+            Self::SUnion { .. } => "SUNION",
+            Self::SDiffStore { .. } => "SDIFFSTORE",
+            Self::SInterStore { .. } => "SINTERSTORE",
+            Self::SUnionStore { .. } => "SUNIONSTORE",
+            Self::SScan { .. } => "SSCAN",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
             Self::HSet { .. } => "HSET",
@@ -742,6 +782,25 @@ impl Command {
                 }
                 values
             }
+            Self::SMove {
+                source,
+                destination,
+                member,
+            } => vec![
+                b"SMOVE".to_vec(),
+                source.clone(),
+                destination.clone(),
+                member.clone(),
+            ],
+            Self::SDiffStore { destination, keys } => {
+                with_destination_and_keys(b"SDIFFSTORE", destination, keys)
+            }
+            Self::SInterStore { destination, keys } => {
+                with_destination_and_keys(b"SINTERSTORE", destination, keys)
+            }
+            Self::SUnionStore { destination, keys } => {
+                with_destination_and_keys(b"SUNIONSTORE", destination, keys)
+            }
             Self::HSet { key, entries } => {
                 let mut values = vec![b"HSET".to_vec(), key.clone()];
                 for (field, value) in entries {
@@ -795,6 +854,10 @@ impl Command {
             | Self::SIsMember { .. }
             | Self::SMIsMember { .. }
             | Self::SRandMember { .. }
+            | Self::SDiff { .. }
+            | Self::SInter { .. }
+            | Self::SUnion { .. }
+            | Self::SScan { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
             | Self::HGet { .. }
@@ -844,6 +907,13 @@ fn with_values(name: &[u8], key: &[u8], values: &[Vec<u8>]) -> Vec<Vec<u8>> {
     arguments.push(name.to_vec());
     arguments.push(key.to_vec());
     arguments.extend(values.iter().cloned());
+    arguments
+}
+
+fn with_destination_and_keys(name: &[u8], destination: &[u8], keys: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut arguments = Vec::with_capacity(keys.len() + 2);
+    arguments.extend([name.to_vec(), destination.to_vec()]);
+    arguments.extend(keys.iter().cloned());
     arguments
 }
 

@@ -305,6 +305,39 @@ impl Command {
             "SRANDMEMBER" => parse_optional_i64(args, "SRANDMEMBER key [count]", |key, count| {
                 Self::SRandMember { key, count }
             }),
+            "SMOVE" => {
+                exact(args, 4, "SMOVE source destination member")?;
+                Ok(Self::SMove {
+                    source: owned(args[1]),
+                    destination: owned(args[2]),
+                    member: owned(args[3]),
+                })
+            }
+            "SDIFF" => Ok(Self::SDiff {
+                keys: many(args, "SDIFF key [key ...]")?,
+            }),
+            "SINTER" => Ok(Self::SInter {
+                keys: many(args, "SINTER key [key ...]")?,
+            }),
+            "SUNION" => Ok(Self::SUnion {
+                keys: many(args, "SUNION key [key ...]")?,
+            }),
+            "SDIFFSTORE" => parse_set_store(
+                args,
+                "SDIFFSTORE destination key [key ...]",
+                |destination, keys| Self::SDiffStore { destination, keys },
+            ),
+            "SINTERSTORE" => parse_set_store(
+                args,
+                "SINTERSTORE destination key [key ...]",
+                |destination, keys| Self::SInterStore { destination, keys },
+            ),
+            "SUNIONSTORE" => parse_set_store(
+                args,
+                "SUNIONSTORE destination key [key ...]",
+                |destination, keys| Self::SUnionStore { destination, keys },
+            ),
+            "SSCAN" => parse_sscan(args),
             "SMEMBERS" => Ok(Self::SMembers {
                 key: one(args, "SMEMBERS key")?,
             }),
@@ -667,6 +700,55 @@ fn parse_hscan(args: &[&[u8]]) -> Result<Command, CommandError> {
         index += 2;
     }
     Ok(Command::HScan {
+        key,
+        cursor,
+        pattern,
+        count: count.unwrap_or(10),
+    })
+}
+
+fn parse_set_store(
+    args: &[&[u8]],
+    usage: &'static str,
+    build: impl FnOnce(Vec<u8>, Vec<Vec<u8>>) -> Command,
+) -> Result<Command, CommandError> {
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok(build(
+        owned(args[1]),
+        args[2..].iter().map(|value| owned(value)).collect(),
+    ))
+}
+
+fn parse_sscan(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "SSCAN key cursor [MATCH pattern] [COUNT count]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let key = owned(args[1]);
+    let cursor = parse_usize(args[2])?;
+    let mut pattern = None;
+    let mut count = None;
+    let mut index = 3;
+    while index < args.len() {
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if args[index].eq_ignore_ascii_case(b"MATCH") && pattern.is_none() {
+            pattern = Some(owned(value));
+        } else if args[index].eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            let parsed = parse_usize(value)?;
+            if parsed == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            count = Some(parsed);
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::SScan {
         key,
         cursor,
         pattern,

@@ -266,6 +266,14 @@ clients receive the corresponding protocol-specific typed value.
 | `SMISMEMBER key member [member ...]` | Test multiple members in request order | One `1` or `0` per member |
 | `SPOP key [count]` | Remove one or up to `count` members in sorted binary order | Member, members, or `(nil)` |
 | `SRANDMEMBER key [count]` | Return members without removing them; negative counts allow repeats | Member, members, or `(nil)` |
+| `SMOVE source destination member` | Atomically move a member between sets | `1` if moved, otherwise `0` |
+| `SDIFF key [key ...]` | Return members of the first set absent from every later set | Members in sorted order or `(nil)` |
+| `SINTER key [key ...]` | Return members present in every set | Members in sorted order or `(nil)` |
+| `SUNION key [key ...]` | Return members present in any set | Members in sorted order or `(nil)` |
+| `SDIFFSTORE destination key [key ...]` | Store the difference, replacing destination | Stored cardinality |
+| `SINTERSTORE destination key [key ...]` | Store the intersection, replacing destination | Stored cardinality |
+| `SUNIONSTORE destination key [key ...]` | Store the union, replacing destination | Stored cardinality |
+| `SSCAN key cursor [MATCH pattern] [COUNT count]` | Deterministically inspect sorted set-member batches | Next cursor followed by members |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
@@ -354,8 +362,13 @@ may contain spaces. RESP clients provide the member as one bulk-string argument.
 in sorted binary order so AOF replay selects the
 same members. `SRANDMEMBER` uses RustyDB's deterministic process-local
 pseudo-random sequence and never mutates the set.
-Mutating an existing set preserves its expiration while members remain; removing the final member also
-removes the key. Set commands reject strings and lists without mutation.
+Set algebra results use sorted binary order. The `STORE` variants validate all
+source types before replacing the destination, clear the destination TTL, and
+remove the destination when the result is empty. `SSCAN` uses the same sorted
+order, and `COUNT` controls examined members, so `MATCH` may produce a smaller
+batch. Mutating an existing set preserves its expiration while members remain;
+removing the final member also removes the key. Set commands reject strings and
+lists without mutation.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary

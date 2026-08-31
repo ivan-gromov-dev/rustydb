@@ -1527,6 +1527,15 @@ fn parses_set_membership_and_selection_commands() {
             count: Some(-3)
         })
     );
+    assert_eq!(
+        Command::parse("SMOVE source destination member"),
+        Ok(Command::SMove {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            member: b"member".to_vec()
+        })
+    );
+    assert!(Command::parse("SMOVE source destination").is_err());
     assert!(Command::parse("SPOP set -1").is_err());
     assert_eq!(
         Command::SPop {
@@ -1536,4 +1545,72 @@ fn parses_set_membership_and_selection_commands() {
         .aof_arguments(),
         Some(vec![b"SPOP".to_vec(), b"set".to_vec(), b"2".to_vec()])
     );
+    let move_command = Command::SMove {
+        source: b"source".to_vec(),
+        destination: b"destination".to_vec(),
+        member: b"member".to_vec(),
+    };
+    assert_eq!(
+        Command::from_owned_bytes(move_command.aof_arguments().unwrap()),
+        Ok(move_command)
+    );
+}
+
+#[test]
+fn parses_set_algebra_store_and_scan_commands() {
+    assert_eq!(
+        Command::parse("SDIFF first second missing"),
+        Ok(Command::SDiff {
+            keys: vec![b"first".to_vec(), b"second".to_vec(), b"missing".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::parse("SINTER first"),
+        Ok(Command::SInter {
+            keys: vec![b"first".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::parse("SUNION first second"),
+        Ok(Command::SUnion {
+            keys: vec![b"first".to_vec(), b"second".to_vec()]
+        })
+    );
+    let stores = [
+        Command::SDiffStore {
+            destination: b"out".to_vec(),
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+        },
+        Command::SInterStore {
+            destination: b"out".to_vec(),
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+        },
+        Command::SUnionStore {
+            destination: b"out".to_vec(),
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+        },
+    ];
+    for command in stores {
+        let arguments = command.aof_arguments().unwrap();
+        assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
+    }
+    assert_eq!(
+        Command::parse("SSCAN set 2 COUNT 3 MATCH a*"),
+        Ok(Command::SScan {
+            key: b"set".to_vec(),
+            cursor: 2,
+            pattern: Some(b"a*".to_vec()),
+            count: 3
+        })
+    );
+    for invalid in [
+        "SDIFF",
+        "SDIFFSTORE destination",
+        "SSCAN set",
+        "SSCAN set 0 COUNT 0",
+        "SSCAN set 0 MATCH",
+        "SSCAN set 0 MATCH a MATCH b",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
 }
