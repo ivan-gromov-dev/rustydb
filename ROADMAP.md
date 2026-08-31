@@ -20,28 +20,6 @@ moving on.
   commands.
 - Document intentional differences from Redis.
 
-## `0.11` — Hashes
-
-**Goal:** support structured records without requiring applications to encode an
-entire object as one string.
-
-### Work
-
-- Add `HSET`, `HSETNX`, `HGET`, `HMGET`, `HGETALL`, `HDEL`, `HEXISTS`, and
-  `HLEN`.
-- Add `HKEYS`, `HVALS`, `HINCRBY`, `HINCRBYFLOAT`, and `HSCAN`.
-- Extend snapshot and AOF persistence to hashes.
-- Preserve a hash TTL while fields remain and remove the key when its final
-  field is deleted.
-- Keep field iteration and multi-value output deterministic where Redis leaves
-  ordering unspecified.
-
-### Done when
-
-- Hashes work through the interactive CLI, RESP2, RESP3, snapshots, and AOF.
-- Wrong-type, numeric overflow, non-finite values, expiration, and empty-hash
-  behavior are covered at storage and integration boundaries.
-
 ## `0.12` — Complete lists and sets
 
 **Goal:** make the existing collection types sufficient for queues, workers,

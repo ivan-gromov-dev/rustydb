@@ -2,7 +2,7 @@
 
 RustyDB is a small in-memory key-value database written in Rust. It provides an
 interactive command-line interface and a concurrent TCP server inspired by a
-focused subset of Redis string, list, set, and expiration operations, with
+focused subset of Redis string, list, set, hash, and expiration operations, with
 snapshot and append-only persistence.
 
 RustyDB is a learning-oriented implementation of database internals and a
@@ -60,10 +60,11 @@ that tail at the previous valid record boundary and continues. A checksum
 mismatch or malformed complete record remains a startup error.
 
 Run `AOFREWRITE` in AOF mode to compact command history into the minimum
-canonical sequence needed to reproduce the current strings, lists, sets, and
-expirations. The replacement is written and synchronized as a temporary file
-before it atomically replaces the previous AOF. Rewriting is synchronous and
-holds the shared database lock, so other clients wait until it completes.
+canonical sequence needed to reproduce the current strings, lists, sets,
+hashes, and expirations. The replacement is written and synchronized as a
+temporary file before it atomically replaces the previous AOF. Rewriting is
+synchronous and holds the shared database lock, so other clients wait until it
+completes.
 
 Use `--max-keys` with a positive count to bound the number of stored keys in
 interactive or server mode:
@@ -92,7 +93,8 @@ rustydb server --log-level info
 
 Log records use a stable space-separated `key=value` format. Command records
 contain only the command name and success/error status; stored keys, values,
-list elements, set members, and persistence paths are never logged.
+list elements, set members, hash fields and values, and persistence paths are
+never logged.
 
 Or install the binary from a source checkout:
 
@@ -226,7 +228,7 @@ clients receive the corresponding protocol-specific typed value.
 | `INCRBYFLOAT key amount` | Increment a finite floating-point value | Updated number |
 | `EXISTS key [key ...]` | Count existing, non-expired keys; duplicate keys are counted repeatedly | Number of matches |
 | `DEL key [key ...]` | Delete one or more keys; duplicate keys are removed once | Number deleted |
-| `TYPE key` | Report `string`, `list`, `set`, or `none` for an expired or missing key | Type name |
+| `TYPE key` | Report `string`, `list`, `set`, `hash`, or `none` for an expired or missing key | Type name |
 | `TOUCH key [key ...]` | Count existing keys (including duplicate arguments); RustyDB has no LRU/LFU access metadata to update | Number of matches |
 | `UNLINK key [key ...]` | Delete keys synchronously; duplicate keys are removed once | Number deleted |
 | `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
@@ -315,10 +317,10 @@ String offsets and lengths are measured in bytes. Negative `GETRANGE` indexes
 count backward from the end. When `SETRANGE` starts beyond the current end, the
 gap is padded with null bytes (`\0`).
 
-RustyDB stores string, list, and set values. In the interactive CLI, `LPUSH` and
-`RPUSH` accept the remainder of the command line as one list element, so an
-element may contain spaces. RESP clients provide the element as one bulk-string
-argument.
+RustyDB stores string, list, set, and hash values. In the interactive CLI,
+`LPUSH` and `RPUSH` accept the remainder of the command line as one list element,
+so an element may contain spaces. RESP clients provide the element as one
+bulk-string argument.
 Pushing to an existing list preserves its expiration. List commands applied to
 a string, and string or numeric commands applied to a list, return a wrong-type
 error without changing the value or its expiration. Popping from a non-empty
@@ -391,7 +393,7 @@ src/
     ├── snapshot.rs        Snapshot data conversion and TTL restoration
     ├── stored_value.rs    StoredValue and expiration metadata
     ├── value.rs           Typed value representation
-    └── tests/              Tests grouped by keys, numbers, strings, lists, sets, TTL, and values
+    └── tests/              Tests grouped by keys, numbers, strings, lists, sets, hashes, TTL, and values
 ```
 
 The layers have deliberately narrow responsibilities:

@@ -98,6 +98,26 @@ fn aof_replays_successful_mutations_without_recording_failed_ones() {
 }
 
 #[test]
+fn hashes_survive_aof_replay_and_rewrite() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "HSET user name Ada visits 1\nHINCRBY user visits 2\nHINCRBYFLOAT user score 1.5\nAOFREWRITE\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+
+    let second = run_cli_with_aof(&aof, "TYPE user\nHGETALL user\nEXIT\n");
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> hash\n"), "{stdout}");
+    assert!(
+        stdout.contains("db> name\nAda\nscore\n1.5\nvisits\n3\n"),
+        "{stdout}"
+    );
+}
+
+#[test]
 fn aof_discards_a_truncated_final_record_and_remains_appendable() {
     let directory = TestDirectory::new();
     let aof = directory.aof();
@@ -566,6 +586,31 @@ fn save_persists_values_types_and_ttl_across_restarts() {
         .find_map(|line| line.strip_prefix("db> ")?.parse::<i64>().ok())
         .unwrap();
     assert!((1..=600_000).contains(&ttl));
+}
+
+#[test]
+fn snapshot_preserves_hash_fields_values_and_ttl() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    let first = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        "HSET user zeta last alpha first\nEXPIRE user 60\nSAVE\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+
+    let second = run_cli_with_snapshot(&snapshot, &[], "TYPE user\nHGETALL user\nTTL user\nEXIT\n");
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> hash\n"), "{stdout}");
+    assert!(
+        stdout.contains("db> alpha\nfirst\nzeta\nlast\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("db> 59\n") || stdout.contains("db> 60\n"),
+        "{stdout}"
+    );
 }
 
 #[test]

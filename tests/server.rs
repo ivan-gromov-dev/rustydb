@@ -98,6 +98,35 @@ fn public_server_api_supports_ping_and_binary_echo() {
 }
 
 #[test]
+fn public_server_api_supports_binary_hashes_in_resp2_and_resp3() {
+    let (address, shutdown, server) = start_server();
+    let field = b"field\0\xff";
+    let value = b"value\r\n\0\xff";
+    let resp2 = pipeline(&[
+        &[b"HSET", b"hash", field, value],
+        &[b"HGET", b"hash", field],
+        &[b"QUIT"],
+    ]);
+    assert_eq!(
+        exchange(connect(address), &resp2),
+        b":1\r\n$9\r\nvalue\r\n\0\xff\r\n+OK\r\n"
+    );
+
+    let resp3 = pipeline(&[&[b"HELLO", b"3"], &[b"HGETALL", b"hash"], &[b"QUIT"]]);
+    let output = exchange(connect(address), &resp3);
+    let expected_map = b"%1\r\n$7\r\nfield\0\xff\r\n$9\r\nvalue\r\n\0\xff\r\n";
+    assert!(
+        output
+            .windows(expected_map.len())
+            .any(|part| part == expected_map),
+        "{output:?}"
+    );
+
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
 fn public_shutdown_api_allows_an_active_session_to_finish() {
     let (address, shutdown, server) = start_server();
     let mut stream = connect(address);
