@@ -309,3 +309,43 @@ fn variadic_pushes_follow_redis_argument_order_and_preserve_ttl() {
     );
     assert_eq!(database.expiration("list"), Some(expires_at));
 }
+
+#[test]
+fn counted_pops_return_removal_order_preserve_ttl_and_remove_empty_keys() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()],
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+
+    assert_eq!(
+        database.pop_right_many("list", 2),
+        Ok(vec![b"three".to_vec(), b"two".to_vec()])
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+    assert_eq!(
+        database.pop_left_many("list", 10),
+        Ok(vec![b"one".to_vec()])
+    );
+    assert!(!database.exists("list"));
+    assert_eq!(database.pop_left_many("missing", 2), Ok(Vec::new()));
+}
+
+#[test]
+fn zero_count_does_not_mutate_a_list_and_still_validates_type() {
+    let mut database = Database::new();
+    database.set_list(b"list".to_vec(), vec![b"one".to_vec()]);
+    database.set(b"string".to_vec(), b"value".to_vec());
+
+    assert_eq!(database.pop_left_many("list", 0), Ok(Vec::new()));
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![b"one".to_vec()]))
+    );
+    assert_eq!(
+        database.pop_right_many("string", 0),
+        Err(StoreError::WrongType)
+    );
+}

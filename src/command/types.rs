@@ -212,8 +212,16 @@ pub(crate) enum Command {
     LPop {
         key: Vec<u8>,
     },
+    LPopCount {
+        key: Vec<u8>,
+        count: usize,
+    },
     RPop {
         key: Vec<u8>,
+    },
+    RPopCount {
+        key: Vec<u8>,
+        count: usize,
     },
     LRange {
         key: Vec<u8>,
@@ -391,8 +399,8 @@ impl Command {
             Self::LPush { .. } | Self::LPushMany { .. } => "LPUSH",
             Self::RPush { .. } | Self::RPushMany { .. } => "RPUSH",
             Self::LLen { .. } => "LLEN",
-            Self::LPop { .. } => "LPOP",
-            Self::RPop { .. } => "RPOP",
+            Self::LPop { .. } | Self::LPopCount { .. } => "LPOP",
+            Self::RPop { .. } | Self::RPopCount { .. } => "RPOP",
             Self::LRange { .. } => "LRANGE",
             Self::SAdd { .. } | Self::SAddMany { .. } => "SADD",
             Self::SRem { .. } | Self::SRemMany { .. } => "SREM",
@@ -587,7 +595,13 @@ impl Command {
             Self::RPush { key, value } => vec![b"RPUSH".to_vec(), key.clone(), value.clone()],
             Self::RPushMany { key, values } => with_values(b"RPUSH", key, values),
             Self::LPop { key } => vec![b"LPOP".to_vec(), key.clone()],
+            Self::LPopCount { key, count } => {
+                vec![b"LPOP".to_vec(), key.clone(), offset(*count)]
+            }
             Self::RPop { key } => vec![b"RPOP".to_vec(), key.clone()],
+            Self::RPopCount { key, count } => {
+                vec![b"RPOP".to_vec(), key.clone(), offset(*count)]
+            }
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
             Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],

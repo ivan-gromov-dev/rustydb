@@ -1344,3 +1344,32 @@ fn execute_hash_commands() {
         Response::Integer(1)
     );
 }
+
+#[test]
+fn execute_counted_list_pops_return_arrays() {
+    let mut database = Database::new();
+    database.set_list(
+        b"list".to_vec(),
+        vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()],
+    );
+    assert_eq!(
+        execute(
+            Command::LPopCount {
+                key: b"list".to_vec(),
+                count: 2,
+            },
+            &mut database,
+        ),
+        Response::KeyList(vec![b"one".to_vec(), b"two".to_vec()])
+    );
+    assert_eq!(
+        execute(
+            Command::RPopCount {
+                key: b"missing".to_vec(),
+                count: 2,
+            },
+            &mut database,
+        ),
+        Response::KeyList(Vec::new())
+    );
+}

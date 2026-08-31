@@ -1017,6 +1017,29 @@ impl InMemoryStore {
         Ok(value)
     }
 
+    pub(crate) fn pop_left_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (values, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(Vec::new());
+            };
+            let list = entry.list_mut()?;
+            let values = (0..count).filter_map(|_| list.pop_front()).collect();
+            (values, list.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(values)
+    }
+
     pub(crate) fn pop_right(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -1041,6 +1064,29 @@ impl InMemoryStore {
         }
 
         Ok(value)
+    }
+
+    pub(crate) fn pop_right_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (values, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(Vec::new());
+            };
+            let list = entry.list_mut()?;
+            let values = (0..count).filter_map(|_| list.pop_back()).collect();
+            (values, list.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(values)
     }
 
     pub(crate) fn list_range(

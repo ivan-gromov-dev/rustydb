@@ -722,10 +722,10 @@ fn list_commands_validate_arguments() {
         Err(CommandError::InvalidArguments("LLEN key"))
     );
     for (input, usage) in [
-        ("LPOP", "LPOP key"),
-        ("LPOP key extra", "LPOP key"),
-        ("RPOP", "RPOP key"),
-        ("RPOP key extra", "RPOP key"),
+        ("LPOP", "LPOP key [count]"),
+        ("LPOP key 1 extra", "LPOP key [count]"),
+        ("RPOP", "RPOP key [count]"),
+        ("RPOP key 1 extra", "RPOP key [count]"),
     ] {
         assert_eq!(
             Command::parse(input),
@@ -1315,4 +1315,29 @@ fn parses_and_persists_variadic_collection_mutations() {
             members: vec![b"one".to_vec(), b"two".to_vec()],
         })
     );
+}
+
+#[test]
+fn parses_counted_list_pops_and_rejects_invalid_counts() {
+    let command =
+        Command::from_owned_bytes(vec![b"LPOP".to_vec(), b"list".to_vec(), b"2".to_vec()]).unwrap();
+    assert_eq!(
+        command,
+        Command::LPopCount {
+            key: b"list".to_vec(),
+            count: 2,
+        }
+    );
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![b"LPOP".to_vec(), b"list".to_vec(), b"2".to_vec()])
+    );
+    assert!(matches!(
+        Command::parse("RPOP list -1"),
+        Err(CommandError::InvalidInteger(_))
+    ));
+    assert!(matches!(
+        Command::parse("LPOP list 1 extra"),
+        Err(CommandError::InvalidArguments("LPOP key [count]"))
+    ));
 }

@@ -210,12 +210,8 @@ impl Command {
             "LLEN" => Ok(Self::LLen {
                 key: one(args, "LLEN key")?,
             }),
-            "LPOP" => Ok(Self::LPop {
-                key: one(args, "LPOP key")?,
-            }),
-            "RPOP" => Ok(Self::RPop {
-                key: one(args, "RPOP key")?,
-            }),
+            "LPOP" => parse_pop(args, false),
+            "RPOP" => parse_pop(args, true),
             "LRANGE" => {
                 let (key, start, end) = range_args(args, "LRANGE key start end")?;
                 Ok(Self::LRange { key, start, end })
@@ -432,6 +428,27 @@ fn collection_values(
         owned(args[1]),
         args[2..].iter().map(|value| owned(value)).collect(),
     ))
+}
+
+fn parse_pop(args: &[&[u8]], right: bool) -> Result<Command, CommandError> {
+    let usage = if right {
+        "RPOP key [count]"
+    } else {
+        "LPOP key [count]"
+    };
+    match args {
+        [_, key] if right => Ok(Command::RPop { key: owned(key) }),
+        [_, key] => Ok(Command::LPop { key: owned(key) }),
+        [_, key, count] if right => Ok(Command::RPopCount {
+            key: owned(key),
+            count: parse_usize(count)?,
+        }),
+        [_, key, count] => Ok(Command::LPopCount {
+            key: owned(key),
+            count: parse_usize(count)?,
+        }),
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
 }
 
 fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {

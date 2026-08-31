@@ -247,8 +247,8 @@ clients receive the corresponding protocol-specific typed value.
 | `LPUSH key value [value ...]` | Prepend one or more values to a list, creating it if necessary | New list length |
 | `RPUSH key value [value ...]` | Append one or more values to a list, creating it if necessary | New list length |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
-| `LPOP key` | Remove and return the first list value | Value or `(nil)` |
-| `RPOP key` | Remove and return the last list value | Value or `(nil)` |
+| `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
+| `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
 | `SADD key member [member ...]` | Add one or more members to a set, creating it if necessary | Number of members added |
 | `SREM key member [member ...]` | Remove one or more members from a set | Number of members removed |

@@ -309,10 +309,18 @@ pub(crate) fn execute_with_snapshot(
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::LPopCount { key, count } => match store.pop_left_many(&key, count) {
+            Ok(values) => CommandOutput::KeyList(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::RPop { key } => match store.pop_right(&key) {
             Ok(Some(value)) => CommandOutput::Value(value),
             Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPopCount { key, count } => match store.pop_right_many(&key, count) {
+            Ok(values) => CommandOutput::KeyList(values),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
