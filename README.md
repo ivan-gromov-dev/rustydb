@@ -245,7 +245,9 @@ clients receive the corresponding protocol-specific typed value.
 | `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
 | `SETRANGE key offset value` | Replace bytes starting at an offset | New byte length |
 | `LPUSH key value [value ...]` | Prepend one or more values to a list, creating it if necessary | New list length |
+| `LPUSHX key value [value ...]` | Prepend values only when the list already exists | New list length, or `0` for a missing key |
 | `RPUSH key value [value ...]` | Append one or more values to a list, creating it if necessary | New list length |
+| `RPUSHX key value [value ...]` | Append values only when the list already exists | New list length, or `0` for a missing key |
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
 | `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
 | `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |

@@ -198,11 +198,19 @@ pub(crate) enum Command {
         key: Vec<u8>,
         values: Vec<Vec<u8>>,
     },
+    LPushX {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
     RPush {
         key: Vec<u8>,
         value: Vec<u8>,
     },
     RPushMany {
+        key: Vec<u8>,
+        values: Vec<Vec<u8>>,
+    },
+    RPushX {
         key: Vec<u8>,
         values: Vec<Vec<u8>>,
     },
@@ -397,7 +405,9 @@ impl Command {
             Self::GetRange { .. } => "GETRANGE",
             Self::SetRange { .. } => "SETRANGE",
             Self::LPush { .. } | Self::LPushMany { .. } => "LPUSH",
+            Self::LPushX { .. } => "LPUSHX",
             Self::RPush { .. } | Self::RPushMany { .. } => "RPUSH",
+            Self::RPushX { .. } => "RPUSHX",
             Self::LLen { .. } => "LLEN",
             Self::LPop { .. } | Self::LPopCount { .. } => "LPOP",
             Self::RPop { .. } | Self::RPopCount { .. } => "RPOP",
@@ -592,8 +602,10 @@ impl Command {
             ],
             Self::LPush { key, value } => vec![b"LPUSH".to_vec(), key.clone(), value.clone()],
             Self::LPushMany { key, values } => with_values(b"LPUSH", key, values),
+            Self::LPushX { key, values } => with_values(b"LPUSHX", key, values),
             Self::RPush { key, value } => vec![b"RPUSH".to_vec(), key.clone(), value.clone()],
             Self::RPushMany { key, values } => with_values(b"RPUSH", key, values),
+            Self::RPushX { key, values } => with_values(b"RPUSHX", key, values),
             Self::LPop { key } => vec![b"LPOP".to_vec(), key.clone()],
             Self::LPopCount { key, count } => {
                 vec![b"LPOP".to_vec(), key.clone(), offset(*count)]

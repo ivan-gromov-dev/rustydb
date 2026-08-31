@@ -1373,3 +1373,29 @@ fn execute_counted_list_pops_return_arrays() {
         Response::KeyList(Vec::new())
     );
 }
+
+#[test]
+fn execute_conditional_pushes_return_lengths() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::LPushX {
+                key: b"missing".to_vec(),
+                values: vec![b"one".to_vec()],
+            },
+            &mut database,
+        ),
+        Response::Integer(0)
+    );
+    database.set_list(b"list".to_vec(), vec![b"one".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::RPushX {
+                key: b"list".to_vec(),
+                values: vec![b"two".to_vec(), b"three".to_vec()],
+            },
+            &mut database,
+        ),
+        Response::Integer(3)
+    );
+}

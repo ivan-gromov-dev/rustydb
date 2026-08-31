@@ -23,9 +23,8 @@ impl Command {
                 });
                 if has_options { None } else { Some(2) }
             }
-            "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "RPUSH" | "SADD" | "SREM" | "SISMEMBER" => {
-                Some(2)
-            }
+            "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "LPUSHX" | "RPUSH" | "RPUSHX" | "SADD"
+            | "SREM" | "SISMEMBER" => Some(2),
             "PING" | "ECHO" => Some(1),
             "SETRANGE" => Some(3),
             _ => None,
@@ -196,6 +195,10 @@ impl Command {
                     Ok(Self::LPushMany { key, values })
                 }
             }
+            "LPUSHX" => {
+                let (key, values) = collection_values(args, "LPUSHX key value [value ...]")?;
+                Ok(Self::LPushX { key, values })
+            }
             "RPUSH" => {
                 let (key, mut values) = collection_values(args, "RPUSH key value [value ...]")?;
                 if values.len() == 1 {
@@ -206,6 +209,10 @@ impl Command {
                 } else {
                     Ok(Self::RPushMany { key, values })
                 }
+            }
+            "RPUSHX" => {
+                let (key, values) = collection_values(args, "RPUSHX key value [value ...]")?;
+                Ok(Self::RPushX { key, values })
             }
             "LLEN" => Ok(Self::LLen {
                 key: one(args, "LLEN key")?,

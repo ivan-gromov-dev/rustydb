@@ -945,6 +945,23 @@ impl InMemoryStore {
         Ok(list.len())
     }
 
+    pub(crate) fn push_left_if_exists(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Ok(0);
+        };
+        let list = entry.list_mut()?;
+        for value in values {
+            list.push_front(value);
+        }
+        Ok(list.len())
+    }
+
     pub(crate) fn push_right(
         &mut self,
         key: impl AsRef<[u8]>,
@@ -977,6 +994,21 @@ impl InMemoryStore {
             .entry(key.to_vec())
             .or_insert_with(StoredValue::new_list)
             .list_mut()?;
+        list.extend(values);
+        Ok(list.len())
+    }
+
+    pub(crate) fn push_right_if_exists(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        values: Vec<Vec<u8>>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Ok(0);
+        };
+        let list = entry.list_mut()?;
         list.extend(values);
         Ok(list.len())
     }

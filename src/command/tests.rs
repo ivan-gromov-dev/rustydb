@@ -1341,3 +1341,36 @@ fn parses_counted_list_pops_and_rejects_invalid_counts() {
         Err(CommandError::InvalidArguments("LPOP key [count]"))
     ));
 }
+
+#[test]
+fn parses_and_persists_conditional_variadic_pushes() {
+    let command = Command::from_owned_bytes(vec![
+        b"LPUSHX".to_vec(),
+        b"list".to_vec(),
+        b"one".to_vec(),
+        b"two".to_vec(),
+    ])
+    .unwrap();
+    assert_eq!(
+        command,
+        Command::LPushX {
+            key: b"list".to_vec(),
+            values: vec![b"one".to_vec(), b"two".to_vec()],
+        }
+    );
+    assert_eq!(
+        command.aof_arguments(),
+        Some(vec![
+            b"LPUSHX".to_vec(),
+            b"list".to_vec(),
+            b"one".to_vec(),
+            b"two".to_vec(),
+        ])
+    );
+    assert!(matches!(
+        Command::parse("RPUSHX list"),
+        Err(CommandError::InvalidArguments(
+            "RPUSHX key value [value ...]"
+        ))
+    ));
+}

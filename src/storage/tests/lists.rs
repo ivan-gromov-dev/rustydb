@@ -349,3 +349,55 @@ fn zero_count_does_not_mutate_a_list_and_still_validates_type() {
         Err(StoreError::WrongType)
     );
 }
+
+#[test]
+fn conditional_pushes_require_a_live_list_and_preserve_ttl() {
+    let mut database = Database::new();
+    assert_eq!(
+        database.push_left_if_exists("missing", vec![b"value".to_vec()]),
+        Ok(0)
+    );
+    assert!(!database.exists("missing"));
+
+    database.set_list(b"list".to_vec(), vec![b"middle".to_vec()]);
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("list", expires_at));
+    assert_eq!(
+        database.push_left_if_exists("list", vec![b"one".to_vec(), b"two".to_vec()]),
+        Ok(3)
+    );
+    assert_eq!(
+        database.push_right_if_exists("list", vec![b"three".to_vec(), b"four".to_vec()]),
+        Ok(5)
+    );
+    assert_eq!(
+        database.list_values("list"),
+        Ok(Some(vec![
+            b"two".to_vec(),
+            b"one".to_vec(),
+            b"middle".to_vec(),
+            b"three".to_vec(),
+            b"four".to_vec(),
+        ]))
+    );
+    assert_eq!(database.expiration("list"), Some(expires_at));
+
+    database.set_list(b"expired".to_vec(), vec![b"old".to_vec()]);
+    assert!(database.expire("expired", 0));
+    assert_eq!(
+        database.push_right_if_exists("expired", vec![b"new".to_vec()]),
+        Ok(0)
+    );
+    assert!(!database.exists("expired"));
+}
+
+#[test]
+fn conditional_pushes_reject_non_lists_without_mutation() {
+    let mut database = Database::new();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    assert_eq!(
+        database.push_left_if_exists("string", vec![b"one".to_vec(), b"two".to_vec()]),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
+}

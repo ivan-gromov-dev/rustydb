@@ -289,12 +289,20 @@ pub(crate) fn execute_with_snapshot(
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::LPushX { key, values } => match store.push_left_if_exists(&key, values) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::RPush { key, value } => match store.push_right(&key, value) {
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
         Command::RPushMany { key, values } => match store.push_right_many(&key, values) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPushX { key, values } => match store.push_right_if_exists(&key, values) {
             Ok(length) => CommandOutput::Integer(length as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
