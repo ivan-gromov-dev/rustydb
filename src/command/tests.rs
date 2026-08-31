@@ -1503,3 +1503,37 @@ fn extended_list_mutations_have_replayable_aof_arguments() {
         assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
     }
 }
+
+#[test]
+fn parses_set_membership_and_selection_commands() {
+    assert_eq!(
+        Command::parse("SMISMEMBER set a b"),
+        Ok(Command::SMIsMember {
+            key: b"set".to_vec(),
+            members: vec![b"a".to_vec(), b"b".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::parse("SPOP set 2"),
+        Ok(Command::SPop {
+            key: b"set".to_vec(),
+            count: Some(2)
+        })
+    );
+    assert_eq!(
+        Command::parse("SRANDMEMBER set -3"),
+        Ok(Command::SRandMember {
+            key: b"set".to_vec(),
+            count: Some(-3)
+        })
+    );
+    assert!(Command::parse("SPOP set -1").is_err());
+    assert_eq!(
+        Command::SPop {
+            key: b"set".to_vec(),
+            count: Some(2)
+        }
+        .aof_arguments(),
+        Some(vec![b"SPOP".to_vec(), b"set".to_vec(), b"2".to_vec()])
+    );
+}

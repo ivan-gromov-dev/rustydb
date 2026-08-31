@@ -263,6 +263,9 @@ clients receive the corresponding protocol-specific typed value.
 | `SADD key member [member ...]` | Add one or more members to a set, creating it if necessary | Number of members added |
 | `SREM key member [member ...]` | Remove one or more members from a set | Number of members removed |
 | `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
+| `SMISMEMBER key member [member ...]` | Test multiple members in request order | One `1` or `0` per member |
+| `SPOP key [count]` | Remove one or up to `count` members in sorted binary order | Member, members, or `(nil)` |
+| `SRANDMEMBER key [count]` | Return members without removing them; negative counts allow repeats | Member, members, or `(nil)` |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
@@ -347,8 +350,11 @@ change the list or its expiration.
 Set members are unique byte strings. In the interactive CLI, `SADD`, `SREM`, and
 `SISMEMBER` accept the remainder of the command line as one member, so members
 may contain spaces. RESP clients provide the member as one bulk-string argument.
-`SMEMBERS` sorts members for deterministic output. Mutating an existing set
-preserves its expiration while members remain; removing the final member also
+`SMEMBERS` sorts members for deterministic output. `SPOP` also removes members
+in sorted binary order so AOF replay selects the
+same members. `SRANDMEMBER` uses RustyDB's deterministic process-local
+pseudo-random sequence and never mutates the set.
+Mutating an existing set preserves its expiration while members remain; removing the final member also
 removes the key. Set commands reject strings and lists without mutation.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves

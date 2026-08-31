@@ -1515,3 +1515,40 @@ fn execute_extended_list_commands_map_results() {
         Response::Value(b"x".to_vec())
     );
 }
+
+#[test]
+fn execute_set_membership_and_selection_commands() {
+    let mut database = Database::new();
+    database.set_set(b"set".to_vec(), vec![b"a".to_vec(), b"b".to_vec()]);
+    assert_eq!(
+        execute(
+            Command::SMIsMember {
+                key: b"set".to_vec(),
+                members: vec![b"b".to_vec(), b"x".to_vec()]
+            },
+            &mut database
+        ),
+        Response::IntegerList(vec![1, 0])
+    );
+    assert_eq!(
+        execute(
+            Command::SPop {
+                key: b"set".to_vec(),
+                count: None
+            },
+            &mut database
+        ),
+        Response::Value(b"a".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::SRandMember {
+                key: b"set".to_vec(),
+                count: Some(-3)
+            },
+            &mut database
+        ),
+        Response::KeyList(vec![b"b".to_vec(), b"b".to_vec(), b"b".to_vec()])
+    );
+    assert_eq!(database.set_cardinality("set"), Ok(1));
+}

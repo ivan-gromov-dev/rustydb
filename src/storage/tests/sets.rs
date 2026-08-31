@@ -138,3 +138,48 @@ fn variadic_set_mutations_count_distinct_changes_and_remove_empty_key() {
     assert_eq!(database.set_remove_many("set", &[b"two".to_vec()]), Ok(1));
     assert!(!database.exists("set"));
 }
+
+#[test]
+fn multi_membership_preserves_order_duplicates_and_missing_results() {
+    let mut database = Database::new();
+    database.set_set(b"set".to_vec(), vec![b"a".to_vec(), b"b".to_vec()]);
+    assert_eq!(
+        database.set_contains_many("set", &[b"b".to_vec(), b"x".to_vec(), b"b".to_vec()]),
+        Ok(vec![true, false, true])
+    );
+    assert_eq!(
+        database.set_contains_many("missing", &[b"a".to_vec()]),
+        Ok(vec![false])
+    );
+}
+
+#[test]
+fn set_pop_is_sorted_preserves_ttl_and_removes_empty_keys() {
+    let mut database = Database::new();
+    database.set_set(
+        b"set".to_vec(),
+        vec![b"c".to_vec(), b"a".to_vec(), b"b".to_vec()],
+    );
+    let expires_at = Instant::now() + Duration::from_secs(60);
+    assert!(database.expire_at("set", expires_at));
+    assert_eq!(
+        database.set_pop("set", 2),
+        Ok(vec![b"a".to_vec(), b"b".to_vec()])
+    );
+    assert_eq!(database.expiration("set"), Some(expires_at));
+    assert_eq!(database.set_pop("set", 10), Ok(vec![b"c".to_vec()]));
+    assert!(!database.exists("set"));
+}
+
+#[test]
+fn random_members_support_unique_and_repeated_counts_without_mutation() {
+    let mut database = Database::new();
+    database.set_set(b"set".to_vec(), vec![b"a".to_vec(), b"b".to_vec()]);
+    let unique = database.set_random_members("set", 10).unwrap();
+    assert_eq!(unique.len(), 2);
+    assert_ne!(unique[0], unique[1]);
+    let repeated = database.set_random_members("set", -5).unwrap();
+    assert_eq!(repeated.len(), 5);
+    assert_eq!(database.set_cardinality("set"), Ok(2));
+    assert_eq!(database.set_random_members("set", 0), Ok(Vec::new()));
+}

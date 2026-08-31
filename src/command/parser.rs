@@ -287,6 +287,24 @@ impl Command {
                     member: owned(args[2]),
                 })
             }
+            "SMISMEMBER" => {
+                if args.len() < 3 {
+                    return Err(CommandError::InvalidArguments(
+                        "SMISMEMBER key member [member ...]",
+                    ));
+                }
+                Ok(Self::SMIsMember {
+                    key: owned(args[1]),
+                    members: args[2..].iter().map(|value| owned(value)).collect(),
+                })
+            }
+            "SPOP" => parse_optional_usize(args, "SPOP key [count]", |key, count| Self::SPop {
+                key,
+                count,
+            }),
+            "SRANDMEMBER" => parse_optional_i64(args, "SRANDMEMBER key [count]", |key, count| {
+                Self::SRandMember { key, count }
+            }),
             "SMEMBERS" => Ok(Self::SMembers {
                 key: one(args, "SMEMBERS key")?,
             }),
@@ -489,6 +507,30 @@ fn parse_pop(args: &[&[u8]], right: bool) -> Result<Command, CommandError> {
             key: owned(key),
             count: parse_usize(count)?,
         }),
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
+}
+
+fn parse_optional_usize(
+    args: &[&[u8]],
+    usage: &'static str,
+    build: impl FnOnce(Vec<u8>, Option<usize>) -> Command,
+) -> Result<Command, CommandError> {
+    match args {
+        [_, key] => Ok(build(owned(key), None)),
+        [_, key, count] => Ok(build(owned(key), Some(parse_usize(count)?))),
+        _ => Err(CommandError::InvalidArguments(usage)),
+    }
+}
+
+fn parse_optional_i64(
+    args: &[&[u8]],
+    usage: &'static str,
+    build: impl FnOnce(Vec<u8>, Option<i64>) -> Command,
+) -> Result<Command, CommandError> {
+    match args {
+        [_, key] => Ok(build(owned(key), None)),
+        [_, key, count] => Ok(build(owned(key), Some(parse_i64(count)?))),
         _ => Err(CommandError::InvalidArguments(usage)),
     }
 }

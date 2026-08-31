@@ -431,6 +431,26 @@ pub(crate) fn execute_with_snapshot(
             Ok(found) => CommandOutput::Integer(i64::from(found)),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::SMIsMember { key, members } => match store.set_contains_many(&key, &members) {
+            Ok(found) => CommandOutput::IntegerList(found.into_iter().map(i64::from).collect()),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SPop { key, count } => match store.set_pop(&key, count.unwrap_or(1)) {
+            Ok(mut values) if count.is_none() => values
+                .pop()
+                .map_or(CommandOutput::Nil, CommandOutput::Value),
+            Ok(values) => CommandOutput::KeyList(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::SRandMember { key, count } => {
+            match store.set_random_members(&key, count.unwrap_or(1)) {
+                Ok(mut values) if count.is_none() => values
+                    .pop()
+                    .map_or(CommandOutput::Nil, CommandOutput::Value),
+                Ok(values) => CommandOutput::KeyList(values),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
 
         Command::SMembers { key } => match store.set_members(&key) {
             Ok(members) => CommandOutput::KeyList(members),

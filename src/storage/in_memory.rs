@@ -1524,6 +1524,81 @@ impl InMemoryStore {
         }
     }
 
+    pub(crate) fn set_contains_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: &[Vec<u8>],
+    ) -> Result<Vec<bool>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(vec![false; members.len()]);
+        };
+        let set = entry.set()?;
+        Ok(members
+            .iter()
+            .map(|member| set.contains(member.as_slice()))
+            .collect())
+    }
+
+    pub(crate) fn set_pop(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (values, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(Vec::new());
+            };
+            let set = entry.set_mut()?;
+            let mut values: Vec<_> = set.iter().cloned().collect();
+            values.sort();
+            values.truncate(count);
+            for value in &values {
+                set.remove(value.as_slice());
+            }
+            (values, set.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(values)
+    }
+
+    pub(crate) fn set_random_members(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: i64,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let mut members: Vec<_> = entry.set()?.iter().cloned().collect();
+        members.sort();
+        if members.is_empty() || count == 0 {
+            return Ok(Vec::new());
+        }
+        self.random_state ^= self.random_state << 13;
+        self.random_state ^= self.random_state >> 7;
+        self.random_state ^= self.random_state << 17;
+        let start = (self.random_state as usize) % members.len();
+        members.rotate_left(start);
+        let requested = usize::try_from(count.unsigned_abs()).unwrap_or(usize::MAX);
+        if count > 0 {
+            members.truncate(requested);
+            return Ok(members);
+        }
+        Ok((0..requested)
+            .map(|index| members[index % members.len()].clone())
+            .collect())
+    }
+
     pub(crate) fn set_members(
         &mut self,
         key: impl AsRef<[u8]>,

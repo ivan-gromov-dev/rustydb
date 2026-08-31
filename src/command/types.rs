@@ -310,6 +310,18 @@ pub(crate) enum Command {
         key: Vec<u8>,
         member: Vec<u8>,
     },
+    SMIsMember {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
+    SPop {
+        key: Vec<u8>,
+        count: Option<usize>,
+    },
+    SRandMember {
+        key: Vec<u8>,
+        count: Option<i64>,
+    },
     SMembers {
         key: Vec<u8>,
     },
@@ -477,6 +489,9 @@ impl Command {
             Self::SAdd { .. } | Self::SAddMany { .. } => "SADD",
             Self::SRem { .. } | Self::SRemMany { .. } => "SREM",
             Self::SIsMember { .. } => "SISMEMBER",
+            Self::SMIsMember { .. } => "SMISMEMBER",
+            Self::SPop { .. } => "SPOP",
+            Self::SRandMember { .. } => "SRANDMEMBER",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
             Self::HSet { .. } => "HSET",
@@ -720,6 +735,13 @@ impl Command {
             Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
             Self::SRemMany { key, members } => with_values(b"SREM", key, members),
+            Self::SPop { key, count } => {
+                let mut values = vec![b"SPOP".to_vec(), key.clone()];
+                if let Some(count) = count {
+                    values.push(offset(*count));
+                }
+                values
+            }
             Self::HSet { key, entries } => {
                 let mut values = vec![b"HSET".to_vec(), key.clone()];
                 for (field, value) in entries {
@@ -771,6 +793,8 @@ impl Command {
             | Self::LPos { .. }
             | Self::LRange { .. }
             | Self::SIsMember { .. }
+            | Self::SMIsMember { .. }
+            | Self::SRandMember { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
             | Self::HGet { .. }
