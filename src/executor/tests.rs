@@ -1294,3 +1294,53 @@ fn execute_set_collection_commands_handle_missing_and_wrong_types() {
         Response::Error("operation against a key holding the wrong kind of value".to_owned())
     );
 }
+
+#[test]
+fn execute_hash_commands() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::HSet {
+                key: b"record".to_vec(),
+                entries: vec![
+                    (b"z".to_vec(), b"1".to_vec()),
+                    (b"a".to_vec(), b"2".to_vec())
+                ]
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::HGetAll {
+                key: b"record".to_vec()
+            },
+            &mut database
+        ),
+        Response::HashEntries(vec![
+            (b"a".to_vec(), b"2".to_vec()),
+            (b"z".to_vec(), b"1".to_vec())
+        ])
+    );
+    assert_eq!(
+        execute(
+            Command::HMGet {
+                key: b"record".to_vec(),
+                fields: vec![b"z".to_vec(), b"missing".to_vec()]
+            },
+            &mut database
+        ),
+        Response::OptionalValues(vec![Some(b"1".to_vec()), None])
+    );
+    assert_eq!(
+        execute(
+            Command::HDel {
+                key: b"record".to_vec(),
+                fields: vec![b"z".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}

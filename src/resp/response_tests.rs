@@ -167,3 +167,39 @@ fn command_metadata_uses_six_field_entries_and_protocol_nulls() {
         RespFrame::Array(entries) if entries[1] == RespFrame::Null
     ));
 }
+
+#[test]
+fn hash_entries_use_resp2_arrays_and_resp3_maps() {
+    let output = || CommandOutput::HashEntries(vec![(b"field".to_vec(), b"value".to_vec())]);
+    assert_eq!(
+        frame_from_output_for_protocol(output(), ProtocolVersion::Resp2),
+        RespFrame::Array(vec![
+            RespFrame::BulkString(b"field".to_vec()),
+            RespFrame::BulkString(b"value".to_vec())
+        ])
+    );
+    assert_eq!(
+        frame_from_output_for_protocol(output(), ProtocolVersion::Resp3),
+        RespFrame::Map(vec![(
+            RespFrame::BulkString(b"field".to_vec()),
+            RespFrame::BulkString(b"value".to_vec())
+        )])
+    );
+}
+
+#[test]
+fn hash_scan_uses_cursor_and_flat_field_value_array() {
+    assert_eq!(
+        frame_from_output(CommandOutput::HashScan {
+            cursor: 2,
+            entries: vec![(b"field".to_vec(), b"value".to_vec())]
+        }),
+        RespFrame::Array(vec![
+            RespFrame::BulkString(b"2".to_vec()),
+            RespFrame::Array(vec![
+                RespFrame::BulkString(b"field".to_vec()),
+                RespFrame::BulkString(b"value".to_vec())
+            ])
+        ])
+    );
+}

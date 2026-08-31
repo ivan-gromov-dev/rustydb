@@ -1,4 +1,5 @@
 mod expiration;
+mod hashes;
 mod keys;
 mod lists;
 mod numeric;

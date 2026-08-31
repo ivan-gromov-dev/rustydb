@@ -48,6 +48,19 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  SISMEMBER key member\n",
     "  SMEMBERS key\n",
     "  SCARD key\n",
+    "  HSET key field value [field value ...]\n",
+    "  HSETNX key field value\n",
+    "  HGET key field\n",
+    "  HMGET key field [field ...]\n",
+    "  HGETALL key\n",
+    "  HDEL key field [field ...]\n",
+    "  HEXISTS key field\n",
+    "  HLEN key\n",
+    "  HKEYS key\n",
+    "  HVALS key\n",
+    "  HINCRBY key field increment\n",
+    "  HINCRBYFLOAT key field increment\n",
+    "  HSCAN key cursor [MATCH pattern] [COUNT count]\n",
     "  PING [message]\n",
     "  ECHO message\n",
     "  HELLO [2|3]\n",
@@ -88,6 +101,11 @@ pub(crate) enum CommandOutput {
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
     KeyList(Vec<Vec<u8>>),
+    HashEntries(Vec<(Vec<u8>, Vec<u8>)>),
+    HashScan {
+        cursor: usize,
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
+    },
     Scan {
         cursor: usize,
         keys: Vec<Vec<u8>>,
@@ -146,6 +164,26 @@ impl CommandOutput {
             Self::KeyList(keys) => {
                 for key in keys {
                     writer.write_all(key)?;
+                    writer.write_all(b"\n")?;
+                }
+                Ok(())
+            }
+            Self::HashEntries(entries) if entries.is_empty() => writeln!(writer, "(nil)"),
+            Self::HashEntries(entries) => {
+                for (field, value) in entries {
+                    writer.write_all(field)?;
+                    writer.write_all(b"\n")?;
+                    writer.write_all(value)?;
+                    writer.write_all(b"\n")?;
+                }
+                Ok(())
+            }
+            Self::HashScan { cursor, entries } => {
+                writeln!(writer, "{cursor}")?;
+                for (field, value) in entries {
+                    writer.write_all(field)?;
+                    writer.write_all(b"\n")?;
+                    writer.write_all(value)?;
                     writer.write_all(b"\n")?;
                 }
                 Ok(())

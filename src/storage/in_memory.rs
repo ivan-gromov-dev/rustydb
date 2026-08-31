@@ -18,6 +18,8 @@ pub(crate) struct InMemoryStore {
     random_state: u64,
 }
 
+type HashEntries = Vec<(Vec<u8>, Vec<u8>)>;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ReclamationMetrics {
     pub(crate) deletions: u64,
@@ -1125,6 +1127,243 @@ impl InMemoryStore {
             Some(entry) => Ok(entry.set()?.len()),
             None => Ok(0),
         }
+    }
+
+    pub(crate) fn hash_set(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        if let Some(entry) = self.storage.get(key) {
+            entry.hash()?;
+        }
+        self.ensure_capacity_for(key);
+        let hash = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_hash)
+            .hash_mut()?;
+        let mut added = 0;
+        for (field, value) in entries {
+            if hash.insert(field, value).is_none() {
+                added += 1;
+            }
+        }
+        Ok(added)
+    }
+
+    pub(crate) fn hash_set_if_absent(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<bool, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        if let Some(entry) = self.storage.get(key) {
+            if entry.hash()?.contains_key(&field) {
+                return Ok(false);
+            }
+        }
+        self.ensure_capacity_for(key);
+        self.storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_hash)
+            .hash_mut()?
+            .insert(field, value);
+        Ok(true)
+    }
+
+    pub(crate) fn hash_get(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: impl AsRef<[u8]>,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.storage
+            .get(key)
+            .map(|entry| entry.hash().map(|hash| hash.get(field.as_ref()).cloned()))
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    pub(crate) fn hash_get_many(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        fields: &[Vec<u8>],
+    ) -> Result<Vec<Option<Vec<u8>>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(vec![None; fields.len()]);
+        };
+        let hash = entry.hash()?;
+        Ok(fields
+            .iter()
+            .map(|field| hash.get(field).cloned())
+            .collect())
+    }
+
+    pub(crate) fn hash_entries(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<HashEntries, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let mut entries: Vec<_> = entry
+            .hash()?
+            .iter()
+            .map(|(field, value)| (field.clone(), value.clone()))
+            .collect();
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(entries)
+    }
+
+    pub(crate) fn hash_delete(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        fields: &[Vec<u8>],
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (removed, empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(0);
+            };
+            let hash = entry.hash_mut()?;
+            let removed = fields
+                .iter()
+                .filter(|field| hash.remove(*field).is_some())
+                .count();
+            (removed, hash.is_empty())
+        };
+        if empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(removed)
+    }
+
+    pub(crate) fn hash_contains(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: impl AsRef<[u8]>,
+    ) -> Result<bool, StoreError> {
+        Ok(self.hash_get(key, field)?.is_some())
+    }
+
+    pub(crate) fn hash_length(&mut self, key: impl AsRef<[u8]>) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.storage
+            .get(key)
+            .map(|entry| entry.hash().map(std::collections::HashMap::len))
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+
+    pub(crate) fn hash_keys(&mut self, key: impl AsRef<[u8]>) -> Result<Vec<Vec<u8>>, StoreError> {
+        Ok(self
+            .hash_entries(key)?
+            .into_iter()
+            .map(|(field, _)| field)
+            .collect())
+    }
+
+    pub(crate) fn hash_values(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Vec<Vec<u8>>, StoreError> {
+        Ok(self
+            .hash_entries(key)?
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect())
+    }
+
+    pub(crate) fn hash_increment_by(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: Vec<u8>,
+        amount: i64,
+    ) -> Result<i64, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let number = match self.storage.get(key) {
+            Some(entry) => entry
+                .hash()?
+                .get(&field)
+                .map_or(Ok(0), |value| parse_integer(value))?,
+            None => 0,
+        };
+        let result = number
+            .checked_add(amount)
+            .ok_or(StoreError::IntegerOverflow)?;
+        self.ensure_capacity_for(key);
+        self.storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_hash)
+            .hash_mut()?
+            .insert(field, result.to_string().into_bytes());
+        Ok(result)
+    }
+
+    pub(crate) fn hash_increment_by_float(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        field: Vec<u8>,
+        amount: f64,
+    ) -> Result<f64, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let number = match self.storage.get(key) {
+            Some(entry) => entry
+                .hash()?
+                .get(&field)
+                .map_or(Ok(0.0), |value| parse_float(value))?,
+            None => 0.0,
+        };
+        if !number.is_finite() {
+            return Err(StoreError::ValueIsNotFloat);
+        }
+        let result = number + amount;
+        if !result.is_finite() {
+            return Err(StoreError::FloatIsNotFinite);
+        }
+        self.ensure_capacity_for(key);
+        self.storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_hash)
+            .hash_mut()?
+            .insert(field, result.to_string().into_bytes());
+        Ok(result)
+    }
+
+    pub(crate) fn hash_scan(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+    ) -> Result<(usize, HashEntries), StoreError> {
+        let entries = self.hash_entries(key)?;
+        if cursor >= entries.len() {
+            return Ok((0, Vec::new()));
+        }
+        let end = cursor.saturating_add(count).min(entries.len());
+        let matched = entries[cursor..end]
+            .iter()
+            .filter(|(field, _)| pattern.is_none_or(|pattern| glob::matches(pattern, field)))
+            .cloned()
+            .collect();
+        Ok((if end == entries.len() { 0 } else { end }, matched))
     }
 
     #[cfg(test)]

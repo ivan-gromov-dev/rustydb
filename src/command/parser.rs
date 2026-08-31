@@ -239,6 +239,78 @@ impl Command {
             "SCARD" => Ok(Self::SCard {
                 key: one(args, "SCARD key")?,
             }),
+            "HSET" => parse_hset(args),
+            "HSETNX" => {
+                exact(args, 4, "HSETNX key field value")?;
+                Ok(Self::HSetNx {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                    value: owned(args[3]),
+                })
+            }
+            "HGET" => {
+                exact(args, 3, "HGET key field")?;
+                Ok(Self::HGet {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                })
+            }
+            "HMGET" => {
+                if args.len() < 3 {
+                    return Err(CommandError::InvalidArguments(
+                        "HMGET key field [field ...]",
+                    ));
+                }
+                Ok(Self::HMGet {
+                    key: owned(args[1]),
+                    fields: args[2..].iter().map(|field| owned(field)).collect(),
+                })
+            }
+            "HGETALL" => Ok(Self::HGetAll {
+                key: one(args, "HGETALL key")?,
+            }),
+            "HDEL" => {
+                if args.len() < 3 {
+                    return Err(CommandError::InvalidArguments("HDEL key field [field ...]"));
+                }
+                Ok(Self::HDel {
+                    key: owned(args[1]),
+                    fields: args[2..].iter().map(|field| owned(field)).collect(),
+                })
+            }
+            "HEXISTS" => {
+                exact(args, 3, "HEXISTS key field")?;
+                Ok(Self::HExists {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                })
+            }
+            "HLEN" => Ok(Self::HLen {
+                key: one(args, "HLEN key")?,
+            }),
+            "HKEYS" => Ok(Self::HKeys {
+                key: one(args, "HKEYS key")?,
+            }),
+            "HVALS" => Ok(Self::HVals {
+                key: one(args, "HVALS key")?,
+            }),
+            "HINCRBY" => {
+                exact(args, 4, "HINCRBY key field increment")?;
+                Ok(Self::HIncrementBy {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                    amount: parse_i64(args[3])?,
+                })
+            }
+            "HINCRBYFLOAT" => {
+                exact(args, 4, "HINCRBYFLOAT key field increment")?;
+                Ok(Self::HIncrementByFloat {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                    amount: parse_finite_float(args[3])?,
+                })
+            }
+            "HSCAN" => parse_hscan(args),
             "PING" => {
                 if args.len() > 2 {
                     return Err(CommandError::InvalidArguments("PING [message]"));
@@ -344,6 +416,55 @@ fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
         .map(|entry| (owned(entry[0]), owned(entry[1])))
         .collect();
     Ok(Command::MSet { entries })
+}
+
+fn parse_hset(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "HSET key field value [field value ...]";
+    if args.len() < 4 || args.len() % 2 != 0 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    Ok(Command::HSet {
+        key: owned(args[1]),
+        entries: args[2..]
+            .chunks_exact(2)
+            .map(|entry| (owned(entry[0]), owned(entry[1])))
+            .collect(),
+    })
+}
+
+fn parse_hscan(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "HSCAN key cursor [MATCH pattern] [COUNT count]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let key = owned(args[1]);
+    let cursor = parse_usize(args[2])?;
+    let mut pattern = None;
+    let mut count = None;
+    let mut index = 3;
+    while index < args.len() {
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if args[index].eq_ignore_ascii_case(b"MATCH") && pattern.is_none() {
+            pattern = Some(owned(value));
+        } else if args[index].eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            let parsed = parse_usize(value)?;
+            if parsed == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            count = Some(parsed);
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::HScan {
+        key,
+        cursor,
+        pattern,
+        count: count.unwrap_or(10),
+    })
 }
 
 fn parse_scan(args: &[&[u8]]) -> Result<Command, CommandError> {
@@ -761,17 +882,22 @@ fn range_args(args: &[&[u8]], usage: &'static str) -> Result<(Vec<u8>, i64, i64)
 
 fn parse_increment_by_float(args: &[&[u8]]) -> Result<Command, CommandError> {
     exact(args, 3, "INCRBYFLOAT key amount")?;
-    let amount_text = String::from_utf8_lossy(args[2]);
-    let amount = amount_text
-        .parse::<f64>()
-        .map_err(|_| CommandError::InvalidFloat(amount_text.to_string()))?;
-    if !amount.is_finite() {
-        return Err(CommandError::InvalidFloat(amount_text.to_string()));
-    }
+    let amount = parse_finite_float(args[2])?;
     Ok(Command::IncrementByFloat {
         key: owned(args[1]),
         amount,
     })
+}
+
+fn parse_finite_float(value: &[u8]) -> Result<f64, CommandError> {
+    let text = String::from_utf8_lossy(value);
+    let parsed = text
+        .parse::<f64>()
+        .map_err(|_| CommandError::InvalidFloat(text.to_string()))?;
+    if !parsed.is_finite() {
+        return Err(CommandError::InvalidFloat(text.to_string()));
+    }
+    Ok(parsed)
 }
 
 fn parse_i64(value: &[u8]) -> Result<i64, CommandError> {

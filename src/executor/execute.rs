@@ -338,6 +338,70 @@ pub(crate) fn execute_with_snapshot(
             Err(error) => CommandOutput::Error(error.to_string()),
         },
 
+        Command::HSet { key, entries } => match store.hash_set(&key, entries) {
+            Ok(added) => CommandOutput::Integer(added as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HSetNx { key, field, value } => match store.hash_set_if_absent(&key, field, value)
+        {
+            Ok(added) => CommandOutput::Integer(i64::from(added)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HGet { key, field } => match store.hash_get(&key, &field) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HMGet { key, fields } => match store.hash_get_many(&key, &fields) {
+            Ok(values) => CommandOutput::OptionalValues(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HGetAll { key } => match store.hash_entries(&key) {
+            Ok(entries) => CommandOutput::HashEntries(entries),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HDel { key, fields } => match store.hash_delete(&key, &fields) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HExists { key, field } => match store.hash_contains(&key, &field) {
+            Ok(exists) => CommandOutput::Integer(i64::from(exists)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HLen { key } => match store.hash_length(&key) {
+            Ok(length) => CommandOutput::Integer(length as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HKeys { key } => match store.hash_keys(&key) {
+            Ok(fields) => CommandOutput::KeyList(fields),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HVals { key } => match store.hash_values(&key) {
+            Ok(values) => CommandOutput::KeyList(values),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::HIncrementBy { key, field, amount } => {
+            match store.hash_increment_by(&key, field, amount) {
+                Ok(value) => CommandOutput::Integer(value),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::HIncrementByFloat { key, field, amount } => {
+            match store.hash_increment_by_float(&key, field, amount) {
+                Ok(value) => CommandOutput::Float(value),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::HScan {
+            key,
+            cursor,
+            pattern,
+            count,
+        } => match store.hash_scan(&key, cursor, pattern.as_deref(), count) {
+            Ok((cursor, entries)) => CommandOutput::HashScan { cursor, entries },
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+
         Command::Ping { message: None } => CommandOutput::Pong,
 
         Command::Ping {
