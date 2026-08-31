@@ -271,6 +271,21 @@ pub(crate) enum Command {
         source: Vec<u8>,
         destination: Vec<u8>,
     },
+    BLPop {
+        keys: Vec<Vec<u8>>,
+        timeout: f64,
+    },
+    BRPop {
+        keys: Vec<Vec<u8>>,
+        timeout: f64,
+    },
+    BLMove {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        source_end: ListEnd,
+        destination_end: ListEnd,
+        timeout: f64,
+    },
     LPop {
         key: Vec<u8>,
     },
@@ -515,6 +530,9 @@ impl Command {
             Self::LPos { .. } => "LPOS",
             Self::LMove { .. } => "LMOVE",
             Self::RPopLPush { .. } => "RPOPLPUSH",
+            Self::BLPop { .. } => "BLPOP",
+            Self::BRPop { .. } => "BRPOP",
+            Self::BLMove { .. } => "BLMOVE",
             Self::LPop { .. } | Self::LPopCount { .. } => "LPOP",
             Self::RPop { .. } | Self::RPopCount { .. } => "RPOP",
             Self::LRange { .. } => "LRANGE",
@@ -837,6 +855,9 @@ impl Command {
             Self::FlushDb => vec![b"FLUSHDB".to_vec()],
             Self::FlushAll => vec![b"FLUSHALL".to_vec()],
             Self::Get { .. }
+            | Self::BLPop { .. }
+            | Self::BRPop { .. }
+            | Self::BLMove { .. }
             | Self::MGet { .. }
             | Self::Exists { .. }
             | Self::Type { .. }

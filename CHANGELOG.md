@@ -14,6 +14,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Deterministic set algebra through `SDIFF`, `SINTER`, and `SUNION`, atomic
   destination replacement through their `STORE` variants, and sorted cursor
   iteration through `SSCAN MATCH/COUNT`.
+- Blocking queue consumption through `BLPOP`, `BRPOP`, and `BLMOVE`, with
+  fractional per-client timeouts, mutation wakeups, disconnect cancellation,
+  and atomic competition between consumers.
 
 ## [0.11.0] - 2026-08-31
 

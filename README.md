@@ -257,6 +257,9 @@ clients receive the corresponding protocol-specific typed value.
 | `LPOS key element [RANK rank] [COUNT count] [MAXLEN len]` | Find matching element indexes with optional occurrence, result-count, and scan limits | Index, indexes, or `(nil)` |
 | `LMOVE source destination LEFT\|RIGHT LEFT\|RIGHT` | Atomically move one list element between selected ends | Moved value or `(nil)` |
 | `RPOPLPUSH source destination` | Atomically move the source tail to the destination head | Moved value or `(nil)` |
+| `BLPOP key [key ...] timeout` | Wait for and remove the first value from the first ready list | Key and value, or `(nil)` on timeout |
+| `BRPOP key [key ...] timeout` | Wait for and remove the last value from the first ready list | Key and value, or `(nil)` on timeout |
+| `BLMOVE source destination LEFT\|RIGHT LEFT\|RIGHT timeout` | Wait for and atomically move one list element between selected ends | Moved value or `(nil)` on timeout |
 | `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
 | `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
@@ -349,6 +352,13 @@ error without changing the value or its expiration. For multi-value pushes,
 list head; `RPUSH` preserves argument order. Popping from a non-empty
 list preserves its expiration while values remain; removing the final value
 also removes the key.
+
+`BLPOP`, `BRPOP`, and `BLMOVE` are available to RESP server clients. A timeout
+of zero waits indefinitely; positive timeouts may include fractional seconds.
+Waiting does not hold the shared database lock. Relevant mutations wake all
+waiters, which compete through a new atomic attempt, so one list element is
+delivered to at most one consumer. Disconnects cancel waits, and expired lists
+are treated as missing while a client waits.
 
 `LRANGE` uses inclusive indexes. Negative indexes count backward from the end
 of the list, and indexes outside the list are clamped to its bounds. An empty

@@ -2,6 +2,7 @@ use super::types::{
     ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, InsertPosition,
     ListEnd, ProtocolVersion, SetCondition, SetExpiration,
 };
+use std::time::Duration;
 
 type KeyValueEntries = Vec<(Vec<u8>, Vec<u8>)>;
 
@@ -252,6 +253,9 @@ impl Command {
                     destination: owned(args[2]),
                 })
             }
+            "BLPOP" => parse_blocking_pop(args, false),
+            "BRPOP" => parse_blocking_pop(args, true),
+            "BLMOVE" => parse_blocking_move(args),
             "LPOP" => parse_pop(args, false),
             "RPOP" => parse_pop(args, true),
             "LRANGE" => {
@@ -633,6 +637,47 @@ fn parse_lmove(args: &[&[u8]]) -> Result<Command, CommandError> {
         source_end: parse_list_end(args[3], USAGE)?,
         destination_end: parse_list_end(args[4], USAGE)?,
     })
+}
+
+fn parse_blocking_pop(args: &[&[u8]], right: bool) -> Result<Command, CommandError> {
+    let usage = if right {
+        "BRPOP key [key ...] timeout"
+    } else {
+        "BLPOP key [key ...] timeout"
+    };
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    let timeout = parse_timeout(args[args.len() - 1], usage)?;
+    let keys = args[1..args.len() - 1]
+        .iter()
+        .map(|key| owned(key))
+        .collect();
+    Ok(if right {
+        Command::BRPop { keys, timeout }
+    } else {
+        Command::BLPop { keys, timeout }
+    })
+}
+
+fn parse_blocking_move(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "BLMOVE source destination LEFT|RIGHT LEFT|RIGHT timeout";
+    exact(args, 6, USAGE)?;
+    Ok(Command::BLMove {
+        source: owned(args[1]),
+        destination: owned(args[2]),
+        source_end: parse_list_end(args[3], USAGE)?,
+        destination_end: parse_list_end(args[4], USAGE)?,
+        timeout: parse_timeout(args[5], USAGE)?,
+    })
+}
+
+fn parse_timeout(value: &[u8], usage: &'static str) -> Result<f64, CommandError> {
+    let timeout = parse_finite_float(value)?;
+    if timeout < 0.0 || Duration::try_from_secs_f64(timeout).is_err() {
+        return Err(CommandError::InvalidArguments(usage));
+    }
+    Ok(timeout)
 }
 
 fn parse_list_end(value: &[u8], usage: &'static str) -> Result<ListEnd, CommandError> {

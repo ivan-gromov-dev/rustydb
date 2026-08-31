@@ -389,6 +389,9 @@ pub(crate) fn execute_with_snapshot(
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::BLPop { .. } | Command::BRPop { .. } | Command::BLMove { .. } => {
+            CommandOutput::Error("blocking commands require server mode".to_owned())
+        }
         Command::LPopCount { key, count } => match store.pop_left_many(&key, count) {
             Ok(values) => CommandOutput::KeyList(values),
             Err(error) => CommandOutput::Error(error.to_string()),

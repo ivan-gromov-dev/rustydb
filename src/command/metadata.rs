@@ -30,6 +30,9 @@ macro_rules! metadata {
 pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("aofrewrite", 1, ADMIN, 0, 0, 0),
     metadata!("append", 3, WRITE, 1, 1, 1),
+    metadata!("blmove", 6, WRITE, 1, 2, 1),
+    metadata!("blpop", -3, WRITE, 1, -2, 1),
+    metadata!("brpop", -3, WRITE, 1, -2, 1),
     metadata!("clear", 1, WRITE, 0, 0, 0),
     metadata!("client", -2, CONNECTION, 0, 0, 0),
     metadata!("command", -1, CONNECTION, 0, 0, 0),

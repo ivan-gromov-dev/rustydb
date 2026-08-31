@@ -596,3 +596,28 @@ fn list_move_validates_destination_before_removing_source() {
         Ok(None)
     );
 }
+
+#[test]
+fn first_nonempty_list_respects_key_order_expiration_and_type_validation() {
+    let mut database = Database::new();
+    database.set_list(b"second".to_vec(), vec![b"value".to_vec()]);
+    assert_eq!(
+        database.first_nonempty_list(&[b"missing".to_vec(), b"second".to_vec()]),
+        Ok(Some(b"second".to_vec()))
+    );
+    assert!(database.expire("second", 0));
+    assert_eq!(
+        database.first_nonempty_list(&[b"second".to_vec()]),
+        Ok(None)
+    );
+    database.set_list(b"valid".to_vec(), vec![b"value".to_vec()]);
+    database.set(b"wrong".to_vec(), b"string".to_vec());
+    assert_eq!(
+        database.first_nonempty_list(&[b"valid".to_vec(), b"wrong".to_vec()]),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        database.list_values("valid"),
+        Ok(Some(vec![b"value".to_vec()]))
+    );
+}

@@ -37,6 +37,8 @@ pub(crate) fn frame_from_output_for_protocol(
         ),
         CommandOutput::Nil if protocol == ProtocolVersion::Resp3 => RespFrame::Null,
         CommandOutput::Nil => RespFrame::NullBulkString,
+        CommandOutput::NullArray if protocol == ProtocolVersion::Resp3 => RespFrame::Null,
+        CommandOutput::NullArray => RespFrame::NullArray,
         CommandOutput::KeyList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::BulkString).collect())
         }

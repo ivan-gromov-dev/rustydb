@@ -51,6 +51,9 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  LPOS key element [RANK rank] [COUNT count] [MAXLEN len]\n",
     "  LMOVE source destination LEFT|RIGHT LEFT|RIGHT\n",
     "  RPOPLPUSH source destination\n",
+    "  BLPOP key [key ...] timeout\n",
+    "  BRPOP key [key ...] timeout\n",
+    "  BLMOVE source destination LEFT|RIGHT LEFT|RIGHT timeout\n",
     "  LPOP key [count]\n",
     "  RPOP key [count]\n",
     "  SADD key member [member ...]\n",
@@ -122,6 +125,7 @@ pub(crate) enum CommandOutput {
     Value(Vec<u8>),
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
+    NullArray,
     KeyList(Vec<Vec<u8>>),
     HashEntries(Vec<(Vec<u8>, Vec<u8>)>),
     HashScan {
@@ -189,6 +193,7 @@ impl CommandOutput {
                 Ok(())
             }
             Self::Nil => writeln!(writer, "(nil)"),
+            Self::NullArray => writeln!(writer, "(nil)"),
             Self::KeyList(keys) if keys.is_empty() => writeln!(writer, "(nil)"),
             Self::KeyList(keys) => {
                 for key in keys {

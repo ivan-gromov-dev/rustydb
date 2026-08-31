@@ -11,7 +11,7 @@ pub use listener::{
 pub use shutdown::Shutdown;
 
 #[cfg(test)]
-pub(crate) use listener::{SharedDatabase, execute_shared, serve_incoming};
+pub(crate) use listener::{SharedDatabase, execute_shared, serve_incoming, shared_database};
 #[cfg(feature = "profiling")]
 pub use profiling::{
     LockProfile, ProfilePhase, is_server_thread, lock_profile, profiling_phase, reset_lock_profile,

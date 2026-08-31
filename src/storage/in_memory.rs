@@ -1293,6 +1293,27 @@ impl InMemoryStore {
         Ok(Some(value))
     }
 
+    pub(crate) fn first_nonempty_list(
+        &mut self,
+        keys: &[Vec<u8>],
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        for key in keys {
+            self.remove_if_expired(key);
+        }
+        for key in keys {
+            if let Some(entry) = self.storage.get(key.as_slice()) {
+                entry.list()?;
+            }
+        }
+        Ok(keys.iter().find_map(|key| {
+            self.storage
+                .get(key.as_slice())
+                .and_then(|entry| entry.list().ok())
+                .filter(|list| !list.is_empty())
+                .map(|_| key.clone())
+        }))
+    }
+
     pub(crate) fn pop_left(
         &mut self,
         key: impl AsRef<[u8]>,

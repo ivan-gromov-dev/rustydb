@@ -1469,6 +1469,43 @@ fn parses_extended_list_commands_and_options() {
 }
 
 #[test]
+fn parses_blocking_list_commands_and_validates_timeouts() {
+    assert_eq!(
+        Command::parse("BLPOP first second 1.5"),
+        Ok(Command::BLPop {
+            keys: vec![b"first".to_vec(), b"second".to_vec()],
+            timeout: 1.5
+        })
+    );
+    assert_eq!(
+        Command::parse("BRPOP queue 0"),
+        Ok(Command::BRPop {
+            keys: vec![b"queue".to_vec()],
+            timeout: 0.0
+        })
+    );
+    assert_eq!(
+        Command::parse("BLMOVE source destination RIGHT LEFT 0.25"),
+        Ok(Command::BLMove {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            source_end: ListEnd::Right,
+            destination_end: ListEnd::Left,
+            timeout: 0.25
+        })
+    );
+    for invalid in [
+        "BLPOP 1",
+        "BLPOP key -1",
+        "BRPOP key nan",
+        "BLMOVE source destination LEFT RIGHT",
+        "BLMOVE source destination MIDDLE RIGHT 1",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
 fn extended_list_mutations_have_replayable_aof_arguments() {
     let commands = [
         Command::LInsert {
