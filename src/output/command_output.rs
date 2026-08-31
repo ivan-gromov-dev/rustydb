@@ -45,6 +45,12 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  LLEN key\n",
     "  LINDEX key index\n",
     "  LSET key index value\n",
+    "  LINSERT key BEFORE|AFTER pivot element\n",
+    "  LTRIM key start stop\n",
+    "  LREM key count element\n",
+    "  LPOS key element [RANK rank] [COUNT count] [MAXLEN len]\n",
+    "  LMOVE source destination LEFT|RIGHT LEFT|RIGHT\n",
+    "  RPOPLPUSH source destination\n",
     "  LPOP key [count]\n",
     "  RPOP key [count]\n",
     "  SADD key member [member ...]\n",
@@ -99,6 +105,7 @@ pub(crate) enum CommandOutput {
         connection_id: Option<i64>,
     },
     Integer(i64),
+    IntegerList(Vec<i64>),
     Float(f64),
     SimpleString(&'static str),
     Value(Vec<u8>),
@@ -145,6 +152,13 @@ impl CommandOutput {
                 writeln!(writer, "modules:(empty)")
             }
             Self::Integer(value) => writeln!(writer, "{value}"),
+            Self::IntegerList(values) if values.is_empty() => writeln!(writer, "(nil)"),
+            Self::IntegerList(values) => {
+                for value in values {
+                    writeln!(writer, "{value}")?;
+                }
+                Ok(())
+            }
             Self::Float(value) => writeln!(writer, "{value}"),
             Self::SimpleString(value) => writeln!(writer, "{value}"),
             Self::Value(value) => {

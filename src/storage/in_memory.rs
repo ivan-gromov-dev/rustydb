@@ -1068,6 +1068,224 @@ impl InMemoryStore {
         Ok(())
     }
 
+    pub(crate) fn list_insert(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        before: bool,
+        pivot: &[u8],
+        value: Vec<u8>,
+    ) -> Result<i64, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get_mut(key) else {
+            return Ok(0);
+        };
+        let list = entry.list_mut()?;
+        let Some(pivot_index) = list.iter().position(|element| element == pivot) else {
+            return Ok(-1);
+        };
+        let index = pivot_index + usize::from(!before);
+        list.insert(index, value);
+        Ok(i64::try_from(list.len()).unwrap_or(i64::MAX))
+    }
+
+    pub(crate) fn list_trim(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        start: i64,
+        end: i64,
+    ) -> Result<(), StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let became_empty = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(());
+            };
+            let list = entry.list_mut()?;
+            let length = i64::try_from(list.len()).unwrap_or(i64::MAX);
+            let start = normalize_index(start, length).max(0);
+            let end = normalize_index(end, length).min(length.saturating_sub(1));
+            if start >= length || end < 0 || start > end {
+                list.clear();
+            } else {
+                list.truncate((end + 1) as usize);
+                list.drain(..start as usize);
+            }
+            list.is_empty()
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn list_remove(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: i64,
+        value: &[u8],
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (removed, became_empty) = {
+            let Some(entry) = self.storage.get_mut(key) else {
+                return Ok(0);
+            };
+            let list = entry.list_mut()?;
+            let limit = usize::try_from(count.unsigned_abs()).unwrap_or(usize::MAX);
+            let mut removed = 0;
+            if count >= 0 {
+                let mut index = 0;
+                while index < list.len() && (count == 0 || removed < limit) {
+                    if list[index].as_slice() == value {
+                        list.remove(index);
+                        removed += 1;
+                    } else {
+                        index += 1;
+                    }
+                }
+            } else {
+                let mut index = list.len();
+                while index > 0 && removed < limit {
+                    index -= 1;
+                    if list[index].as_slice() == value {
+                        list.remove(index);
+                        removed += 1;
+                    }
+                }
+            }
+            (removed, list.is_empty())
+        };
+        if became_empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(removed)
+    }
+
+    pub(crate) fn list_positions(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        value: &[u8],
+        rank: i64,
+        count: Option<usize>,
+        max_len: Option<usize>,
+    ) -> Result<Vec<usize>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let list = entry.list()?;
+        let examined = max_len.unwrap_or(usize::MAX).min(list.len());
+        let rank_target = usize::try_from(rank.unsigned_abs()).unwrap_or(usize::MAX);
+        let result_limit = match count {
+            Some(0) | None => usize::MAX,
+            Some(value) => value,
+        };
+        let mut matches = 0;
+        let mut positions = Vec::new();
+        let indexes: Box<dyn Iterator<Item = usize>> = if rank > 0 {
+            Box::new(0..examined)
+        } else {
+            Box::new((list.len().saturating_sub(examined)..list.len()).rev())
+        };
+        for index in indexes {
+            if list[index].as_slice() != value {
+                continue;
+            }
+            matches += 1;
+            if matches >= rank_target && positions.len() < result_limit {
+                positions.push(index);
+            }
+            if positions.len() == result_limit {
+                break;
+            }
+        }
+        Ok(positions)
+    }
+
+    pub(crate) fn list_move(
+        &mut self,
+        source: impl AsRef<[u8]>,
+        destination: impl AsRef<[u8]>,
+        source_right: bool,
+        destination_right: bool,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        self.remove_if_expired(source);
+        if source != destination {
+            self.remove_if_expired(destination);
+        }
+        let Some(source_entry) = self.storage.get(source) else {
+            return Ok(None);
+        };
+        source_entry.list()?;
+        if source != destination
+            && let Some(destination_entry) = self.storage.get(destination)
+        {
+            destination_entry.list()?;
+        }
+        if source == destination {
+            let list = self
+                .storage
+                .get_mut(source)
+                .ok_or(StoreError::NoSuchKey)?
+                .list_mut()?;
+            let value = if source_right {
+                list.pop_back()
+            } else {
+                list.pop_front()
+            };
+            if let Some(value) = value.as_ref() {
+                if destination_right {
+                    list.push_back(value.clone());
+                } else {
+                    list.push_front(value.clone());
+                }
+            }
+            return Ok(value);
+        }
+        let (value, source_empty) = {
+            let list = self
+                .storage
+                .get_mut(source)
+                .ok_or(StoreError::NoSuchKey)?
+                .list_mut()?;
+            let value = if source_right {
+                list.pop_back()
+            } else {
+                list.pop_front()
+            };
+            let empty = list.is_empty();
+            (value, empty)
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        if source_empty {
+            self.storage.remove(source);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        self.ensure_capacity_for(destination);
+        let list = self
+            .storage
+            .entry(destination.to_vec())
+            .or_insert_with(StoredValue::new_list)
+            .list_mut()?;
+        if destination_right {
+            list.push_back(value.clone());
+        } else {
+            list.push_front(value.clone());
+        }
+        Ok(Some(value))
+    }
+
     pub(crate) fn pop_left(
         &mut self,
         key: impl AsRef<[u8]>,

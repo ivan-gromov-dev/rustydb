@@ -44,6 +44,18 @@ pub(crate) enum ClientInfoAttribute {
     LibraryVersion,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ListEnd {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InsertPosition {
+    Before,
+    After,
+}
+
 impl ProtocolVersion {
     pub(crate) fn number(self) -> u8 {
         match self {
@@ -225,6 +237,39 @@ pub(crate) enum Command {
         key: Vec<u8>,
         index: i64,
         value: Vec<u8>,
+    },
+    LInsert {
+        key: Vec<u8>,
+        position: InsertPosition,
+        pivot: Vec<u8>,
+        value: Vec<u8>,
+    },
+    LTrim {
+        key: Vec<u8>,
+        start: i64,
+        end: i64,
+    },
+    LRem {
+        key: Vec<u8>,
+        count: i64,
+        value: Vec<u8>,
+    },
+    LPos {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        rank: i64,
+        count: Option<usize>,
+        max_len: Option<usize>,
+    },
+    LMove {
+        source: Vec<u8>,
+        destination: Vec<u8>,
+        source_end: ListEnd,
+        destination_end: ListEnd,
+    },
+    RPopLPush {
+        source: Vec<u8>,
+        destination: Vec<u8>,
     },
     LPop {
         key: Vec<u8>,
@@ -420,6 +465,12 @@ impl Command {
             Self::LLen { .. } => "LLEN",
             Self::LIndex { .. } => "LINDEX",
             Self::LSet { .. } => "LSET",
+            Self::LInsert { .. } => "LINSERT",
+            Self::LTrim { .. } => "LTRIM",
+            Self::LRem { .. } => "LREM",
+            Self::LPos { .. } => "LPOS",
+            Self::LMove { .. } => "LMOVE",
+            Self::RPopLPush { .. } => "RPOPLPUSH",
             Self::LPop { .. } | Self::LPopCount { .. } => "LPOP",
             Self::RPop { .. } | Self::RPopCount { .. } => "RPOP",
             Self::LRange { .. } => "LRANGE",
@@ -628,6 +679,43 @@ impl Command {
             Self::LSet { key, index, value } => {
                 vec![b"LSET".to_vec(), key.clone(), number(*index), value.clone()]
             }
+            Self::LInsert {
+                key,
+                position,
+                pivot,
+                value,
+            } => vec![
+                b"LINSERT".to_vec(),
+                key.clone(),
+                match position {
+                    InsertPosition::Before => b"BEFORE".to_vec(),
+                    InsertPosition::After => b"AFTER".to_vec(),
+                },
+                pivot.clone(),
+                value.clone(),
+            ],
+            Self::LTrim { key, start, end } => {
+                vec![b"LTRIM".to_vec(), key.clone(), number(*start), number(*end)]
+            }
+            Self::LRem { key, count, value } => {
+                vec![b"LREM".to_vec(), key.clone(), number(*count), value.clone()]
+            }
+            Self::LMove {
+                source,
+                destination,
+                source_end,
+                destination_end,
+            } => vec![
+                b"LMOVE".to_vec(),
+                source.clone(),
+                destination.clone(),
+                list_end_argument(*source_end),
+                list_end_argument(*destination_end),
+            ],
+            Self::RPopLPush {
+                source,
+                destination,
+            } => vec![b"RPOPLPUSH".to_vec(), source.clone(), destination.clone()],
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
             Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
@@ -680,6 +768,7 @@ impl Command {
             | Self::GetRange { .. }
             | Self::LLen { .. }
             | Self::LIndex { .. }
+            | Self::LPos { .. }
             | Self::LRange { .. }
             | Self::SIsMember { .. }
             | Self::SMembers { .. }
@@ -732,6 +821,13 @@ fn with_values(name: &[u8], key: &[u8], values: &[Vec<u8>]) -> Vec<Vec<u8>> {
     arguments.push(key.to_vec());
     arguments.extend(values.iter().cloned());
     arguments
+}
+
+fn list_end_argument(end: ListEnd) -> Vec<u8> {
+    match end {
+        ListEnd::Left => b"LEFT".to_vec(),
+        ListEnd::Right => b"RIGHT".to_vec(),
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

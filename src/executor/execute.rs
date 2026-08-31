@@ -326,6 +326,69 @@ pub(crate) fn execute_with_snapshot(
             Ok(()) => CommandOutput::Ok,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::LInsert {
+            key,
+            position,
+            pivot,
+            value,
+        } => match store.list_insert(
+            &key,
+            matches!(position, crate::command::InsertPosition::Before),
+            &pivot,
+            value,
+        ) {
+            Ok(length) => CommandOutput::Integer(length),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LTrim { key, start, end } => match store.list_trim(&key, start, end) {
+            Ok(()) => CommandOutput::Ok,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LRem { key, count, value } => match store.list_remove(&key, count, &value) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LPos {
+            key,
+            value,
+            rank,
+            count,
+            max_len,
+        } => match store.list_positions(&key, &value, rank, count, max_len) {
+            Ok(positions) if count.is_some() => CommandOutput::IntegerList(
+                positions.into_iter().map(|value| value as i64).collect(),
+            ),
+            Ok(positions) => positions
+                .into_iter()
+                .next()
+                .map_or(CommandOutput::Nil, |value| {
+                    CommandOutput::Integer(value as i64)
+                }),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::LMove {
+            source,
+            destination,
+            source_end,
+            destination_end,
+        } => match store.list_move(
+            &source,
+            &destination,
+            matches!(source_end, crate::command::ListEnd::Right),
+            matches!(destination_end, crate::command::ListEnd::Right),
+        ) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::RPopLPush {
+            source,
+            destination,
+        } => match store.list_move(&source, &destination, true, false) {
+            Ok(Some(value)) => CommandOutput::Value(value),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
         Command::LPopCount { key, count } => match store.pop_left_many(&key, count) {
             Ok(values) => CommandOutput::KeyList(values),
             Err(error) => CommandOutput::Error(error.to_string()),

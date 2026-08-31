@@ -251,6 +251,12 @@ clients receive the corresponding protocol-specific typed value.
 | `LLEN key` | Read a list's length | List length, or `0` for a missing key |
 | `LINDEX key index` | Read a list value by zero-based index; negative indexes count from the end | Value or `(nil)` |
 | `LSET key index value` | Replace a list value by zero-based index; negative indexes count from the end | `OK` or an error |
+| `LINSERT key BEFORE\|AFTER pivot element` | Insert an element relative to the first matching pivot | New length, `0` for a missing key, or `-1` when the pivot is absent |
+| `LTRIM key start stop` | Keep only the inclusive list range | `OK` |
+| `LREM key count element` | Remove matching elements from the head, tail, or whole list according to `count` | Number removed |
+| `LPOS key element [RANK rank] [COUNT count] [MAXLEN len]` | Find matching element indexes with optional occurrence, result-count, and scan limits | Index, indexes, or `(nil)` |
+| `LMOVE source destination LEFT\|RIGHT LEFT\|RIGHT` | Atomically move one list element between selected ends | Moved value or `(nil)` |
+| `RPOPLPUSH source destination` | Atomically move the source tail to the destination head | Moved value or `(nil)` |
 | `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
 | `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |
 | `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |

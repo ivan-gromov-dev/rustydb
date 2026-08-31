@@ -1437,3 +1437,81 @@ fn execute_list_index_and_set_map_values_and_errors() {
         Response::Error("no such key".to_owned())
     );
 }
+
+#[test]
+fn execute_extended_list_commands_map_results() {
+    let mut database = Database::new();
+    database.set_list(
+        b"source".to_vec(),
+        vec![b"a".to_vec(), b"b".to_vec(), b"a".to_vec()],
+    );
+    assert_eq!(
+        execute(
+            Command::LInsert {
+                key: b"source".to_vec(),
+                position: crate::command::InsertPosition::After,
+                pivot: b"b".to_vec(),
+                value: b"x".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(4)
+    );
+    assert_eq!(
+        execute(
+            Command::LPos {
+                key: b"source".to_vec(),
+                value: b"a".to_vec(),
+                rank: 1,
+                count: Some(0),
+                max_len: None
+            },
+            &mut database
+        ),
+        Response::IntegerList(vec![0, 3])
+    );
+    assert_eq!(
+        execute(
+            Command::LRem {
+                key: b"source".to_vec(),
+                count: 1,
+                value: b"a".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+    assert_eq!(
+        execute(
+            Command::LTrim {
+                key: b"source".to_vec(),
+                start: 0,
+                end: 1
+            },
+            &mut database
+        ),
+        Response::Ok
+    );
+    assert_eq!(
+        execute(
+            Command::LMove {
+                source: b"source".to_vec(),
+                destination: b"destination".to_vec(),
+                source_end: crate::command::ListEnd::Right,
+                destination_end: crate::command::ListEnd::Left
+            },
+            &mut database
+        ),
+        Response::Value(b"x".to_vec())
+    );
+    assert_eq!(
+        execute(
+            Command::RPopLPush {
+                source: b"destination".to_vec(),
+                destination: b"source".to_vec()
+            },
+            &mut database
+        ),
+        Response::Value(b"x".to_vec())
+    );
+}

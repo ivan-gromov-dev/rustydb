@@ -1404,3 +1404,102 @@ fn parses_list_index_and_set_with_replayable_binary_values() {
         assert!(Command::parse(input).is_err());
     }
 }
+
+#[test]
+fn parses_extended_list_commands_and_options() {
+    assert!(matches!(
+        Command::parse("LINSERT list BEFORE pivot value"),
+        Ok(Command::LInsert {
+            position: InsertPosition::Before,
+            ..
+        })
+    ));
+    assert_eq!(
+        Command::parse("LTRIM list -2 -1"),
+        Ok(Command::LTrim {
+            key: b"list".to_vec(),
+            start: -2,
+            end: -1
+        })
+    );
+    assert_eq!(
+        Command::parse("LREM list -2 value"),
+        Ok(Command::LRem {
+            key: b"list".to_vec(),
+            count: -2,
+            value: b"value".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::parse("LPOS list value RANK -2 COUNT 0 MAXLEN 20"),
+        Ok(Command::LPos {
+            key: b"list".to_vec(),
+            value: b"value".to_vec(),
+            rank: -2,
+            count: Some(0),
+            max_len: Some(20)
+        })
+    );
+    assert_eq!(
+        Command::parse("LMOVE source destination RIGHT LEFT"),
+        Ok(Command::LMove {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec(),
+            source_end: ListEnd::Right,
+            destination_end: ListEnd::Left
+        })
+    );
+    assert_eq!(
+        Command::parse("RPOPLPUSH source destination"),
+        Ok(Command::RPopLPush {
+            source: b"source".to_vec(),
+            destination: b"destination".to_vec()
+        })
+    );
+    for input in [
+        "LINSERT list MIDDLE pivot value",
+        "LPOS list value RANK 0",
+        "LPOS list value COUNT 1 COUNT 2",
+        "LPOS list value RANK 1 RANK 2",
+        "LMOVE source destination UP LEFT",
+        "RPOPLPUSH source",
+    ] {
+        assert!(Command::parse(input).is_err(), "{input}");
+    }
+}
+
+#[test]
+fn extended_list_mutations_have_replayable_aof_arguments() {
+    let commands = [
+        Command::LInsert {
+            key: b"list".to_vec(),
+            position: InsertPosition::After,
+            pivot: b"pivot".to_vec(),
+            value: b"value".to_vec(),
+        },
+        Command::LTrim {
+            key: b"list".to_vec(),
+            start: 1,
+            end: -1,
+        },
+        Command::LRem {
+            key: b"list".to_vec(),
+            count: 0,
+            value: b"value".to_vec(),
+        },
+        Command::LMove {
+            source: b"a".to_vec(),
+            destination: b"b".to_vec(),
+            source_end: ListEnd::Left,
+            destination_end: ListEnd::Right,
+        },
+        Command::RPopLPush {
+            source: b"a".to_vec(),
+            destination: b"b".to_vec(),
+        },
+    ];
+    for command in commands {
+        let arguments = command.aof_arguments().unwrap();
+        assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
+    }
+}

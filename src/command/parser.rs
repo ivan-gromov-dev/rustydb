@@ -1,6 +1,6 @@
 use super::types::{
-    ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, ProtocolVersion,
-    SetCondition, SetExpiration,
+    ClientInfoAttribute, Command, CommandError, ExpireCondition, GetExExpiration, InsertPosition,
+    ListEnd, ProtocolVersion, SetCondition, SetExpiration,
 };
 
 type KeyValueEntries = Vec<(Vec<u8>, Vec<u8>)>;
@@ -26,7 +26,8 @@ impl Command {
             "SETNX" | "GETSET" | "APPEND" | "LPUSH" | "LPUSHX" | "RPUSH" | "RPUSHX" | "SADD"
             | "SREM" | "SISMEMBER" => Some(2),
             "PING" | "ECHO" => Some(1),
-            "SETRANGE" | "LSET" => Some(3),
+            "SETRANGE" | "LSET" | "LREM" => Some(3),
+            "LINSERT" => Some(4),
             _ => None,
         };
         let args = match tail_after {
@@ -227,6 +228,28 @@ impl Command {
                     key: owned(args[1]),
                     index: parse_i64(args[2])?,
                     value: owned(args[3]),
+                })
+            }
+            "LINSERT" => parse_linsert(args),
+            "LTRIM" => {
+                let (key, start, end) = range_args(args, "LTRIM key start stop")?;
+                Ok(Self::LTrim { key, start, end })
+            }
+            "LREM" => {
+                exact(args, 4, "LREM key count element")?;
+                Ok(Self::LRem {
+                    key: owned(args[1]),
+                    count: parse_i64(args[2])?,
+                    value: owned(args[3]),
+                })
+            }
+            "LPOS" => parse_lpos(args),
+            "LMOVE" => parse_lmove(args),
+            "RPOPLPUSH" => {
+                exact(args, 3, "RPOPLPUSH source destination")?;
+                Ok(Self::RPopLPush {
+                    source: owned(args[1]),
+                    destination: owned(args[2]),
                 })
             }
             "LPOP" => parse_pop(args, false),
@@ -467,6 +490,83 @@ fn parse_pop(args: &[&[u8]], right: bool) -> Result<Command, CommandError> {
             count: parse_usize(count)?,
         }),
         _ => Err(CommandError::InvalidArguments(usage)),
+    }
+}
+
+fn parse_linsert(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "LINSERT key BEFORE|AFTER pivot element";
+    exact(args, 5, USAGE)?;
+    let position = if args[2].eq_ignore_ascii_case(b"BEFORE") {
+        InsertPosition::Before
+    } else if args[2].eq_ignore_ascii_case(b"AFTER") {
+        InsertPosition::After
+    } else {
+        return Err(CommandError::InvalidArguments(USAGE));
+    };
+    Ok(Command::LInsert {
+        key: owned(args[1]),
+        position,
+        pivot: owned(args[3]),
+        value: owned(args[4]),
+    })
+}
+
+fn parse_lpos(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "LPOS key element [RANK rank] [COUNT count] [MAXLEN len]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let mut rank = 1;
+    let mut rank_seen = false;
+    let mut count = None;
+    let mut max_len = None;
+    let mut index = 3;
+    while index < args.len() {
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if args[index].eq_ignore_ascii_case(b"RANK") && !rank_seen {
+            rank = parse_i64(value)?;
+            rank_seen = true;
+            if rank == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+        } else if args[index].eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            count = Some(parse_usize(value)?);
+        } else if args[index].eq_ignore_ascii_case(b"MAXLEN") && max_len.is_none() {
+            max_len = Some(parse_usize(value)?);
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::LPos {
+        key: owned(args[1]),
+        value: owned(args[2]),
+        rank,
+        count,
+        max_len,
+    })
+}
+
+fn parse_lmove(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "LMOVE source destination LEFT|RIGHT LEFT|RIGHT";
+    exact(args, 5, USAGE)?;
+    Ok(Command::LMove {
+        source: owned(args[1]),
+        destination: owned(args[2]),
+        source_end: parse_list_end(args[3], USAGE)?,
+        destination_end: parse_list_end(args[4], USAGE)?,
+    })
+}
+
+fn parse_list_end(value: &[u8], usage: &'static str) -> Result<ListEnd, CommandError> {
+    if value.eq_ignore_ascii_case(b"LEFT") {
+        Ok(ListEnd::Left)
+    } else if value.eq_ignore_ascii_case(b"RIGHT") {
+        Ok(ListEnd::Right)
+    } else {
+        Err(CommandError::InvalidArguments(usage))
     }
 }
 

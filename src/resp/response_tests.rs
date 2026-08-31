@@ -70,6 +70,14 @@ fn converts_key_lists_to_arrays_including_the_empty_list() {
 }
 
 #[test]
+fn converts_integer_lists_to_integer_arrays() {
+    assert_eq!(
+        frame_from_output(CommandOutput::IntegerList(vec![3, 1])),
+        RespFrame::Array(vec![RespFrame::Integer(3), RespFrame::Integer(1)])
+    );
+}
+
+#[test]
 fn converts_scan_to_cursor_and_nested_key_array() {
     assert_eq!(
         frame_from_output(CommandOutput::Scan {
