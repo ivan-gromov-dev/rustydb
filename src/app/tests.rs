@@ -48,6 +48,14 @@ fn runs_set_collection_commands() {
 }
 
 #[test]
+fn runs_hash_commands() {
+    let output = run_script(
+        "HSET user name Ada role admin\nHGET user name\nHMGET user role missing\nHGETALL user\nHEXISTS user name\nHLEN user\nHDEL user name role\nTYPE user\nEXIT\n",
+    );
+    assert!(output.contains("db> 2\ndb> Ada\ndb> admin\n(nil)\ndb> name\nAda\nrole\nadmin\ndb> 1\ndb> 2\ndb> 2\ndb> none\n"));
+}
+
+#[test]
 fn reports_parse_errors_and_ignores_empty_input() {
     let output = run_script("\nUNKNOWN\nEXIT\n");
 

@@ -18,6 +18,7 @@ pub(crate) enum SnapshotValue {
     String(Vec<u8>),
     List(Vec<Vec<u8>>),
     Set(Vec<Vec<u8>>),
+    Hash(Vec<(Vec<u8>, Vec<u8>)>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub(crate) enum SnapshotDataError {
     TimeOutOfRange,
     DuplicateKey,
     DuplicateSetMember,
+    DuplicateHashField,
     EmptyCollection,
     AllocationFailed,
 }
@@ -39,6 +41,9 @@ impl fmt::Display for SnapshotDataError {
             Self::DuplicateKey => write!(formatter, "snapshot contains a duplicate key"),
             Self::DuplicateSetMember => {
                 write!(formatter, "snapshot contains a duplicate set member")
+            }
+            Self::DuplicateHashField => {
+                write!(formatter, "snapshot contains a duplicate hash field")
             }
             Self::EmptyCollection => write!(formatter, "snapshot contains an empty collection"),
             Self::AllocationFailed => write!(formatter, "snapshot is too large to fit in memory"),
@@ -165,6 +170,14 @@ fn snapshot_value(value: &Value) -> SnapshotValue {
             values.sort();
             SnapshotValue::Set(values)
         }
+        Value::Hash(values) => {
+            let mut values: Vec<_> = values
+                .iter()
+                .map(|(field, value)| (field.clone(), value.clone()))
+                .collect();
+            values.sort_by(|left, right| left.0.cmp(&right.0));
+            SnapshotValue::Hash(values)
+        }
     }
 }
 
@@ -185,6 +198,19 @@ fn restored_value(value: SnapshotValue) -> Result<Value, SnapshotDataError> {
                 }
             }
             Ok(Value::Set(members))
+        }
+        SnapshotValue::Hash(values) if values.is_empty() => Err(SnapshotDataError::EmptyCollection),
+        SnapshotValue::Hash(values) => {
+            let mut fields = HashMap::new();
+            fields
+                .try_reserve(values.len())
+                .map_err(|_| SnapshotDataError::AllocationFailed)?;
+            for (field, value) in values {
+                if fields.insert(field, value).is_some() {
+                    return Err(SnapshotDataError::DuplicateHashField);
+                }
+            }
+            Ok(Value::Hash(fields))
         }
     }
 }

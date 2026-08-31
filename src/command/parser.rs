@@ -239,6 +239,55 @@ impl Command {
             "SCARD" => Ok(Self::SCard {
                 key: one(args, "SCARD key")?,
             }),
+            "HSET" => parse_hset(args),
+            "HSETNX" => {
+                exact(args, 4, "HSETNX key field value")?;
+                Ok(Self::HSetNx {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                    value: owned(args[3]),
+                })
+            }
+            "HGET" => {
+                exact(args, 3, "HGET key field")?;
+                Ok(Self::HGet {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                })
+            }
+            "HMGET" => {
+                if args.len() < 3 {
+                    return Err(CommandError::InvalidArguments(
+                        "HMGET key field [field ...]",
+                    ));
+                }
+                Ok(Self::HMGet {
+                    key: owned(args[1]),
+                    fields: args[2..].iter().map(|field| owned(field)).collect(),
+                })
+            }
+            "HGETALL" => Ok(Self::HGetAll {
+                key: one(args, "HGETALL key")?,
+            }),
+            "HDEL" => {
+                if args.len() < 3 {
+                    return Err(CommandError::InvalidArguments("HDEL key field [field ...]"));
+                }
+                Ok(Self::HDel {
+                    key: owned(args[1]),
+                    fields: args[2..].iter().map(|field| owned(field)).collect(),
+                })
+            }
+            "HEXISTS" => {
+                exact(args, 3, "HEXISTS key field")?;
+                Ok(Self::HExists {
+                    key: owned(args[1]),
+                    field: owned(args[2]),
+                })
+            }
+            "HLEN" => Ok(Self::HLen {
+                key: one(args, "HLEN key")?,
+            }),
             "PING" => {
                 if args.len() > 2 {
                     return Err(CommandError::InvalidArguments("PING [message]"));
@@ -344,6 +393,20 @@ fn parse_mset(args: &[&[u8]]) -> Result<Command, CommandError> {
         .map(|entry| (owned(entry[0]), owned(entry[1])))
         .collect();
     Ok(Command::MSet { entries })
+}
+
+fn parse_hset(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "HSET key field value [field value ...]";
+    if args.len() < 4 || args.len() % 2 != 0 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    Ok(Command::HSet {
+        key: owned(args[1]),
+        entries: args[2..]
+            .chunks_exact(2)
+            .map(|entry| (owned(entry[0]), owned(entry[1])))
+            .collect(),
+    })
 }
 
 fn parse_scan(args: &[&[u8]]) -> Result<Command, CommandError> {

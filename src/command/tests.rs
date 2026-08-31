@@ -791,6 +791,49 @@ fn parses_set_collection_commands() {
 }
 
 #[test]
+fn parses_hash_commands_and_validates_arity() {
+    assert_eq!(
+        Command::from_args(&["HSET", "record", "name", "Ada", "role", "admin"]),
+        Ok(Command::HSet {
+            key: b"record".to_vec(),
+            entries: vec![
+                (b"name".to_vec(), b"Ada".to_vec()),
+                (b"role".to_vec(), b"admin".to_vec())
+            ]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["HMGET", "record", "name", "missing"]),
+        Ok(Command::HMGet {
+            key: b"record".to_vec(),
+            fields: vec![b"name".to_vec(), b"missing".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["HDEL", "record", "name", "role"]),
+        Ok(Command::HDel {
+            key: b"record".to_vec(),
+            fields: vec![b"name".to_vec(), b"role".to_vec()]
+        })
+    );
+    for command in [
+        "HSET key field",
+        "HSET key field value extra",
+        "HMGET key",
+        "HDEL key",
+        "HLEN key extra",
+    ] {
+        assert!(
+            matches!(
+                Command::parse(command),
+                Err(CommandError::InvalidArguments(_))
+            ),
+            "accepted {command}"
+        );
+    }
+}
+
+#[test]
 fn set_collection_commands_validate_arguments() {
     for input in [
         "SADD",

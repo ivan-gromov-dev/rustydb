@@ -7,7 +7,8 @@ use std::{fmt, process};
 use crate::storage::{InMemoryStore, SnapshotDataError, SnapshotEntry, SnapshotValue};
 
 const MAGIC: &[u8; 8] = b"RUSTYDB\0";
-const FORMAT_VERSION: u16 = 1;
+const FORMAT_VERSION: u16 = 2;
+const MIN_SUPPORTED_VERSION: u16 = 1;
 const MAX_ENTRIES: usize = 1_000_000;
 const MAX_COLLECTION_VALUES: usize = 1_000_000;
 const MAX_BLOB_LENGTH: usize = 512 * 1024 * 1024;
@@ -191,6 +192,14 @@ fn write_snapshot(mut writer: impl Write, entries: &[SnapshotEntry]) -> Result<(
                     checksummed.write_all(&[2])?;
                     write_collection(&mut checksummed, values)?;
                 }
+                SnapshotValue::Hash(values) => {
+                    checksummed.write_all(&[3])?;
+                    write_u64(&mut checksummed, length_as_u64(values.len())?)?;
+                    for (field, value) in values {
+                        write_blob(&mut checksummed, field)?;
+                        write_blob(&mut checksummed, value)?;
+                    }
+                }
             }
 
             match entry.expires_at_unix_millis {
@@ -220,7 +229,7 @@ fn read_snapshot(
     }
 
     let version = read_u16(&mut reader)?;
-    if version != FORMAT_VERSION {
+    if !(MIN_SUPPORTED_VERSION..=FORMAT_VERSION).contains(&version) {
         return Err(SnapshotError::UnsupportedVersion(version));
     }
 
@@ -239,6 +248,18 @@ fn read_snapshot(
                 0 => SnapshotValue::String(read_blob(&mut checksummed)?),
                 1 => SnapshotValue::List(read_collection(&mut checksummed)?),
                 2 => SnapshotValue::Set(read_collection(&mut checksummed)?),
+                3 if version >= 2 => {
+                    let length =
+                        read_length(&mut checksummed, MAX_COLLECTION_VALUES, "collection length")?;
+                    let mut values = Vec::new();
+                    values
+                        .try_reserve_exact(length)
+                        .map_err(|_| SnapshotDataError::AllocationFailed)?;
+                    for _ in 0..length {
+                        values.push((read_blob(&mut checksummed)?, read_blob(&mut checksummed)?));
+                    }
+                    SnapshotValue::Hash(values)
+                }
                 value_type => return Err(SnapshotError::InvalidValueType(value_type)),
             };
 
@@ -284,6 +305,13 @@ fn validate_entries(entries: &[SnapshotEntry]) -> Result<(), SnapshotError> {
             SnapshotValue::List(values) | SnapshotValue::Set(values) => {
                 ensure_limit(values.len(), MAX_COLLECTION_VALUES, "collection length")?;
                 for value in values {
+                    ensure_limit(value.len(), MAX_BLOB_LENGTH, "blob length")?;
+                }
+            }
+            SnapshotValue::Hash(values) => {
+                ensure_limit(values.len(), MAX_COLLECTION_VALUES, "collection length")?;
+                for (field, value) in values {
+                    ensure_limit(field.len(), MAX_BLOB_LENGTH, "blob length")?;
                     ensure_limit(value.len(), MAX_BLOB_LENGTH, "blob length")?;
                 }
             }
@@ -510,6 +538,14 @@ mod tests {
                 value: SnapshotValue::Set(vec![b"alpha".to_vec(), b"zeta".to_vec()]),
                 expires_at_unix_millis: None,
             },
+            SnapshotEntry {
+                key: b"hash".to_vec(),
+                value: SnapshotValue::Hash(vec![
+                    (b"alpha".to_vec(), b"one".to_vec()),
+                    (b"zeta".to_vec(), b"two".to_vec()),
+                ]),
+                expires_at_unix_millis: None,
+            },
         ]
     }
 
@@ -523,13 +559,14 @@ mod tests {
         read_snapshot(Cursor::new(encoded(&entries)), &mut store, wall_now).unwrap();
 
         let actual = store.snapshot_entries(wall_now).unwrap();
-        assert_eq!(actual.len(), 3);
-        assert_eq!(actual[0], entries[1]);
-        assert_eq!(actual[1], entries[2]);
-        assert_eq!(actual[2].key, entries[0].key);
-        assert_eq!(actual[2].value, entries[0].value);
+        assert_eq!(actual.len(), 4);
+        assert_eq!(actual[0], entries[3]);
+        assert_eq!(actual[1], entries[1]);
+        assert_eq!(actual[2], entries[2]);
+        assert_eq!(actual[3].key, entries[0].key);
+        assert_eq!(actual[3].value, entries[0].value);
         assert!(matches!(
-            actual[2].expires_at_unix_millis,
+            actual[3].expires_at_unix_millis,
             Some(1_059_999..=1_060_000)
         ));
     }
@@ -542,7 +579,10 @@ mod tests {
 
         read_snapshot(Cursor::new(encoded(&entries)), &mut store, load_time).unwrap();
 
-        assert_eq!(store.keys(), vec![b"list".to_vec(), b"set".to_vec()]);
+        assert_eq!(
+            store.keys(),
+            vec![b"hash".to_vec(), b"list".to_vec(), b"set".to_vec()]
+        );
     }
 
     #[test]
@@ -560,10 +600,10 @@ mod tests {
         ));
 
         let mut unsupported = valid.clone();
-        unsupported[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&2_u16.to_le_bytes());
+        unsupported[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&3_u16.to_le_bytes());
         assert!(matches!(
             read_snapshot(Cursor::new(unsupported), &mut store, wall_now),
-            Err(SnapshotError::UnsupportedVersion(2))
+            Err(SnapshotError::UnsupportedVersion(3))
         ));
 
         assert!(matches!(

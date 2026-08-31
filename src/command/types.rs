@@ -230,6 +230,37 @@ pub(crate) enum Command {
     SCard {
         key: Vec<u8>,
     },
+    HSet {
+        key: Vec<u8>,
+        entries: Vec<(Vec<u8>, Vec<u8>)>,
+    },
+    HSetNx {
+        key: Vec<u8>,
+        field: Vec<u8>,
+        value: Vec<u8>,
+    },
+    HGet {
+        key: Vec<u8>,
+        field: Vec<u8>,
+    },
+    HMGet {
+        key: Vec<u8>,
+        fields: Vec<Vec<u8>>,
+    },
+    HGetAll {
+        key: Vec<u8>,
+    },
+    HDel {
+        key: Vec<u8>,
+        fields: Vec<Vec<u8>>,
+    },
+    HExists {
+        key: Vec<u8>,
+        field: Vec<u8>,
+    },
+    HLen {
+        key: Vec<u8>,
+    },
     Ping {
         message: Option<Vec<u8>>,
     },
@@ -330,6 +361,14 @@ impl Command {
             Self::SIsMember { .. } => "SISMEMBER",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
+            Self::HSet { .. } => "HSET",
+            Self::HSetNx { .. } => "HSETNX",
+            Self::HGet { .. } => "HGET",
+            Self::HMGet { .. } => "HMGET",
+            Self::HGetAll { .. } => "HGETALL",
+            Self::HDel { .. } => "HDEL",
+            Self::HExists { .. } => "HEXISTS",
+            Self::HLen { .. } => "HLEN",
             Self::Ping { .. } => "PING",
             Self::Echo { .. } => "ECHO",
             Self::Hello { .. } => "HELLO",
@@ -506,6 +545,26 @@ impl Command {
             Self::RPop { key } => vec![b"RPOP".to_vec(), key.clone()],
             Self::SAdd { key, member } => vec![b"SADD".to_vec(), key.clone(), member.clone()],
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
+            Self::HSet { key, entries } => {
+                let mut values = vec![b"HSET".to_vec(), key.clone()];
+                for (field, value) in entries {
+                    values.extend([field.clone(), value.clone()]);
+                }
+                values
+            }
+            Self::HSetNx { key, field, value } => {
+                vec![
+                    b"HSETNX".to_vec(),
+                    key.clone(),
+                    field.clone(),
+                    value.clone(),
+                ]
+            }
+            Self::HDel { key, fields } => {
+                let mut values = vec![b"HDEL".to_vec(), key.clone()];
+                values.extend(fields.iter().cloned());
+                values
+            }
             Self::Clear => vec![b"CLEAR".to_vec()],
             Self::FlushDb => vec![b"FLUSHDB".to_vec()],
             Self::FlushAll => vec![b"FLUSHALL".to_vec()],
@@ -525,6 +584,11 @@ impl Command {
             | Self::SIsMember { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
+            | Self::HGet { .. }
+            | Self::HMGet { .. }
+            | Self::HGetAll { .. }
+            | Self::HExists { .. }
+            | Self::HLen { .. }
             | Self::Ping { .. }
             | Self::Echo { .. }
             | Self::Hello { .. }

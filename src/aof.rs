@@ -186,6 +186,13 @@ fn write_entry(
                 )?;
             }
         }
+        SnapshotValue::Hash(values) => {
+            let mut arguments = vec![b"HSET".to_vec(), entry.key.clone()];
+            for (field, value) in values {
+                arguments.extend([field.clone(), value.clone()]);
+            }
+            write_record(writer, timestamp, &arguments)?;
+        }
     }
 
     if let Some(expires_at) = entry.expires_at_unix_millis {

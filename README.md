@@ -253,6 +253,14 @@ clients receive the corresponding protocol-specific typed value.
 | `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
+| `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
+| `HSETNX key field value` | Set a hash field only when it does not exist | `1` if added, otherwise `0` |
+| `HGET key field` | Read a hash field | Value or `(nil)` |
+| `HMGET key field [field ...]` | Read hash fields in request order | One value or `(nil)` per field |
+| `HGETALL key` | Read all hash fields and values in sorted field order | Alternating fields and values, or `(nil)` |
+| `HDEL key field [field ...]` | Delete one or more hash fields | Number of fields deleted |
+| `HEXISTS key field` | Test whether a hash field exists | `1` if present, otherwise `0` |
+| `HLEN key` | Read a hash's field count | Number of fields, or `0` |
 | `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
 | `ECHO message` | Return a binary message unchanged | The message |
 | `HELLO [2\|3]` | Report connection metadata and optionally select RESP2 or RESP3 | Server metadata |
@@ -324,6 +332,12 @@ may contain spaces. RESP clients provide the member as one bulk-string argument.
 preserves its expiration while members remain; removing the final member also
 removes the key. Set commands reject strings and lists without mutation.
 
+Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
+request order and duplicate fields. `HGETALL` sorts fields by their binary
+representation for deterministic output; RESP3 clients receive a map and RESP2
+clients receive an alternating array. Updating a hash preserves its expiration
+while fields remain, and deleting its final field removes the key.
+
 `INFO` reports counters accumulated since the process started. `connected_clients`
 is the number of currently open RESP connections, while `total_connections` is
 the number accepted since startup. `commands_processed` includes every parsed
@@ -390,9 +404,10 @@ The layers have deliberately narrow responsibilities:
    shares one database between their sessions.
 
 Storage values use an internal enum so new data structures can be added without
-changing expiration metadata. Keys, string values, list elements, and set
-members are stored as bytes. Commands currently create string, list, and set
-values; operations reject incompatible value kinds without changing the value
+changing expiration metadata. Keys, string values, list elements, set members,
+and hash fields and values are stored as bytes. Commands currently create
+string, list, set, and hash values; operations reject incompatible value kinds
+without changing the value
 or its TTL.
 
 ## Development
@@ -474,8 +489,9 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
 - Live values and keys are held entirely in memory while the process runs.
 - `--max-keys` limits key count rather than byte usage; a small number of large
   keys can still consume substantial memory.
-- Snapshot format version 1 limits a snapshot to 1,000,000 keys, each list or
-  set to 1,000,000 elements, and each binary field to 512 MiB.
+- Snapshot format version 2 limits a snapshot to 1,000,000 keys, each list,
+  set, or hash to 1,000,000 elements, and each binary field to 512 MiB. Version
+  1 snapshots remain readable.
 - AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
 
 ### Intentional scope
