@@ -118,6 +118,41 @@ fn hashes_survive_aof_replay_and_rewrite() {
 }
 
 #[test]
+fn sorted_sets_survive_snapshot_and_aof_rewrite() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    let first = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        "ZADD board 1.5 alice 2 bob\nEXPIRE board 60\nSAVE\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+    let second = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        "TYPE board\nZSCORE board alice\nZCARD board\nTTL board\nEXIT\n",
+    );
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> zset\ndb> 1.5\ndb> 2\n"), "{stdout}");
+    assert!(
+        stdout.contains("db> 59\n") || stdout.contains("db> 60\n"),
+        "{stdout}"
+    );
+
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "ZADD queue 3 job-a 1 job-b\nZREM queue job-a\nAOFREWRITE\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+    let second = run_cli_with_aof(&aof, "TYPE queue\nZSCORE queue job-b\nZCARD queue\nEXIT\n");
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> zset\ndb> 1\ndb> 1\n"), "{stdout}");
+}
+
+#[test]
 fn set_algebra_store_survives_aof_replay() {
     let directory = TestDirectory::new();
     let aof = directory.aof();

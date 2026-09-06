@@ -130,6 +130,10 @@ pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("ttl", 2, READ, 1, 1, 1),
     metadata!("type", 2, READ, 1, 1, 1),
     metadata!("unlink", -2, WRITE, 1, -1, 1),
+    metadata!("zadd", -4, WRITE, 1, 1, 1),
+    metadata!("zcard", 2, READ, 1, 1, 1),
+    metadata!("zrem", -3, WRITE, 1, 1, 1),
+    metadata!("zscore", 3, READ, 1, 1, 1),
 ];
 
 pub(crate) fn command_metadata(name: &[u8]) -> Option<CommandMetadata> {

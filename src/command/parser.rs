@@ -348,6 +348,21 @@ impl Command {
             "SCARD" => Ok(Self::SCard {
                 key: one(args, "SCARD key")?,
             }),
+            "ZADD" => parse_zadd(args),
+            "ZREM" => {
+                let (key, members) = collection_values(args, "ZREM key member [member ...]")?;
+                Ok(Self::ZRem { key, members })
+            }
+            "ZSCORE" => {
+                exact(args, 3, "ZSCORE key member")?;
+                Ok(Self::ZScore {
+                    key: owned(args[1]),
+                    member: owned(args[2]),
+                })
+            }
+            "ZCARD" => Ok(Self::ZCard {
+                key: one(args, "ZCARD key")?,
+            }),
             "HSET" => parse_hset(args),
             "HSETNX" => {
                 exact(args, 4, "HSETNX key field value")?;
@@ -714,6 +729,21 @@ fn parse_hset(args: &[&[u8]]) -> Result<Command, CommandError> {
             .chunks_exact(2)
             .map(|entry| (owned(entry[0]), owned(entry[1])))
             .collect(),
+    })
+}
+
+fn parse_zadd(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "ZADD key score member [score member ...]";
+    if args.len() < 4 || args.len() % 2 != 0 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let mut entries = Vec::with_capacity((args.len() - 2) / 2);
+    for pair in args[2..].chunks_exact(2) {
+        entries.push((parse_finite_float(pair[0])?, owned(pair[1])));
+    }
+    Ok(Command::ZAdd {
+        key: owned(args[1]),
+        entries,
     })
 }
 

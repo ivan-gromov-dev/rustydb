@@ -7,7 +7,7 @@ use std::{fmt, process};
 use crate::storage::{InMemoryStore, SnapshotDataError, SnapshotEntry, SnapshotValue};
 
 const MAGIC: &[u8; 8] = b"RUSTYDB\0";
-const FORMAT_VERSION: u16 = 2;
+const FORMAT_VERSION: u16 = 3;
 const MIN_SUPPORTED_VERSION: u16 = 1;
 const MAX_ENTRIES: usize = 1_000_000;
 const MAX_COLLECTION_VALUES: usize = 1_000_000;
@@ -200,6 +200,14 @@ fn write_snapshot(mut writer: impl Write, entries: &[SnapshotEntry]) -> Result<(
                         write_blob(&mut checksummed, value)?;
                     }
                 }
+                SnapshotValue::SortedSet(values) => {
+                    checksummed.write_all(&[4])?;
+                    write_u64(&mut checksummed, length_as_u64(values.len())?)?;
+                    for (member, score_bits) in values {
+                        write_blob(&mut checksummed, member)?;
+                        write_u64(&mut checksummed, *score_bits)?;
+                    }
+                }
             }
 
             match entry.expires_at_unix_millis {
@@ -260,6 +268,18 @@ fn read_snapshot(
                     }
                     SnapshotValue::Hash(values)
                 }
+                4 if version >= 3 => {
+                    let length =
+                        read_length(&mut checksummed, MAX_COLLECTION_VALUES, "collection length")?;
+                    let mut values = Vec::new();
+                    values
+                        .try_reserve_exact(length)
+                        .map_err(|_| SnapshotDataError::AllocationFailed)?;
+                    for _ in 0..length {
+                        values.push((read_blob(&mut checksummed)?, read_u64(&mut checksummed)?));
+                    }
+                    SnapshotValue::SortedSet(values)
+                }
                 value_type => return Err(SnapshotError::InvalidValueType(value_type)),
             };
 
@@ -313,6 +333,12 @@ fn validate_entries(entries: &[SnapshotEntry]) -> Result<(), SnapshotError> {
                 for (field, value) in values {
                     ensure_limit(field.len(), MAX_BLOB_LENGTH, "blob length")?;
                     ensure_limit(value.len(), MAX_BLOB_LENGTH, "blob length")?;
+                }
+            }
+            SnapshotValue::SortedSet(values) => {
+                ensure_limit(values.len(), MAX_COLLECTION_VALUES, "collection length")?;
+                for (member, _) in values {
+                    ensure_limit(member.len(), MAX_BLOB_LENGTH, "blob length")?;
                 }
             }
         }
@@ -600,10 +626,10 @@ mod tests {
         ));
 
         let mut unsupported = valid.clone();
-        unsupported[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&3_u16.to_le_bytes());
+        unsupported[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&4_u16.to_le_bytes());
         assert!(matches!(
             read_snapshot(Cursor::new(unsupported), &mut store, wall_now),
-            Err(SnapshotError::UnsupportedVersion(3))
+            Err(SnapshotError::UnsupportedVersion(4))
         ));
 
         assert!(matches!(

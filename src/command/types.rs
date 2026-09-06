@@ -375,6 +375,21 @@ pub(crate) enum Command {
     SCard {
         key: Vec<u8>,
     },
+    ZAdd {
+        key: Vec<u8>,
+        entries: Vec<(f64, Vec<u8>)>,
+    },
+    ZRem {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
+    ZScore {
+        key: Vec<u8>,
+        member: Vec<u8>,
+    },
+    ZCard {
+        key: Vec<u8>,
+    },
     HSet {
         key: Vec<u8>,
         entries: Vec<(Vec<u8>, Vec<u8>)>,
@@ -552,6 +567,10 @@ impl Command {
             Self::SScan { .. } => "SSCAN",
             Self::SMembers { .. } => "SMEMBERS",
             Self::SCard { .. } => "SCARD",
+            Self::ZAdd { .. } => "ZADD",
+            Self::ZRem { .. } => "ZREM",
+            Self::ZScore { .. } => "ZSCORE",
+            Self::ZCard { .. } => "ZCARD",
             Self::HSet { .. } => "HSET",
             Self::HSetNx { .. } => "HSETNX",
             Self::HGet { .. } => "HGET",
@@ -793,6 +812,14 @@ impl Command {
             Self::SAddMany { key, members } => with_values(b"SADD", key, members),
             Self::SRem { key, member } => vec![b"SREM".to_vec(), key.clone(), member.clone()],
             Self::SRemMany { key, members } => with_values(b"SREM", key, members),
+            Self::ZAdd { key, entries } => {
+                let mut values = vec![b"ZADD".to_vec(), key.clone()];
+                for (score, member) in entries {
+                    values.extend([score.to_string().into_bytes(), member.clone()]);
+                }
+                values
+            }
+            Self::ZRem { key, members } => with_values(b"ZREM", key, members),
             Self::SPop { key, count } => {
                 let mut values = vec![b"SPOP".to_vec(), key.clone()];
                 if let Some(count) = count {
@@ -881,6 +908,8 @@ impl Command {
             | Self::SScan { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
+            | Self::ZScore { .. }
+            | Self::ZCard { .. }
             | Self::HGet { .. }
             | Self::HMGet { .. }
             | Self::HGetAll { .. }

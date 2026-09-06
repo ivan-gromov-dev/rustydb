@@ -1,4 +1,7 @@
-use crate::storage::{in_memory::StoreError, value::Value};
+use crate::storage::{
+    in_memory::StoreError,
+    value::{Score, Value},
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
 
@@ -19,14 +22,18 @@ impl StoredValue {
     pub(crate) fn value(&self) -> Result<&[u8], StoreError> {
         match &self.value {
             Value::String(value) => Ok(value),
-            Value::List(_) | Value::Set(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::List(_) | Value::Set(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
     pub(crate) fn value_mut(&mut self) -> Result<&mut Vec<u8>, StoreError> {
         match &mut self.value {
             Value::String(value) => Ok(value),
-            Value::List(_) | Value::Set(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::List(_) | Value::Set(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
@@ -37,7 +44,9 @@ impl StoredValue {
     pub(crate) fn into_value(self) -> Result<Vec<u8>, StoreError> {
         match self.value {
             Value::String(value) => Ok(value),
-            Value::List(_) | Value::Set(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::List(_) | Value::Set(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
     pub(crate) fn expires_at(&self) -> Option<Instant> {
@@ -54,6 +63,7 @@ impl StoredValue {
             Value::List(_) => "list",
             Value::Set(_) => "set",
             Value::Hash(_) => "hash",
+            Value::SortedSet(_) => "zset",
         }
     }
 
@@ -90,14 +100,18 @@ impl StoredValue {
     pub(crate) fn list(&self) -> Result<&VecDeque<Vec<u8>>, StoreError> {
         match &self.value {
             Value::List(values) => Ok(values),
-            Value::String(_) | Value::Set(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::String(_) | Value::Set(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
     pub(crate) fn list_mut(&mut self) -> Result<&mut VecDeque<Vec<u8>>, StoreError> {
         match &mut self.value {
             Value::List(values) => Ok(values),
-            Value::String(_) | Value::Set(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::String(_) | Value::Set(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
@@ -111,14 +125,18 @@ impl StoredValue {
     pub(crate) fn set(&self) -> Result<&HashSet<Vec<u8>>, StoreError> {
         match &self.value {
             Value::Set(values) => Ok(values),
-            Value::String(_) | Value::List(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::String(_) | Value::List(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
     pub(crate) fn set_mut(&mut self) -> Result<&mut HashSet<Vec<u8>>, StoreError> {
         match &mut self.value {
             Value::Set(values) => Ok(values),
-            Value::String(_) | Value::List(_) | Value::Hash(_) => Err(StoreError::WrongType),
+            Value::String(_) | Value::List(_) | Value::Hash(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
@@ -132,14 +150,39 @@ impl StoredValue {
     pub(crate) fn hash(&self) -> Result<&HashMap<Vec<u8>, Vec<u8>>, StoreError> {
         match &self.value {
             Value::Hash(values) => Ok(values),
-            Value::String(_) | Value::List(_) | Value::Set(_) => Err(StoreError::WrongType),
+            Value::String(_) | Value::List(_) | Value::Set(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
         }
     }
 
     pub(crate) fn hash_mut(&mut self) -> Result<&mut HashMap<Vec<u8>, Vec<u8>>, StoreError> {
         match &mut self.value {
             Value::Hash(values) => Ok(values),
-            Value::String(_) | Value::List(_) | Value::Set(_) => Err(StoreError::WrongType),
+            Value::String(_) | Value::List(_) | Value::Set(_) | Value::SortedSet(_) => {
+                Err(StoreError::WrongType)
+            }
+        }
+    }
+
+    pub(crate) fn new_sorted_set() -> Self {
+        Self {
+            value: Value::SortedSet(HashMap::new()),
+            expires_at: None,
+        }
+    }
+
+    pub(crate) fn sorted_set(&self) -> Result<&HashMap<Vec<u8>, Score>, StoreError> {
+        match &self.value {
+            Value::SortedSet(values) => Ok(values),
+            _ => Err(StoreError::WrongType),
+        }
+    }
+
+    pub(crate) fn sorted_set_mut(&mut self) -> Result<&mut HashMap<Vec<u8>, Score>, StoreError> {
+        match &mut self.value {
+            Value::SortedSet(values) => Ok(values),
+            _ => Err(StoreError::WrongType),
         }
     }
 }

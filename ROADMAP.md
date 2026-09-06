@@ -24,6 +24,10 @@ moving on.
 
 **Goal:** support leaderboards, rankings, priority queues, and delayed work.
 
+**Status:** implementation is in progress following the delivery sequence in
+[SORTED_SETS.md](SORTED_SETS.md). Basic membership and score commands plus
+persistence are complete; rankings, score ranges, pops, and iteration remain.
+
 ### Work
 
 - Add a sorted-set value with finite floating-point scores and deterministic

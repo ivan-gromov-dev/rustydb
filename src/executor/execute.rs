@@ -493,6 +493,23 @@ pub(crate) fn execute_with_snapshot(
             Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::ZAdd { key, entries } => match store.sorted_set_add(&key, entries) {
+            Ok(added) => CommandOutput::Integer(added as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRem { key, members } => match store.sorted_set_remove(&key, &members) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZScore { key, member } => match store.sorted_set_score(&key, &member) {
+            Ok(Some(score)) => CommandOutput::Float(score),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZCard { key } => match store.sorted_set_cardinality(&key) {
+            Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::HSet { key, entries } => match store.hash_set(&key, entries) {
             Ok(added) => CommandOutput::Integer(added as i64),

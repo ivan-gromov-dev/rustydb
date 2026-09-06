@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Initial sorted-set support through `ZADD`, `ZREM`, `ZSCORE`, and `ZCARD`,
+  including finite-score validation, TTL-aware storage, snapshots, and AOF
+  replay and rewriting.
+
 ## [0.12.0] - 2026-08-31
 
 ### Added

@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn parses_basic_sorted_set_commands_and_rejects_invalid_scores() {
+    assert_eq!(
+        Command::from_args(&["ZADD", "board", "1.5", "alice", "2", "bob"]),
+        Ok(Command::ZAdd {
+            key: b"board".to_vec(),
+            entries: vec![(1.5, b"alice".to_vec()), (2.0, b"bob".to_vec())]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ZREM", "board", "alice", "bob"]),
+        Ok(Command::ZRem {
+            key: b"board".to_vec(),
+            members: vec![b"alice".to_vec(), b"bob".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ZSCORE", "board", "alice"]),
+        Ok(Command::ZScore {
+            key: b"board".to_vec(),
+            member: b"alice".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ZCARD", "board"]),
+        Ok(Command::ZCard {
+            key: b"board".to_vec()
+        })
+    );
+    assert!(matches!(
+        Command::from_args(&["ZADD", "board", "nan", "alice"]),
+        Err(CommandError::InvalidFloat(_))
+    ));
+    assert!(matches!(
+        Command::from_args(&["ZADD", "board", "1"]),
+        Err(CommandError::InvalidArguments(_))
+    ));
+}
+
+#[test]
 fn parses_type_touch_and_unlink() {
     assert_eq!(
         Command::from_args(&["TYPE", "key"]),

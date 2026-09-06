@@ -1792,6 +1792,92 @@ impl InMemoryStore {
         }
     }
 
+    pub(crate) fn sorted_set_add(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        entries: Vec<(f64, Vec<u8>)>,
+    ) -> Result<usize, StoreError> {
+        use super::value::Score;
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let entries: Vec<_> = entries
+            .into_iter()
+            .map(|(score, member)| Score::new(score).map(|score| (score, member)))
+            .collect::<Option<_>>()
+            .ok_or(StoreError::FloatIsNotFinite)?;
+        if let Some(entry) = self.storage.get(key) {
+            entry.sorted_set()?;
+        }
+        self.ensure_capacity_for(key);
+        let set = self
+            .storage
+            .entry(key.to_vec())
+            .or_insert_with(StoredValue::new_sorted_set)
+            .sorted_set_mut()?;
+        let mut added = 0;
+        for (score, member) in entries {
+            added += usize::from(set.insert(member, score).is_none());
+        }
+        Ok(added)
+    }
+
+    pub(crate) fn sorted_set_remove(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: &[Vec<u8>],
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let (removed, empty) = match self.storage.get_mut(key) {
+            None => return Ok(0),
+            Some(entry) => {
+                let set = entry.sorted_set_mut()?;
+                let removed = members
+                    .iter()
+                    .filter(|member| set.remove(member.as_slice()).is_some())
+                    .count();
+                (removed, set.is_empty())
+            }
+        };
+        if empty {
+            self.storage.remove(key);
+            self.reclamation_metrics.deletions =
+                self.reclamation_metrics.deletions.saturating_add(1);
+        }
+        Ok(removed)
+    }
+
+    pub(crate) fn sorted_set_score(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        member: impl AsRef<[u8]>,
+    ) -> Result<Option<f64>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.storage
+            .get(key)
+            .map(|entry| {
+                entry
+                    .sorted_set()
+                    .map(|set| set.get(member.as_ref()).copied().map(|score| score.get()))
+            })
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    pub(crate) fn sorted_set_cardinality(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        self.storage
+            .get(key)
+            .map(|entry| entry.sorted_set().map(HashMap::len))
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+
     pub(crate) fn hash_set(
         &mut self,
         key: impl AsRef<[u8]>,

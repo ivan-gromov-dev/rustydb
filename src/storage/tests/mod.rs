@@ -4,6 +4,7 @@ mod keys;
 mod lists;
 mod numeric;
 mod sets;
+mod sorted_sets;
 mod stored_value;
 mod strings;
 mod wrong_type;

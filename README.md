@@ -279,6 +279,10 @@ clients receive the corresponding protocol-specific typed value.
 | `SSCAN key cursor [MATCH pattern] [COUNT count]` | Deterministically inspect sorted set-member batches | Next cursor followed by members |
 | `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
 | `SCARD key` | Read a set's cardinality | Number of members, or `0` |
+| `ZADD key score member [score member ...]` | Add or update sorted-set members with finite scores | Number of newly added members |
+| `ZREM key member [member ...]` | Remove sorted-set members | Number of members removed |
+| `ZSCORE key member` | Read a sorted-set member's score | Score or `(nil)` |
+| `ZCARD key` | Read a sorted set's cardinality | Number of members, or `0` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
 | `HSETNX key field value` | Set a hash field only when it does not exist | `1` if added, otherwise `0` |
 | `HGET key field` | Read a hash field | Value or `(nil)` |
@@ -341,7 +345,7 @@ String offsets and lengths are measured in bytes. Negative `GETRANGE` indexes
 count backward from the end. When `SETRANGE` starts beyond the current end, the
 gap is padded with null bytes (`\0`).
 
-RustyDB stores string, list, set, and hash values. In the interactive CLI,
+RustyDB stores string, list, set, hash, and sorted-set values. In the interactive CLI,
 `LPUSH` and `RPUSH` accept the remainder of the command line as one list element,
 so an element may contain spaces. RESP clients provide the element as one
 bulk-string argument.
@@ -379,6 +383,11 @@ order, and `COUNT` controls examined members, so `MATCH` may produce a smaller
 batch. Mutating an existing set preserves its expiration while members remain;
 removing the final member also removes the key. Set commands reject strings and
 lists without mutation.
+
+Sorted-set members are binary-safe for RESP clients and have finite floating-point
+scores. Adding an existing member updates its score, while the result counts only
+new members. Mutations preserve TTL while members remain, and removing the last
+member removes the key. Snapshots and AOF persistence preserve sorted sets.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary
@@ -434,7 +443,7 @@ src/
     ├── snapshot.rs        Snapshot data conversion and TTL restoration
     ├── stored_value.rs    StoredValue and expiration metadata
     ├── value.rs           Typed value representation
-    └── tests/              Tests grouped by keys, numbers, strings, lists, sets, hashes, TTL, and values
+    └── tests/              Tests grouped by keys, numbers, strings, lists, sets, sorted sets, hashes, TTL, and values
 ```
 
 The layers have deliberately narrow responsibilities:
@@ -457,7 +466,7 @@ The layers have deliberately narrow responsibilities:
 Storage values use an internal enum so new data structures can be added without
 changing expiration metadata. Keys, string values, list elements, set members,
 and hash fields and values are stored as bytes. Commands currently create
-string, list, set, and hash values; operations reject incompatible value kinds
+string, list, set, hash, and sorted-set values; operations reject incompatible value kinds
 without changing the value
 or its TTL.
 
@@ -518,6 +527,8 @@ from the per-module calculation.
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
+The ongoing 0.13 sorted-set milestone is broken down in
+[SORTED_SETS.md](SORTED_SETS.md); its implemented subset is listed above.
 
 ## Continuous integration
 
@@ -540,9 +551,9 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
 - Live values and keys are held entirely in memory while the process runs.
 - `--max-keys` limits key count rather than byte usage; a small number of large
   keys can still consume substantial memory.
-- Snapshot format version 2 limits a snapshot to 1,000,000 keys, each list,
-  set, or hash to 1,000,000 elements, and each binary field to 512 MiB. Version
-  1 snapshots remain readable.
+- Snapshot format version 3 limits a snapshot to 1,000,000 keys, each list,
+  set, hash, or sorted set to 1,000,000 elements, and each binary field to 512
+  MiB. Versions 1 and 2 remain readable.
 - AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
 
 ### Intentional scope

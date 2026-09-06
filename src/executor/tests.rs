@@ -4,6 +4,50 @@ use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
 #[test]
+fn executes_basic_sorted_set_commands() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::ZAdd {
+                key: b"board".to_vec(),
+                entries: vec![(3.5, b"alice".to_vec()), (2.0, b"bob".to_vec())]
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::ZScore {
+                key: b"board".to_vec(),
+                member: b"alice".to_vec()
+            },
+            &mut database
+        ),
+        Response::Float(3.5)
+    );
+    assert_eq!(
+        execute(
+            Command::ZCard {
+                key: b"board".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::ZRem {
+                key: b"board".to_vec(),
+                members: vec![b"alice".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
 fn executes_type_touch_and_unlink() {
     let mut database = Database::new();
     database.set(b"string".to_vec(), b"value".to_vec());
