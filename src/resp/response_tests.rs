@@ -115,6 +115,22 @@ fn prefixes_errors_and_keeps_them_on_one_resp_line() {
 }
 
 #[test]
+fn transaction_outputs_are_nested_response_arrays() {
+    assert_eq!(
+        frame_from_output(CommandOutput::Transaction(vec![
+            CommandOutput::Ok,
+            CommandOutput::Error("wrong type".to_owned()),
+            CommandOutput::Nil,
+        ])),
+        RespFrame::Array(vec![
+            RespFrame::SimpleString("OK".to_owned()),
+            RespFrame::Error("ERR wrong type".to_owned()),
+            RespFrame::NullBulkString,
+        ])
+    );
+}
+
+#[test]
 fn converts_help_to_a_bulk_string_because_it_contains_newlines() {
     assert_eq!(
         frame_from_output(CommandOutput::Help),

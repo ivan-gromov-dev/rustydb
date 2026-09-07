@@ -713,6 +713,15 @@ pub(crate) fn execute_with_snapshot(
 
         Command::AofRewrite => CommandOutput::Error("AOF is not configured".to_owned()),
 
+        Command::Multi
+        | Command::Exec
+        | Command::Discard
+        | Command::Watch { .. }
+        | Command::Unwatch
+        | Command::Transaction { .. } => {
+            CommandOutput::Error("transaction commands require a server connection".to_owned())
+        }
+
         Command::Info => CommandOutput::Error("INFO requires database metrics".to_owned()),
 
         Command::Help => CommandOutput::Help,

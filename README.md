@@ -59,6 +59,10 @@ exclusive. If a crash leaves the final AOF record incomplete, startup discards
 that tail at the previous valid record boundary and continues. A checksum
 mismatch or malformed complete record remains a startup error.
 
+The successful mutations produced by one `EXEC` are encoded in one checksummed
+AOF record and synchronized together. Replay therefore applies the transaction
+as one logical batch; a truncated transaction record is discarded in full.
+
 Run `AOFREWRITE` in AOF mode to compact command history into the minimum
 canonical sequence needed to reproduce the current strings, lists, sets,
 hashes, and expirations. The replacement is written and synchronized as a
@@ -137,7 +141,14 @@ connections and wait for active client sessions to finish cleanly.
 
 Each client receives command results without the interactive banner or prompt.
 Commands from different clients operate on shared storage, and each complete
-command executes atomically under the database lock. A malformed RESP frame
+command executes atomically under the database lock. RESP clients can queue
+database commands with `MULTI` and execute the complete queue atomically with
+`EXEC`, or clear it with `DISCARD`. Queue-time syntax errors abort `EXEC`, while
+errors produced during execution are returned in their corresponding result
+slot and later queued commands still run. `WATCH` provides optimistic locking:
+`EXEC` returns a null array when another command wrote, deleted, expired, or
+evicted a watched key. `UNWATCH` clears the connection's watched keys. A
+malformed RESP frame
 closes only its client connection after a protocol error response.
 `SAVE` and `AOFREWRITE` also run under that lock, so other clients wait until
 the configured persistence operation completes. With `--save-on-shutdown`, the
@@ -174,8 +185,8 @@ Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
 integers, lists, sets, and expiration output through a real client.
 
 RustyDB implements RESP3 response types needed by its documented command subset,
-but does not implement authentication, multiple logical databases, transactions,
-Pub/Sub, or configuration metadata commands such as `CONFIG`.
+but does not implement authentication, multiple logical databases, Pub/Sub, or
+configuration metadata commands such as `CONFIG`.
 Features of `redis-cli` that probe or depend on those commands are not supported.
 Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
 invocations to send RustyDB commands with those names. Command errors use
@@ -308,6 +319,11 @@ clients receive the corresponding protocol-specific typed value.
 | `HINCRBYFLOAT key field increment`                                                                               | Increment a finite floating-point hash field                                                          | Updated number                                                         |
 | `HSCAN key cursor [MATCH pattern] [COUNT count]`                                                                 | Deterministically inspect sorted hash-field batches                                                   | Next cursor followed by field/value pairs                              |
 | `PING [message]`                                                                                                 | Test the connection, optionally echoing a binary message                                              | `PONG` or the message                                                  |
+| `MULTI`                                                                                                          | Start queuing commands for an atomic transaction                                                      | `OK`                                                                  |
+| `EXEC`                                                                                                           | Execute the queued transaction                                                                        | One result per queued command, or an error                             |
+| `DISCARD`                                                                                                        | Discard the queued transaction                                                                         | `OK`                                                                  |
+| `WATCH key [key ...]`                                                                                            | Abort the next transaction when a watched key changes                                                  | `OK`                                                                  |
+| `UNWATCH`                                                                                                        | Clear all keys watched by this connection                                                              | `OK`                                                                  |
 | `ECHO message`                                                                                                   | Return a binary message unchanged                                                                     | The message                                                            |
 | `HELLO [2\|3]`                                                                                                   | Report connection metadata and optionally select RESP2 or RESP3                                       | Server metadata                                                        |
 | `CLIENT ID`                                                                                                      | Read the connection's unique, monotonically increasing identifier                                     | Connection ID                                                          |
@@ -643,7 +659,7 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
 - Snapshot mode can lose mutations after the latest successful `SAVE` unless
   save-on-shutdown completes. AOF mode instead synchronizes each successful
   mutation before acknowledging it.
-- No transactions, authentication, or transport encryption.
+- Authentication and transport encryption are not implemented.
 - Redis protocol compatibility currently covers only the documented command
   subset and the RESP3 response types it requires.
 - Live values and keys are held entirely in memory while the process runs.
@@ -652,7 +668,8 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
 - Snapshot format version 3 limits a snapshot to 1,000,000 keys, each list,
   set, hash, or sorted set to 1,000,000 elements, and each binary field to 512
   MiB. Versions 1 and 2 remain readable.
-- AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
+- AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments,
+  counted across all commands in a transaction record.
 
 ### Intentional scope
 

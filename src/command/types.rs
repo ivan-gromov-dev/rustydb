@@ -545,6 +545,17 @@ pub(crate) enum Command {
     Clear,
     Save,
     AofRewrite,
+    Multi,
+    Exec,
+    Discard,
+    Watch {
+        keys: Vec<Vec<u8>>,
+    },
+    Unwatch,
+    Transaction {
+        commands: Vec<Command>,
+        watched: Vec<(Vec<u8>, u64, bool)>,
+    },
     Info,
     Help,
     Exit,
@@ -671,6 +682,11 @@ impl Command {
             Self::Clear => "CLEAR",
             Self::Save => "SAVE",
             Self::AofRewrite => "AOFREWRITE",
+            Self::Multi => "MULTI",
+            Self::Exec | Self::Transaction { .. } => "EXEC",
+            Self::Discard => "DISCARD",
+            Self::Watch { .. } => "WATCH",
+            Self::Unwatch => "UNWATCH",
             Self::Info => "INFO",
             Self::Help => "HELP",
             Self::Exit => "EXIT",
@@ -1038,6 +1054,12 @@ impl Command {
             | Self::Len
             | Self::Save
             | Self::AofRewrite
+            | Self::Multi
+            | Self::Exec
+            | Self::Discard
+            | Self::Watch { .. }
+            | Self::Unwatch
+            | Self::Transaction { .. }
             | Self::Info
             | Self::Help
             | Self::Exit => return None,
