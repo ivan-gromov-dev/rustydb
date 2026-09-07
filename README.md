@@ -209,129 +209,129 @@ RESP clients pass every key and value as an exact binary argument.
 The result column describes the interactive CLI representation. RESP2 and RESP3
 clients receive the corresponding protocol-specific typed value.
 
-| Command | Description | Result |
-| --- | --- | --- |
-| `SET key value [NX\|XX] [GET] [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|KEEPTTL]` | Store a value with optional existence conditions, old-value return, and expiration policy | `OK`, previous value, or `(nil)` |
-| `MSET key value [key value ...]` | Store one or more key/value pairs | `OK` |
-| `MSETNX key value [key value ...]` | Atomically store all pairs only when every key is missing | `1` if all were stored, otherwise `0` |
-| `SETNX key value` | Store only when the key does not exist | `1` if stored, otherwise `0` |
-| `GET key` | Read a value | Value or `(nil)` |
-| `GETEX key [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|PERSIST]` | Read a value and optionally update or remove its expiration | Value or `(nil)` |
-| `MGET key [key ...]` | Read multiple values in request order | One value or `(nil)` per line |
-| `GETSET key value` | Replace a value and return the previous value | Previous value or `(nil)` |
-| `GETDEL key` | Delete a key and return its value | Previous value or `(nil)` |
-| `APPEND key value` | Append to a string, creating the key if necessary | New byte length |
-| `INCR key` | Increment an integer by one | Updated integer |
-| `INCRBY key amount` | Increment an integer by `amount` | Updated integer |
-| `DECR key` | Decrement an integer by one | Updated integer |
-| `DECRBY key amount` | Decrement an integer by `amount` | Updated integer |
-| `INCRBYFLOAT key amount` | Increment a finite floating-point value | Updated number |
-| `EXISTS key [key ...]` | Count existing, non-expired keys; duplicate keys are counted repeatedly | Number of matches |
-| `DEL key [key ...]` | Delete one or more keys; duplicate keys are removed once | Number deleted |
-| `TYPE key` | Report `string`, `list`, `set`, `hash`, or `none` for an expired or missing key | Type name |
-| `TOUCH key [key ...]` | Count existing keys (including duplicate arguments); RustyDB has no LRU/LFU access metadata to update | Number of matches |
-| `UNLINK key [key ...]` | Delete keys synchronously; duplicate keys are removed once | Number deleted |
-| `RENAME old_key new_key` | Move a value and its expiration to another key | `1` if renamed, otherwise `0` |
-| `EXPIRE key seconds [NX\|XX\|GT\|LT]` | Set a relative expiration in seconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
-| `PEXPIRE key milliseconds [NX\|XX\|GT\|LT]` | Set a relative expiration in milliseconds, optionally subject to a TTL condition | `1` if set, otherwise `0` |
-| `EXPIREAT key unix-seconds [NX\|XX\|GT\|LT]` | Set an absolute Unix expiration in seconds | `1` if set, otherwise `0` |
-| `PEXPIREAT key unix-milliseconds [NX\|XX\|GT\|LT]` | Set an absolute Unix expiration in milliseconds | `1` if set, otherwise `0` |
-| `TTL key` | Read remaining lifetime in seconds | Remaining TTL, `-1`, or `-2` |
-| `PTTL key` | Read remaining lifetime in milliseconds | Remaining TTL, `-1`, or `-2` |
-| `EXPIRETIME key` | Read the absolute Unix expiration in seconds | Unix timestamp, `-1`, or `-2` |
-| `PEXPIRETIME key` | Read the absolute Unix expiration in milliseconds | Unix timestamp, `-1`, or `-2` |
-| `PERSIST key` | Remove an expiration | `1` if removed, otherwise `0` |
-| `STRLEN key` | Count bytes in a string | Byte count |
-| `GETRANGE key start end` | Read an inclusive byte range | String, possibly empty |
-| `SETRANGE key offset value` | Replace bytes starting at an offset | New byte length |
-| `LPUSH key value [value ...]` | Prepend one or more values to a list, creating it if necessary | New list length |
-| `LPUSHX key value [value ...]` | Prepend values only when the list already exists | New list length, or `0` for a missing key |
-| `RPUSH key value [value ...]` | Append one or more values to a list, creating it if necessary | New list length |
-| `RPUSHX key value [value ...]` | Append values only when the list already exists | New list length, or `0` for a missing key |
-| `LLEN key` | Read a list's length | List length, or `0` for a missing key |
-| `LINDEX key index` | Read a list value by zero-based index; negative indexes count from the end | Value or `(nil)` |
-| `LSET key index value` | Replace a list value by zero-based index; negative indexes count from the end | `OK` or an error |
-| `LINSERT key BEFORE\|AFTER pivot element` | Insert an element relative to the first matching pivot | New length, `0` for a missing key, or `-1` when the pivot is absent |
-| `LTRIM key start stop` | Keep only the inclusive list range | `OK` |
-| `LREM key count element` | Remove matching elements from the head, tail, or whole list according to `count` | Number removed |
-| `LPOS key element [RANK rank] [COUNT count] [MAXLEN len]` | Find matching element indexes with optional occurrence, result-count, and scan limits | Index, indexes, or `(nil)` |
-| `LMOVE source destination LEFT\|RIGHT LEFT\|RIGHT` | Atomically move one list element between selected ends | Moved value or `(nil)` |
-| `RPOPLPUSH source destination` | Atomically move the source tail to the destination head | Moved value or `(nil)` |
-| `BLPOP key [key ...] timeout` | Wait for and remove the first value from the first ready list | Key and value, or `(nil)` on timeout |
-| `BRPOP key [key ...] timeout` | Wait for and remove the last value from the first ready list | Key and value, or `(nil)` on timeout |
-| `BLMOVE source destination LEFT\|RIGHT LEFT\|RIGHT timeout` | Wait for and atomically move one list element between selected ends | Moved value or `(nil)` on timeout |
-| `LPOP key [count]` | Remove and return the first list value, or up to `count` values | Value, values, or `(nil)` |
-| `RPOP key [count]` | Remove and return the last list value, or up to `count` values | Value, values, or `(nil)` |
-| `LRANGE key start end` | Read an inclusive list range | Values in list order, or `(nil)` |
-| `SADD key member [member ...]` | Add one or more members to a set, creating it if necessary | Number of members added |
-| `SREM key member [member ...]` | Remove one or more members from a set | Number of members removed |
-| `SISMEMBER key member` | Test whether a set contains a member | `1` if present, otherwise `0` |
-| `SMISMEMBER key member [member ...]` | Test multiple members in request order | One `1` or `0` per member |
-| `SPOP key [count]` | Remove one or up to `count` members in sorted binary order | Member, members, or `(nil)` |
-| `SRANDMEMBER key [count]` | Return members without removing them; negative counts allow repeats | Member, members, or `(nil)` |
-| `SMOVE source destination member` | Atomically move a member between sets | `1` if moved, otherwise `0` |
-| `SDIFF key [key ...]` | Return members of the first set absent from every later set | Members in sorted order or `(nil)` |
-| `SINTER key [key ...]` | Return members present in every set | Members in sorted order or `(nil)` |
-| `SUNION key [key ...]` | Return members present in any set | Members in sorted order or `(nil)` |
-| `SDIFFSTORE destination key [key ...]` | Store the difference, replacing destination | Stored cardinality |
-| `SINTERSTORE destination key [key ...]` | Store the intersection, replacing destination | Stored cardinality |
-| `SUNIONSTORE destination key [key ...]` | Store the union, replacing destination | Stored cardinality |
-| `SSCAN key cursor [MATCH pattern] [COUNT count]` | Deterministically inspect sorted set-member batches | Next cursor followed by members |
-| `SMEMBERS key` | Read all set members in sorted order | Members or `(nil)` |
-| `SCARD key` | Read a set's cardinality | Number of members, or `0` |
-| `ZADD key score member [score member ...]` | Add or update sorted-set members with finite scores | Number of newly added members |
-| `ZREM key member [member ...]` | Remove sorted-set members | Number of members removed |
-| `ZSCORE key member` | Read a sorted-set member's score | Score or `(nil)` |
-| `ZCARD key` | Read a sorted set's cardinality | Number of members, or `0` |
-| `ZSCAN key cursor [MATCH pattern] [COUNT count]` | Inspect sorted members and their scores in deterministic batches | Next cursor followed by alternating members and scores |
-| `ZMSCORE key member [member ...]` | Read member scores in request order, including duplicates | One score or `(nil)` per member |
-| `ZINCRBY key increment member` | Add a finite increment to a member score, creating the member if absent | Updated score |
-| `ZCOUNT key min max` | Count scores within inclusive or exclusive bounds | Number of matching members |
-| `ZRANGE key start stop [BYSCORE] [REV] [LIMIT offset count] [WITHSCORES]` | Read a rank or score range, optionally reversed, paginated by score, and including scores | Members, or alternating members and scores; `(nil)` for an empty range |
-| `ZPOPMIN key [count]` | Atomically remove up to `count` members from the lowest score end (default one) | Alternating members and scores, or `(nil)` |
-| `ZPOPMAX key [count]` | Atomically remove up to `count` members from the highest score end (default one) | Alternating members and scores, or `(nil)` |
-| `ZREMRANGEBYRANK key start stop` | Remove an inclusive rank range in ascending order | Number removed |
-| `ZREMRANGEBYSCORE key min max` | Remove members within inclusive or exclusive score bounds | Number removed |
-| `ZRANK key member` | Read a member's zero-based rank in ascending score order | Rank or `(nil)` |
-| `ZREVRANK key member` | Read a member's zero-based rank in descending score order | Rank or `(nil)` |
-| `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
-| `HSETNX key field value` | Set a hash field only when it does not exist | `1` if added, otherwise `0` |
-| `HGET key field` | Read a hash field | Value or `(nil)` |
-| `HMGET key field [field ...]` | Read hash fields in request order | One value or `(nil)` per field |
-| `HGETALL key` | Read all hash fields and values in sorted field order | Alternating fields and values, or `(nil)` |
-| `HDEL key field [field ...]` | Delete one or more hash fields | Number of fields deleted |
-| `HEXISTS key field` | Test whether a hash field exists | `1` if present, otherwise `0` |
-| `HLEN key` | Read a hash's field count | Number of fields, or `0` |
-| `HKEYS key` | Read hash fields in sorted order | Fields or `(nil)` |
-| `HVALS key` | Read hash values ordered by their sorted fields | Values or `(nil)` |
-| `HINCRBY key field increment` | Increment an integer hash field | Updated integer |
-| `HINCRBYFLOAT key field increment` | Increment a finite floating-point hash field | Updated number |
-| `HSCAN key cursor [MATCH pattern] [COUNT count]` | Deterministically inspect sorted hash-field batches | Next cursor followed by field/value pairs |
-| `PING [message]` | Test the connection, optionally echoing a binary message | `PONG` or the message |
-| `ECHO message` | Return a binary message unchanged | The message |
-| `HELLO [2\|3]` | Report connection metadata and optionally select RESP2 or RESP3 | Server metadata |
-| `CLIENT ID` | Read the connection's unique, monotonically increasing identifier | Connection ID |
-| `CLIENT SETNAME name` | Set or clear the current connection name | `OK` |
-| `CLIENT GETNAME` | Read the current connection name | Name or `(nil)` |
-| `CLIENT SETINFO LIB-NAME\|LIB-VER value` | Record client library metadata for the connection | `OK` |
-| `COMMAND` | List metadata for every supported command in sorted order | Command metadata |
-| `COMMAND INFO [command ...]` | Read selected command metadata, or all metadata when omitted | Metadata or `(nil)` per name |
-| `COMMAND COUNT` | Count the commands advertised by RustyDB | Command count |
-| `SELECT 0` | Select the only supported logical database | `OK`; other indexes are rejected |
-| `DBSIZE` | Count non-expired keys in database zero | Number of keys |
-| `FLUSHDB [SYNC\|ASYNC]` | Synchronously remove every key from database zero | `OK` |
-| `FLUSHALL [SYNC\|ASYNC]` | Synchronously remove every key from the standalone server | `OK` |
-| `KEYS pattern` | List non-expired keys matching a binary-safe Redis glob, in sorted order | One key per line or `(nil)` |
-| `SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]` | Deterministically inspect sorted keyspace batches; `COUNT` controls examined keys | Next cursor followed by matching keys |
-| `RANDOMKEY` | Return a pseudo-random non-expired key | Key or `(nil)` |
-| `COPY source destination [DB 0] [REPLACE]` | Copy a value and its remaining TTL, optionally replacing the destination | `1` if copied, otherwise `0` |
-| `LEN` | Count non-expired keys | Number of keys |
-| `CLEAR` | Remove every key | `OK` |
-| `SAVE` | Atomically write the configured snapshot | `OK` or an error |
-| `AOFREWRITE` | Atomically compact the configured AOF | `OK` or an error |
-| `INFO` | Read runtime counters | One `name:value` counter per line |
-| `HELP` | Print the command list | Help text |
-| `EXIT` / `QUIT` | Close the current application or connection | `Bye!` in the CLI; `OK` over RESP |
+| Command                                                                                                          | Description                                                                                           | Result                                                                 |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `SET key value [NX\|XX] [GET] [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|KEEPTTL]` | Store a value with optional existence conditions, old-value return, and expiration policy             | `OK`, previous value, or `(nil)`                                       |
+| `MSET key value [key value ...]`                                                                                 | Store one or more key/value pairs                                                                     | `OK`                                                                   |
+| `MSETNX key value [key value ...]`                                                                               | Atomically store all pairs only when every key is missing                                             | `1` if all were stored, otherwise `0`                                  |
+| `SETNX key value`                                                                                                | Store only when the key does not exist                                                                | `1` if stored, otherwise `0`                                           |
+| `GET key`                                                                                                        | Read a value                                                                                          | Value or `(nil)`                                                       |
+| `GETEX key [EX seconds\|PX milliseconds\|EXAT unix-seconds\|PXAT unix-milliseconds\|PERSIST]`                    | Read a value and optionally update or remove its expiration                                           | Value or `(nil)`                                                       |
+| `MGET key [key ...]`                                                                                             | Read multiple values in request order                                                                 | One value or `(nil)` per line                                          |
+| `GETSET key value`                                                                                               | Replace a value and return the previous value                                                         | Previous value or `(nil)`                                              |
+| `GETDEL key`                                                                                                     | Delete a key and return its value                                                                     | Previous value or `(nil)`                                              |
+| `APPEND key value`                                                                                               | Append to a string, creating the key if necessary                                                     | New byte length                                                        |
+| `INCR key`                                                                                                       | Increment an integer by one                                                                           | Updated integer                                                        |
+| `INCRBY key amount`                                                                                              | Increment an integer by `amount`                                                                      | Updated integer                                                        |
+| `DECR key`                                                                                                       | Decrement an integer by one                                                                           | Updated integer                                                        |
+| `DECRBY key amount`                                                                                              | Decrement an integer by `amount`                                                                      | Updated integer                                                        |
+| `INCRBYFLOAT key amount`                                                                                         | Increment a finite floating-point value                                                               | Updated number                                                         |
+| `EXISTS key [key ...]`                                                                                           | Count existing, non-expired keys; duplicate keys are counted repeatedly                               | Number of matches                                                      |
+| `DEL key [key ...]`                                                                                              | Delete one or more keys; duplicate keys are removed once                                              | Number deleted                                                         |
+| `TYPE key`                                                                                                       | Report `string`, `list`, `set`, `hash`, or `none` for an expired or missing key                       | Type name                                                              |
+| `TOUCH key [key ...]`                                                                                            | Count existing keys (including duplicate arguments); RustyDB has no LRU/LFU access metadata to update | Number of matches                                                      |
+| `UNLINK key [key ...]`                                                                                           | Delete keys synchronously; duplicate keys are removed once                                            | Number deleted                                                         |
+| `RENAME old_key new_key`                                                                                         | Move a value and its expiration to another key                                                        | `1` if renamed, otherwise `0`                                          |
+| `EXPIRE key seconds [NX\|XX\|GT\|LT]`                                                                            | Set a relative expiration in seconds, optionally subject to a TTL condition                           | `1` if set, otherwise `0`                                              |
+| `PEXPIRE key milliseconds [NX\|XX\|GT\|LT]`                                                                      | Set a relative expiration in milliseconds, optionally subject to a TTL condition                      | `1` if set, otherwise `0`                                              |
+| `EXPIREAT key unix-seconds [NX\|XX\|GT\|LT]`                                                                     | Set an absolute Unix expiration in seconds                                                            | `1` if set, otherwise `0`                                              |
+| `PEXPIREAT key unix-milliseconds [NX\|XX\|GT\|LT]`                                                               | Set an absolute Unix expiration in milliseconds                                                       | `1` if set, otherwise `0`                                              |
+| `TTL key`                                                                                                        | Read remaining lifetime in seconds                                                                    | Remaining TTL, `-1`, or `-2`                                           |
+| `PTTL key`                                                                                                       | Read remaining lifetime in milliseconds                                                               | Remaining TTL, `-1`, or `-2`                                           |
+| `EXPIRETIME key`                                                                                                 | Read the absolute Unix expiration in seconds                                                          | Unix timestamp, `-1`, or `-2`                                          |
+| `PEXPIRETIME key`                                                                                                | Read the absolute Unix expiration in milliseconds                                                     | Unix timestamp, `-1`, or `-2`                                          |
+| `PERSIST key`                                                                                                    | Remove an expiration                                                                                  | `1` if removed, otherwise `0`                                          |
+| `STRLEN key`                                                                                                     | Count bytes in a string                                                                               | Byte count                                                             |
+| `GETRANGE key start end`                                                                                         | Read an inclusive byte range                                                                          | String, possibly empty                                                 |
+| `SETRANGE key offset value`                                                                                      | Replace bytes starting at an offset                                                                   | New byte length                                                        |
+| `LPUSH key value [value ...]`                                                                                    | Prepend one or more values to a list, creating it if necessary                                        | New list length                                                        |
+| `LPUSHX key value [value ...]`                                                                                   | Prepend values only when the list already exists                                                      | New list length, or `0` for a missing key                              |
+| `RPUSH key value [value ...]`                                                                                    | Append one or more values to a list, creating it if necessary                                         | New list length                                                        |
+| `RPUSHX key value [value ...]`                                                                                   | Append values only when the list already exists                                                       | New list length, or `0` for a missing key                              |
+| `LLEN key`                                                                                                       | Read a list's length                                                                                  | List length, or `0` for a missing key                                  |
+| `LINDEX key index`                                                                                               | Read a list value by zero-based index; negative indexes count from the end                            | Value or `(nil)`                                                       |
+| `LSET key index value`                                                                                           | Replace a list value by zero-based index; negative indexes count from the end                         | `OK` or an error                                                       |
+| `LINSERT key BEFORE\|AFTER pivot element`                                                                        | Insert an element relative to the first matching pivot                                                | New length, `0` for a missing key, or `-1` when the pivot is absent    |
+| `LTRIM key start stop`                                                                                           | Keep only the inclusive list range                                                                    | `OK`                                                                   |
+| `LREM key count element`                                                                                         | Remove matching elements from the head, tail, or whole list according to `count`                      | Number removed                                                         |
+| `LPOS key element [RANK rank] [COUNT count] [MAXLEN len]`                                                        | Find matching element indexes with optional occurrence, result-count, and scan limits                 | Index, indexes, or `(nil)`                                             |
+| `LMOVE source destination LEFT\|RIGHT LEFT\|RIGHT`                                                               | Atomically move one list element between selected ends                                                | Moved value or `(nil)`                                                 |
+| `RPOPLPUSH source destination`                                                                                   | Atomically move the source tail to the destination head                                               | Moved value or `(nil)`                                                 |
+| `BLPOP key [key ...] timeout`                                                                                    | Wait for and remove the first value from the first ready list                                         | Key and value, or `(nil)` on timeout                                   |
+| `BRPOP key [key ...] timeout`                                                                                    | Wait for and remove the last value from the first ready list                                          | Key and value, or `(nil)` on timeout                                   |
+| `BLMOVE source destination LEFT\|RIGHT LEFT\|RIGHT timeout`                                                      | Wait for and atomically move one list element between selected ends                                   | Moved value or `(nil)` on timeout                                      |
+| `LPOP key [count]`                                                                                               | Remove and return the first list value, or up to `count` values                                       | Value, values, or `(nil)`                                              |
+| `RPOP key [count]`                                                                                               | Remove and return the last list value, or up to `count` values                                        | Value, values, or `(nil)`                                              |
+| `LRANGE key start end`                                                                                           | Read an inclusive list range                                                                          | Values in list order, or `(nil)`                                       |
+| `SADD key member [member ...]`                                                                                   | Add one or more members to a set, creating it if necessary                                            | Number of members added                                                |
+| `SREM key member [member ...]`                                                                                   | Remove one or more members from a set                                                                 | Number of members removed                                              |
+| `SISMEMBER key member`                                                                                           | Test whether a set contains a member                                                                  | `1` if present, otherwise `0`                                          |
+| `SMISMEMBER key member [member ...]`                                                                             | Test multiple members in request order                                                                | One `1` or `0` per member                                              |
+| `SPOP key [count]`                                                                                               | Remove one or up to `count` members in sorted binary order                                            | Member, members, or `(nil)`                                            |
+| `SRANDMEMBER key [count]`                                                                                        | Return members without removing them; negative counts allow repeats                                   | Member, members, or `(nil)`                                            |
+| `SMOVE source destination member`                                                                                | Atomically move a member between sets                                                                 | `1` if moved, otherwise `0`                                            |
+| `SDIFF key [key ...]`                                                                                            | Return members of the first set absent from every later set                                           | Members in sorted order or `(nil)`                                     |
+| `SINTER key [key ...]`                                                                                           | Return members present in every set                                                                   | Members in sorted order or `(nil)`                                     |
+| `SUNION key [key ...]`                                                                                           | Return members present in any set                                                                     | Members in sorted order or `(nil)`                                     |
+| `SDIFFSTORE destination key [key ...]`                                                                           | Store the difference, replacing destination                                                           | Stored cardinality                                                     |
+| `SINTERSTORE destination key [key ...]`                                                                          | Store the intersection, replacing destination                                                         | Stored cardinality                                                     |
+| `SUNIONSTORE destination key [key ...]`                                                                          | Store the union, replacing destination                                                                | Stored cardinality                                                     |
+| `SSCAN key cursor [MATCH pattern] [COUNT count]`                                                                 | Deterministically inspect sorted set-member batches                                                   | Next cursor followed by members                                        |
+| `SMEMBERS key`                                                                                                   | Read all set members in sorted order                                                                  | Members or `(nil)`                                                     |
+| `SCARD key`                                                                                                      | Read a set's cardinality                                                                              | Number of members, or `0`                                              |
+| `ZADD key score member [score member ...]`                                                                       | Add or update sorted-set members with finite scores                                                   | Number of newly added members                                          |
+| `ZREM key member [member ...]`                                                                                   | Remove sorted-set members                                                                             | Number of members removed                                              |
+| `ZSCORE key member`                                                                                              | Read a sorted-set member's score                                                                      | Score or `(nil)`                                                       |
+| `ZCARD key`                                                                                                      | Read a sorted set's cardinality                                                                       | Number of members, or `0`                                              |
+| `ZSCAN key cursor [MATCH pattern] [COUNT count]`                                                                 | Inspect sorted members and their scores in deterministic batches                                      | Next cursor followed by alternating members and scores                 |
+| `ZMSCORE key member [member ...]`                                                                                | Read member scores in request order, including duplicates                                             | One score or `(nil)` per member                                        |
+| `ZINCRBY key increment member`                                                                                   | Add a finite increment to a member score, creating the member if absent                               | Updated score                                                          |
+| `ZCOUNT key min max`                                                                                             | Count scores within inclusive or exclusive bounds                                                     | Number of matching members                                             |
+| `ZRANGE key start stop [BYSCORE] [REV] [LIMIT offset count] [WITHSCORES]`                                        | Read a rank or score range, optionally reversed, paginated by score, and including scores             | Members, or alternating members and scores; `(nil)` for an empty range |
+| `ZPOPMIN key [count]`                                                                                            | Atomically remove up to `count` members from the lowest score end (default one)                       | Alternating members and scores, or `(nil)`                             |
+| `ZPOPMAX key [count]`                                                                                            | Atomically remove up to `count` members from the highest score end (default one)                      | Alternating members and scores, or `(nil)`                             |
+| `ZREMRANGEBYRANK key start stop`                                                                                 | Remove an inclusive rank range in ascending order                                                     | Number removed                                                         |
+| `ZREMRANGEBYSCORE key min max`                                                                                   | Remove members within inclusive or exclusive score bounds                                             | Number removed                                                         |
+| `ZRANK key member`                                                                                               | Read a member's zero-based rank in ascending score order                                              | Rank or `(nil)`                                                        |
+| `ZREVRANK key member`                                                                                            | Read a member's zero-based rank in descending score order                                             | Rank or `(nil)`                                                        |
+| `HSET key field value [field value ...]`                                                                         | Set one or more hash fields                                                                           | Number of newly added fields                                           |
+| `HSETNX key field value`                                                                                         | Set a hash field only when it does not exist                                                          | `1` if added, otherwise `0`                                            |
+| `HGET key field`                                                                                                 | Read a hash field                                                                                     | Value or `(nil)`                                                       |
+| `HMGET key field [field ...]`                                                                                    | Read hash fields in request order                                                                     | One value or `(nil)` per field                                         |
+| `HGETALL key`                                                                                                    | Read all hash fields and values in sorted field order                                                 | Alternating fields and values, or `(nil)`                              |
+| `HDEL key field [field ...]`                                                                                     | Delete one or more hash fields                                                                        | Number of fields deleted                                               |
+| `HEXISTS key field`                                                                                              | Test whether a hash field exists                                                                      | `1` if present, otherwise `0`                                          |
+| `HLEN key`                                                                                                       | Read a hash's field count                                                                             | Number of fields, or `0`                                               |
+| `HKEYS key`                                                                                                      | Read hash fields in sorted order                                                                      | Fields or `(nil)`                                                      |
+| `HVALS key`                                                                                                      | Read hash values ordered by their sorted fields                                                       | Values or `(nil)`                                                      |
+| `HINCRBY key field increment`                                                                                    | Increment an integer hash field                                                                       | Updated integer                                                        |
+| `HINCRBYFLOAT key field increment`                                                                               | Increment a finite floating-point hash field                                                          | Updated number                                                         |
+| `HSCAN key cursor [MATCH pattern] [COUNT count]`                                                                 | Deterministically inspect sorted hash-field batches                                                   | Next cursor followed by field/value pairs                              |
+| `PING [message]`                                                                                                 | Test the connection, optionally echoing a binary message                                              | `PONG` or the message                                                  |
+| `ECHO message`                                                                                                   | Return a binary message unchanged                                                                     | The message                                                            |
+| `HELLO [2\|3]`                                                                                                   | Report connection metadata and optionally select RESP2 or RESP3                                       | Server metadata                                                        |
+| `CLIENT ID`                                                                                                      | Read the connection's unique, monotonically increasing identifier                                     | Connection ID                                                          |
+| `CLIENT SETNAME name`                                                                                            | Set or clear the current connection name                                                              | `OK`                                                                   |
+| `CLIENT GETNAME`                                                                                                 | Read the current connection name                                                                      | Name or `(nil)`                                                        |
+| `CLIENT SETINFO LIB-NAME\|LIB-VER value`                                                                         | Record client library metadata for the connection                                                     | `OK`                                                                   |
+| `COMMAND`                                                                                                        | List metadata for every supported command in sorted order                                             | Command metadata                                                       |
+| `COMMAND INFO [command ...]`                                                                                     | Read selected command metadata, or all metadata when omitted                                          | Metadata or `(nil)` per name                                           |
+| `COMMAND COUNT`                                                                                                  | Count the commands advertised by RustyDB                                                              | Command count                                                          |
+| `SELECT 0`                                                                                                       | Select the only supported logical database                                                            | `OK`; other indexes are rejected                                       |
+| `DBSIZE`                                                                                                         | Count non-expired keys in database zero                                                               | Number of keys                                                         |
+| `FLUSHDB [SYNC\|ASYNC]`                                                                                          | Synchronously remove every key from database zero                                                     | `OK`                                                                   |
+| `FLUSHALL [SYNC\|ASYNC]`                                                                                         | Synchronously remove every key from the standalone server                                             | `OK`                                                                   |
+| `KEYS pattern`                                                                                                   | List non-expired keys matching a binary-safe Redis glob, in sorted order                              | One key per line or `(nil)`                                            |
+| `SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]`                                                          | Deterministically inspect sorted keyspace batches; `COUNT` controls examined keys                     | Next cursor followed by matching keys                                  |
+| `RANDOMKEY`                                                                                                      | Return a pseudo-random non-expired key                                                                | Key or `(nil)`                                                         |
+| `COPY source destination [DB 0] [REPLACE]`                                                                       | Copy a value and its remaining TTL, optionally replacing the destination                              | `1` if copied, otherwise `0`                                           |
+| `LEN`                                                                                                            | Count non-expired keys                                                                                | Number of keys                                                         |
+| `CLEAR`                                                                                                          | Remove every key                                                                                      | `OK`                                                                   |
+| `SAVE`                                                                                                           | Atomically write the configured snapshot                                                              | `OK` or an error                                                       |
+| `AOFREWRITE`                                                                                                     | Atomically compact the configured AOF                                                                 | `OK` or an error                                                       |
+| `INFO`                                                                                                           | Read runtime counters                                                                                 | One `name:value` counter per line                                      |
+| `HELP`                                                                                                           | Print the command list                                                                                | Help text                                                              |
+| `EXIT` / `QUIT`                                                                                                  | Close the current application or connection                                                           | `Bye!` in the CLI; `OK` over RESP                                      |
 
 For `TTL` and `PTTL`, `-1` means the key exists without expiration and `-2`
 means it does not exist. Expired values are removed lazily when accessed or
@@ -561,7 +561,7 @@ The layers have deliberately narrow responsibilities:
 9. `snapshot` owns point-in-time persistence, while `aof` owns mutation records
    and replay; `storage` converts runtime values and expirations.
 10. `app` provides the interactive loop, while `server` accepts TCP clients and
-   shares one database between their sessions.
+    shares one database between their sessions.
 
 Storage values use an internal enum so new data structures can be added without
 changing expiration metadata. Keys, string values, list elements, set members,
@@ -626,9 +626,7 @@ from the per-module calculation.
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
-The implemented 0.13 sorted-set milestone and verification status are recorded in
-[SORTED_SETS.md](SORTED_SETS.md); its implemented subset is listed above.
+See [ROADMAP.md](ROADMAP.md) for future release plans and learning milestones.
 
 ## Continuous integration
 

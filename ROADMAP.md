@@ -20,36 +20,6 @@ moving on.
   commands.
 - Document intentional differences from Redis.
 
-## `0.13` — Sorted sets
-
-**Goal:** support leaderboards, rankings, priority queues, and delayed work.
-
-**Status:** implementation is complete following the delivery sequence in
-[SORTED_SETS.md](SORTED_SETS.md). All planned commands and executable examples
-are implemented, including `ZSCAN`. Local unit, CLI, TCP, persistence, and module
-coverage checks cover the milestone. The expanded external `redis-cli` smoke
-test is configured in CI; its local run requires an installed `redis-cli`.
-Release preparation and package-version changes are separate work.
-
-### Work
-
-- Add a sorted-set value with finite floating-point scores and deterministic
-  member tie-breaking.
-- Add `ZADD`, `ZREM`, `ZSCORE`, `ZMSCORE`, `ZCARD`, `ZRANK`, `ZREVRANK`,
-  `ZCOUNT`, and `ZINCRBY`.
-- Add `ZRANGE` with rank and score selection needed by the supported workflows.
-- Add `ZPOPMIN`, `ZPOPMAX`, `ZREMRANGEBYRANK`, `ZREMRANGEBYSCORE`, and
-  `ZSCAN`.
-- Extend snapshot and AOF persistence to sorted sets.
-
-### Done when
-
-- Equal scores, inclusive and exclusive score bounds, infinities used as range
-  bounds, invalid scores, rank boundaries, TTL, and persistence round trips are
-  covered.
-- A client can implement a leaderboard and a delayed or priority queue using
-  the documented command subset.
-
 ## `0.14` — Transactions
 
 **Goal:** provide atomic multi-command workflows and optimistic locking.
