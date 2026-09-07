@@ -262,6 +262,53 @@ fn pattern_pubsub_matches_binary_channels_and_counts_all_subscriptions() {
 }
 
 #[test]
+fn multiple_publishers_fan_out_in_order_without_blocking_database_commands() {
+    let (address, shutdown, server) = start_server();
+    let channel = b"fanout\0\xff";
+    let subscribe = request(&[b"SUBSCRIBE", channel]);
+    let acknowledgement = b"*3\r\n$9\r\nsubscribe\r\n$8\r\nfanout\0\xff\r\n:1\r\n";
+    let mut subscribers = [connect(address), connect(address)];
+    for subscriber in &mut subscribers {
+        subscriber.write_all(&subscribe).unwrap();
+        let mut received = vec![0; acknowledgement.len()];
+        subscriber.read_exact(&mut received).unwrap();
+        assert_eq!(received, acknowledgement);
+    }
+
+    for message in [b"first\0".as_slice(), b"second\xff".as_slice()] {
+        assert_eq!(
+            exchange(
+                connect(address),
+                &pipeline(&[&[b"PUBLISH", channel, message], &[b"QUIT"]])
+            ),
+            b":2\r\n+OK\r\n"
+        );
+    }
+    assert_eq!(
+        exchange(
+            connect(address),
+            &pipeline(&[
+                &[b"SET", b"unrelated", b"available"],
+                &[b"GET", b"unrelated"],
+                &[b"QUIT"],
+            ])
+        ),
+        b"+OK\r\n$9\r\navailable\r\n+OK\r\n"
+    );
+
+    let deliveries = b"*3\r\n$7\r\nmessage\r\n$8\r\nfanout\0\xff\r\n$6\r\nfirst\0\r\n*3\r\n$7\r\nmessage\r\n$8\r\nfanout\0\xff\r\n$7\r\nsecond\xff\r\n";
+    for subscriber in &mut subscribers {
+        let mut received = vec![0; deliveries.len()];
+        subscriber.read_exact(&mut received).unwrap();
+        assert_eq!(received, deliveries);
+    }
+
+    drop(subscribers);
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
 fn public_server_executes_and_discards_connection_scoped_transactions() {
     let (address, shutdown, server) = start_server();
     let transaction = pipeline(&[

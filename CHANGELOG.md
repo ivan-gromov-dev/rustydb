@@ -17,6 +17,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   counts.
 - Pub/Sub introspection through deterministic `PUBSUB CHANNELS [pattern]` and
   request-ordered `PUBSUB NUMSUB [channel ...]` results.
+- Multi-client fan-out coverage for ordered binary messages while unrelated
+  database commands continue to execute.
 - Initial 0.14 transaction support for RESP clients through per-connection
   `MULTI`, `EXEC`, and `DISCARD` state, atomic queued execution, queue-time
   aborts, and per-command execution results.

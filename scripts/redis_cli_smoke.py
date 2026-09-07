@@ -102,6 +102,17 @@ def main() -> int:
             b"PONG",
             "RESP3 PING",
         )
+        expect(
+            line(redis(cli, port, "PUBLISH", "smoke", "message")),
+            b"0",
+            "PUBLISH without subscribers",
+        )
+        expect(redis(cli, port, "PUBSUB", "CHANNELS"), b"", "PUBSUB CHANNELS")
+        expect(
+            redis(cli, port, "PUBSUB", "NUMSUB", "smoke"),
+            b"smoke\n0\n",
+            "PUBSUB NUMSUB",
+        )
         client_id = line(redis(cli, port, "CLIENT", "ID"))
         if not client_id.isdigit() or int(client_id) <= 0:
             raise AssertionError(f"CLIENT ID: expected a positive integer, got {client_id!r}")
