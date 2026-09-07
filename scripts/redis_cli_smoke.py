@@ -107,7 +107,11 @@ def main() -> int:
             b"0",
             "PUBLISH without subscribers",
         )
-        expect(redis(cli, port, "PUBSUB", "CHANNELS"), b"", "PUBSUB CHANNELS")
+        expect(
+            line(redis(cli, port, "PUBSUB", "CHANNELS")),
+            b"",
+            "PUBSUB CHANNELS",
+        )
         expect(
             redis(cli, port, "PUBSUB", "NUMSUB", "smoke"),
             b"smoke\n0\n",
