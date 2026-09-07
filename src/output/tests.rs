@@ -1,4 +1,4 @@
-use super::CommandOutput;
+use super::{CommandOutput, PubSubAck};
 use crate::command::{ProtocolVersion, command_metadata};
 
 fn render(output: CommandOutput) -> String {
@@ -196,4 +196,63 @@ fn renders_sorted_set_scan_cursor_and_pairs() {
         }),
         "0\na\n1.5\n"
     );
+}
+
+#[test]
+fn renders_pubsub_outputs_for_the_interactive_boundary() {
+    assert_eq!(
+        render(CommandOutput::PubSubAcks(vec![
+            PubSubAck {
+                subscribed: true,
+                pattern: false,
+                channel: Some(b"direct".to_vec()),
+                count: 2,
+            },
+            PubSubAck {
+                subscribed: false,
+                pattern: false,
+                channel: None,
+                count: 1,
+            },
+            PubSubAck {
+                subscribed: true,
+                pattern: true,
+                channel: Some(b"news:*".to_vec()),
+                count: 2,
+            },
+            PubSubAck {
+                subscribed: false,
+                pattern: true,
+                channel: Some(b"news:*".to_vec()),
+                count: 1,
+            },
+        ])),
+        "subscribe direct 2\nunsubscribe (nil) 1\npsubscribe news:* 2\npunsubscribe news:* 1\n"
+    );
+
+    let mut bytes = Vec::new();
+    CommandOutput::PubSubMessage {
+        channel: b"channel\0\xff".to_vec(),
+        message: b"message\0\xff".to_vec(),
+    }
+    .write_to(&mut bytes)
+    .unwrap();
+    assert_eq!(bytes, b"message channel\0\xff message\0\xff\n");
+
+    let mut bytes = Vec::new();
+    CommandOutput::PubSubPatternMessage {
+        pattern: b"channel*".to_vec(),
+        channel: b"channel\0\xff".to_vec(),
+        message: b"message\0\xff".to_vec(),
+    }
+    .write_to(&mut bytes)
+    .unwrap();
+    assert_eq!(bytes, b"pmessage channel* channel\0\xff message\0\xff\n");
+
+    assert_eq!(render(CommandOutput::PubSubPong(None)), "pong\n");
+    let mut bytes = Vec::new();
+    CommandOutput::PubSubPong(Some(b"binary\0\xff".to_vec()))
+        .write_to(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"pong binary\0\xff\n");
 }
