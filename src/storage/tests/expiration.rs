@@ -497,3 +497,62 @@ fn sorted_set_ranks_preserve_ttl_and_hide_expired_keys() {
         assert_eq!(database.sorted_set_rank("string", "a", reverse), Ok(None));
     }
 }
+
+#[test]
+fn sorted_set_stage_two_preserves_ttl_and_respects_wrong_types_and_expiration() {
+    use super::super::in_memory::StoreError;
+    use crate::storage::ScoreBound::*;
+    let (mut db, clock) = database_with_clock();
+    db.sorted_set_add("k", vec![(f64::MAX, b"a".to_vec())])
+        .unwrap();
+    db.set(b"s".to_vec(), b"value".to_vec());
+    db.expire("k", 60);
+    db.expire("s", 60);
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        db.sorted_set_increment("k", b"a".to_vec(), f64::MAX),
+        Err(StoreError::FloatIsNotFinite)
+    );
+    assert_eq!(db.sorted_set_increment("k", b"b".to_vec(), 2.0), Ok(2.0));
+    assert_eq!(db.sorted_set_increment("k", b"b".to_vec(), 1.0), Ok(3.0));
+    assert_eq!(
+        db.sorted_set_scores("k", &[b"b".to_vec()]),
+        Ok(vec![Some(3.0)])
+    );
+    assert_eq!(
+        db.sorted_set_count("k", NegativeInfinity, PositiveInfinity),
+        Ok(2)
+    );
+    assert_eq!(
+        db.sorted_set_range("k", 0, 0, false),
+        Ok(vec![(b"b".to_vec(), 3.0)])
+    );
+    assert_eq!(
+        db.sorted_set_scores("s", &[vec![]]),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        db.sorted_set_count("s", PositiveInfinity, NegativeInfinity),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        db.sorted_set_range("s", 3, 0, false),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        db.sorted_set_increment("s", vec![], 1.0),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(db.get("s"), Ok(Some(b"value".as_slice())));
+    assert_eq!(db.ttl("k"), 59);
+    assert_eq!(db.ttl("s"), 59);
+    clock.advance(Duration::from_secs(59));
+    assert_eq!(db.sorted_set_scores("k", &[vec![]]), Ok(vec![None]));
+    assert_eq!(db.sorted_set_range("s", 0, -1, false), Ok(vec![]));
+    assert_eq!(
+        db.sorted_set_count("k", NegativeInfinity, PositiveInfinity),
+        Ok(0)
+    );
+    assert_eq!(db.sorted_set_increment("k", b"a".to_vec(), 1.0), Ok(1.0));
+    assert_eq!(db.ttl("k"), -1);
+}

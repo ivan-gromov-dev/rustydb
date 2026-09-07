@@ -22,6 +22,40 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::IntegerList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::Integer).collect())
         }
+        CommandOutput::Score(value) => score_frame(value, protocol),
+        CommandOutput::Scores(values) => RespFrame::Array(
+            values
+                .into_iter()
+                .map(|score| score_frame(score, protocol))
+                .collect(),
+        ),
+        CommandOutput::ScoredMembers(entries) => {
+            if protocol == ProtocolVersion::Resp3 {
+                RespFrame::Array(
+                    entries
+                        .into_iter()
+                        .map(|(member, score)| {
+                            RespFrame::Array(vec![
+                                RespFrame::BulkString(member),
+                                score_frame(Some(score), protocol),
+                            ])
+                        })
+                        .collect(),
+                )
+            } else {
+                RespFrame::Array(
+                    entries
+                        .into_iter()
+                        .flat_map(|(member, score)| {
+                            [
+                                RespFrame::BulkString(member),
+                                score_frame(Some(score), protocol),
+                            ]
+                        })
+                        .collect(),
+                )
+            }
+        }
         CommandOutput::Float(value) => RespFrame::BulkString(value.to_string().into_bytes()),
         CommandOutput::SimpleString(value) => RespFrame::SimpleString(value.to_owned()),
         CommandOutput::Value(value) => RespFrame::BulkString(value),
@@ -87,6 +121,17 @@ pub(crate) fn frame_from_output_for_protocol(
         ),
         CommandOutput::Error(error) => error_frame(format_args!("ERR {error}")),
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
+    }
+}
+
+fn score_frame(score: Option<f64>, protocol: ProtocolVersion) -> RespFrame {
+    match (score, protocol) {
+        (Some(score), ProtocolVersion::Resp3) => RespFrame::Double(score.to_string()),
+        (Some(score), ProtocolVersion::Resp2) => {
+            RespFrame::BulkString(score.to_string().into_bytes())
+        }
+        (None, ProtocolVersion::Resp3) => RespFrame::Null,
+        (None, ProtocolVersion::Resp2) => RespFrame::NullBulkString,
     }
 }
 

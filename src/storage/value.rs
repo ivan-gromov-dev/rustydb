@@ -9,6 +9,34 @@ pub(crate) enum Value {
     SortedSet(HashMap<Vec<u8>, Score>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ScoreBound {
+    NegativeInfinity,
+    PositiveInfinity,
+    Inclusive(f64),
+    Exclusive(f64),
+}
+
+impl ScoreBound {
+    pub(crate) fn allows_lower(self, score: f64) -> bool {
+        match self {
+            Self::NegativeInfinity => true,
+            Self::PositiveInfinity => false,
+            Self::Inclusive(value) => score >= value,
+            Self::Exclusive(value) => score > value,
+        }
+    }
+
+    pub(crate) fn allows_upper(self, score: f64) -> bool {
+        match self {
+            Self::NegativeInfinity => false,
+            Self::PositiveInfinity => true,
+            Self::Inclusive(value) => score <= value,
+            Self::Exclusive(value) => score < value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Score(f64);
 

@@ -502,8 +502,36 @@ pub(crate) fn execute_with_snapshot(
             Err(error) => CommandOutput::Error(error.to_string()),
         },
         Command::ZScore { key, member } => match store.sorted_set_score(&key, &member) {
-            Ok(Some(score)) => CommandOutput::Float(score),
-            Ok(None) => CommandOutput::Nil,
+            Ok(score) => CommandOutput::Score(score),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZMScore { key, members } => match store.sorted_set_scores(&key, &members) {
+            Ok(scores) => CommandOutput::Scores(scores),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZIncrBy {
+            key,
+            amount,
+            member,
+        } => match store.sorted_set_increment(&key, member, amount) {
+            Ok(score) => CommandOutput::Score(Some(score)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZCount { key, min, max } => match store.sorted_set_count(&key, min, max) {
+            Ok(count) => CommandOutput::Integer(count as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRange {
+            key,
+            start,
+            stop,
+            reverse,
+            with_scores,
+        } => match store.sorted_set_range(&key, start, stop, reverse) {
+            Ok(entries) if with_scores => CommandOutput::ScoredMembers(entries),
+            Ok(entries) => {
+                CommandOutput::KeyList(entries.into_iter().map(|(member, _)| member).collect())
+            }
             Err(error) => CommandOutput::Error(error.to_string()),
         },
         Command::ZRank {

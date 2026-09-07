@@ -223,3 +223,19 @@ fn hash_scan_uses_cursor_and_flat_field_value_array() {
         ])
     );
 }
+
+#[test]
+fn sorted_set_scores_use_protocol_specific_numeric_and_pair_shapes() {
+    for (protocol, expected) in [
+        (ProtocolVersion::Resp2, b"$3\r\n1.5\r\n$-1\r\n*2\r\n$3\r\n1.5\r\n$-1\r\n*2\r\n$2\r\n\xff\0\r\n$2\r\n-2\r\n*0\r\n".as_slice()),
+        (ProtocolVersion::Resp3, b",1.5\r\n_\r\n*2\r\n,1.5\r\n_\r\n*1\r\n*2\r\n$2\r\n\xff\0\r\n,-2\r\n*0\r\n".as_slice()),
+    ] {
+        let mut bytes = vec![];
+        for output in [CommandOutput::Score(Some(1.5)), CommandOutput::Score(None),
+            CommandOutput::Scores(vec![Some(1.5), None]),
+            CommandOutput::ScoredMembers(vec![(b"\xff\0".to_vec(), -2.0)]), CommandOutput::ScoredMembers(vec![])] {
+            frame_from_output_for_protocol(output, protocol).write_to(&mut bytes).unwrap();
+        }
+        assert_eq!(bytes, expected);
+    }
+}

@@ -283,6 +283,10 @@ clients receive the corresponding protocol-specific typed value.
 | `ZREM key member [member ...]` | Remove sorted-set members | Number of members removed |
 | `ZSCORE key member` | Read a sorted-set member's score | Score or `(nil)` |
 | `ZCARD key` | Read a sorted set's cardinality | Number of members, or `0` |
+| `ZMSCORE key member [member ...]` | Read member scores in request order, including duplicates | One score or `(nil)` per member |
+| `ZINCRBY key increment member` | Add a finite increment to a member score, creating the member if absent | Updated score |
+| `ZCOUNT key min max` | Count scores within inclusive or exclusive bounds | Number of matching members |
+| `ZRANGE key start stop [REV] [WITHSCORES]` | Read an inclusive rank range, optionally reversed and including scores | Members, or alternating members and scores; `(nil)` for an empty range |
 | `ZRANK key member` | Read a member's zero-based rank in ascending score order | Rank or `(nil)` |
 | `ZREVRANK key member` | Read a member's zero-based rank in descending score order | Rank or `(nil)` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
@@ -397,6 +401,33 @@ expired keys return `(nil)` in the CLI, a null bulk string in RESP2, and null
 in RESP3; present members return integers in both protocols. Rank reads preserve
 TTL and run in O(n) time with O(1) auxiliary space. The optional Redis
 `WITHSCORE` rank syntax is not supported.
+
+`ZMSCORE` preserves requested member order and duplicates, returning null for
+missing members. `ZINCRBY` treats an absent member as score zero, preserves a
+live key's TTL, and rejects non-finite increments and overflow without changing
+live data. Signed zero is normalized to positive zero.
+
+`ZCOUNT` includes both bounds by default. Prefix a finite bound with `(` to
+exclude it, for example `ZCOUNT board (10 20`. Use `-inf` and `+inf` as range
+endpoints; NaN and non-finite numeric spellings other than those endpoints are
+rejected. Reversed or empty intervals return zero.
+
+`ZRANGE` uses inclusive zero-based ranks. Negative indexes count from the end
+of the selected order, and out-of-range indexes are clamped. `REV` reverses
+score order and binary member tie-breaking before selecting indexes. `BYSCORE`,
+`BYLEX`, and `LIMIT` are not supported yet; repeated options are rejected.
+Range reads sort borrowed entries in O(n log n) time with O(n) temporary
+references. `ZCOUNT` scans the set; `ZMSCORE` performs one lookup per argument.
+
+Sorted-set score replies (`ZSCORE`, `ZINCRBY`, and each `ZMSCORE` element) use
+bulk strings in RESP2 and doubles in RESP3, with protocol-specific nulls for
+missing scores. This includes a change from the initial 0.13 subset, where
+`ZSCORE` used bulk strings in both protocols. `ZRANGE` without `WITHSCORES`
+returns an array of member bulk strings. With `WITHSCORES`, RESP2 returns a flat
+alternating member/score array; RESP3 returns an array of two-element arrays
+containing a member bulk string and a double. Empty ranges return empty arrays
+in both protocols. The CLI prints each result on its own line and uses `(nil)`
+for an empty range.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary

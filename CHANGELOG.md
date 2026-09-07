@@ -9,11 +9,20 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Sorted-set multi-score reads (`ZMSCORE`), finite score increments (`ZINCRBY`),
+  inclusive/exclusive score counts (`ZCOUNT`), and rank-based `ZRANGE` with
+  `REV` and `WITHSCORES`, including AOF replay and protocol-specific replies.
 - Sorted-set ranks through `ZRANK` and `ZREVRANK`, with binary member
   tie-breaking, null results for absent members, and TTL-preserving reads.
 - Initial sorted-set support through `ZADD`, `ZREM`, `ZSCORE`, and `ZCARD`,
   including finite-score validation, TTL-aware storage, snapshots, and AOF
   replay and rewriting.
+
+### Changed
+
+- Sorted-set scores now use doubles in RESP3, including `ZSCORE`, which used
+  bulk strings in the initial unreleased 0.13 subset. RESP2 continues to use
+  bulk strings.
 
 ## [0.12.0] - 2026-08-31
 

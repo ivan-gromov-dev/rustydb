@@ -1,8 +1,8 @@
 # Sorted sets: implementation plan for 0.13
 
-Status: implementation in progress. Stage 1 and the `ZRANK` / `ZREVRANK`
-portion of stage 2 are complete; other later commands remain unavailable.
-This document defines the remaining independently verifiable work.
+Status: implementation in progress. Stages 1 and 2 are complete; stage 3 and 4
+commands remain unavailable. This document defines the delivery sequence and
+remaining independently verifiable work.
 
 ## Data model and invariants
 
@@ -54,10 +54,12 @@ before its AOF serialization and replay are supported.
 
 ### 2. Rankings and score updates
 
-Implemented: `ZRANK` and `ZREVRANK`, including binary member tie-breaking,
-integer/null CLI and RESP responses, TTL preservation, and read-only AOF behavior.
-Single-member rank reads count predecessors in O(n) time and O(1) auxiliary space.
-The remaining commands below are still pending.
+Implemented: all commands below, including binary member tie-breaking, explicit
+score and member/score output types, RESP2/RESP3 response shapes, TTL preservation,
+and `ZINCRBY` AOF replay and rewrite coverage. Single-member rank reads count
+predecessors in O(n) time and O(1) auxiliary space. Rank ranges sort borrowed
+entries in O(n log n) time with O(n) temporary references. Score-bearing RESP3
+responses now use doubles, including `ZSCORE` from stage 1.
 
 - Add `ZMSCORE key member [member ...]`, preserving requested order and nulls;
   `ZRANK key member` and `ZREVRANK key member`, returning zero-based ranks or

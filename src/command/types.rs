@@ -1,3 +1,4 @@
+use crate::storage::ScoreBound;
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -387,6 +388,27 @@ pub(crate) enum Command {
         key: Vec<u8>,
         member: Vec<u8>,
     },
+    ZMScore {
+        key: Vec<u8>,
+        members: Vec<Vec<u8>>,
+    },
+    ZIncrBy {
+        key: Vec<u8>,
+        amount: f64,
+        member: Vec<u8>,
+    },
+    ZCount {
+        key: Vec<u8>,
+        min: ScoreBound,
+        max: ScoreBound,
+    },
+    ZRange {
+        key: Vec<u8>,
+        start: i64,
+        stop: i64,
+        reverse: bool,
+        with_scores: bool,
+    },
     ZRank {
         key: Vec<u8>,
         member: Vec<u8>,
@@ -575,6 +597,10 @@ impl Command {
             Self::ZAdd { .. } => "ZADD",
             Self::ZRem { .. } => "ZREM",
             Self::ZScore { .. } => "ZSCORE",
+            Self::ZMScore { .. } => "ZMSCORE",
+            Self::ZIncrBy { .. } => "ZINCRBY",
+            Self::ZCount { .. } => "ZCOUNT",
+            Self::ZRange { .. } => "ZRANGE",
             Self::ZRank { reverse: false, .. } => "ZRANK",
             Self::ZRank { reverse: true, .. } => "ZREVRANK",
             Self::ZCard { .. } => "ZCARD",
@@ -826,6 +852,16 @@ impl Command {
                 }
                 values
             }
+            Self::ZIncrBy {
+                key,
+                amount,
+                member,
+            } => vec![
+                b"ZINCRBY".to_vec(),
+                key.clone(),
+                amount.to_string().into_bytes(),
+                member.clone(),
+            ],
             Self::ZRem { key, members } => with_values(b"ZREM", key, members),
             Self::SPop { key, count } => {
                 let mut values = vec![b"SPOP".to_vec(), key.clone()];
@@ -915,6 +951,9 @@ impl Command {
             | Self::SScan { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
+            | Self::ZMScore { .. }
+            | Self::ZCount { .. }
+            | Self::ZRange { .. }
             | Self::ZRank { .. }
             | Self::ZScore { .. }
             | Self::ZCard { .. }

@@ -1865,6 +1865,93 @@ impl InMemoryStore {
             .map(Option::flatten)
     }
 
+    pub(crate) fn sorted_set_scores(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        members: &[Vec<u8>],
+    ) -> Result<Vec<Option<f64>>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let set = self
+            .storage
+            .get(key)
+            .map(StoredValue::sorted_set)
+            .transpose()?;
+        Ok(members
+            .iter()
+            .map(|member| set.and_then(|set| set.get(member)).map(|score| score.get()))
+            .collect())
+    }
+
+    pub(crate) fn sorted_set_increment(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        member: Vec<u8>,
+        amount: f64,
+    ) -> Result<f64, StoreError> {
+        use super::value::Score;
+        let amount = Score::new(amount)
+            .ok_or(StoreError::FloatIsNotFinite)?
+            .get();
+        let key = key.as_ref();
+        let old = self.sorted_set_score(key, &member)?.unwrap_or(0.0);
+        let score = Score::new(old + amount)
+            .ok_or(StoreError::FloatIsNotFinite)?
+            .get();
+        self.sorted_set_add(key, vec![(score, member)])?;
+        Ok(score)
+    }
+
+    pub(crate) fn sorted_set_count(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        min: super::ScoreBound,
+        max: super::ScoreBound,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(0);
+        };
+        Ok(entry
+            .sorted_set()?
+            .values()
+            .filter(|score| min.allows_lower(score.get()) && max.allows_upper(score.get()))
+            .count())
+    }
+
+    pub(crate) fn sorted_set_range(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        start: i64,
+        stop: i64,
+        reverse: bool,
+    ) -> Result<Vec<(Vec<u8>, f64)>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let set = entry.sorted_set()?;
+        let length = i64::try_from(set.len()).unwrap_or(i64::MAX);
+        let start = normalize_index(start, length).max(0);
+        let stop = normalize_index(stop, length).min(length - 1);
+        if start >= length || stop < 0 || start > stop {
+            return Ok(Vec::new());
+        }
+        let mut entries: Vec<_> = set.iter().collect();
+        entries.sort_unstable_by(|(a, sa), (b, sb)| {
+            let order = sa.get().total_cmp(&sb.get()).then_with(|| a.cmp(b));
+            if reverse { order.reverse() } else { order }
+        });
+        Ok(entries
+            .into_iter()
+            .skip(start as usize)
+            .take((stop - start + 1) as usize)
+            .map(|(member, score)| (member.clone(), score.get()))
+            .collect())
+    }
+
     pub(crate) fn sorted_set_rank(
         &mut self,
         key: impl AsRef<[u8]>,

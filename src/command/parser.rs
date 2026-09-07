@@ -349,6 +349,27 @@ impl Command {
                 key: one(args, "SCARD key")?,
             }),
             "ZADD" => parse_zadd(args),
+            "ZMSCORE" => {
+                let (key, members) = collection_values(args, "ZMSCORE key member [member ...]")?;
+                Ok(Self::ZMScore { key, members })
+            }
+            "ZINCRBY" => {
+                exact(args, 4, "ZINCRBY key increment member")?;
+                Ok(Self::ZIncrBy {
+                    key: owned(args[1]),
+                    amount: parse_finite_float(args[2])?,
+                    member: owned(args[3]),
+                })
+            }
+            "ZCOUNT" => {
+                exact(args, 4, "ZCOUNT key min max")?;
+                Ok(Self::ZCount {
+                    key: owned(args[1]),
+                    min: parse_score_bound(args[2])?,
+                    max: parse_score_bound(args[3])?,
+                })
+            }
+            "ZRANGE" => parse_zrange(args),
             "ZREM" => {
                 let (key, members) = collection_values(args, "ZREM key member [member ...]")?;
                 Ok(Self::ZRem { key, members })
@@ -746,6 +767,47 @@ fn parse_hset(args: &[&[u8]]) -> Result<Command, CommandError> {
             .chunks_exact(2)
             .map(|entry| (owned(entry[0]), owned(entry[1])))
             .collect(),
+    })
+}
+
+fn parse_score_bound(value: &[u8]) -> Result<crate::storage::ScoreBound, CommandError> {
+    use crate::storage::ScoreBound;
+    if value.eq_ignore_ascii_case(b"-inf") {
+        return Ok(ScoreBound::NegativeInfinity);
+    }
+    if value.eq_ignore_ascii_case(b"+inf") {
+        return Ok(ScoreBound::PositiveInfinity);
+    }
+    if let Some(value) = value.strip_prefix(b"(") {
+        return Ok(ScoreBound::Exclusive(parse_finite_float(value)?));
+    }
+    Ok(ScoreBound::Inclusive(parse_finite_float(value)?))
+}
+
+fn parse_zrange(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "ZRANGE key start stop [REV] [WITHSCORES]";
+    if args.len() < 4 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let start = parse_i64(args[2])?;
+    let stop = parse_i64(args[3])?;
+    let mut reverse = false;
+    let mut with_scores = false;
+    for option in &args[4..] {
+        if option.eq_ignore_ascii_case(b"REV") && !reverse {
+            reverse = true;
+        } else if option.eq_ignore_ascii_case(b"WITHSCORES") && !with_scores {
+            with_scores = true;
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+    }
+    Ok(Command::ZRange {
+        key: owned(args[1]),
+        start,
+        stop,
+        reverse,
+        with_scores,
     })
 }
 

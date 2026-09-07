@@ -24,7 +24,7 @@ fn executes_basic_sorted_set_commands() {
             },
             &mut database
         ),
-        Response::Float(3.5)
+        Response::Score(Some(3.5))
     );
     assert_eq!(
         execute(
@@ -1680,5 +1680,35 @@ fn executes_sorted_set_ranks_as_integers_nulls_or_errors() {
                 expected
             );
         }
+    }
+}
+
+#[test]
+fn executes_sorted_set_stage_two_results_and_errors() {
+    let mut db = Database::new();
+    for (text, expected) in [
+        ("ZINCRBY k 1.5 a", Response::Score(Some(1.5))),
+        (
+            "ZMSCORE k a missing a",
+            Response::Scores(vec![Some(1.5), None, Some(1.5)]),
+        ),
+        ("ZCOUNT k -inf +inf", Response::Integer(1)),
+        ("ZRANGE k 0 -1", Response::KeyList(vec![b"a".to_vec()])),
+        (
+            "ZRANGE k 0 -1 WITHSCORES",
+            Response::ScoredMembers(vec![(b"a".to_vec(), 1.5)]),
+        ),
+        ("ZSCORE missing a", Response::Score(None)),
+    ] {
+        assert_eq!(execute(Command::parse(text).unwrap(), &mut db), expected);
+    }
+    db.set(b"s".to_vec(), vec![]);
+    for text in [
+        "ZINCRBY s 1 a",
+        "ZMSCORE s a",
+        "ZCOUNT s 0 1",
+        "ZRANGE s 0 -1",
+    ] {
+        assert!(execute(Command::parse(text).unwrap(), &mut db).is_error());
     }
 }

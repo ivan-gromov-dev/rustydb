@@ -76,6 +76,10 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  ZREM key member [member ...]\n",
     "  ZSCORE key member\n",
     "  ZCARD key\n",
+    "  ZMSCORE key member [member ...]\n",
+    "  ZINCRBY key increment member\n",
+    "  ZCOUNT key min max\n",
+    "  ZRANGE key start stop [REV] [WITHSCORES]\n",
     "  ZRANK key member\n",
     "  ZREVRANK key member\n",
     "  HSET key field value [field value ...]\n",
@@ -127,6 +131,9 @@ pub(crate) enum CommandOutput {
     Integer(i64),
     IntegerList(Vec<i64>),
     Float(f64),
+    Score(Option<f64>),
+    Scores(Vec<Option<f64>>),
+    ScoredMembers(Vec<(Vec<u8>, f64)>),
     SimpleString(&'static str),
     Value(Vec<u8>),
     OptionalValues(Vec<Option<Vec<u8>>>),
@@ -177,6 +184,22 @@ impl CommandOutput {
             Self::IntegerList(values) => {
                 for value in values {
                     writeln!(writer, "{value}")?;
+                }
+                Ok(())
+            }
+            Self::Score(Some(value)) => writeln!(writer, "{value}"),
+            Self::Score(None) => writeln!(writer, "(nil)"),
+            Self::Scores(values) => {
+                for value in values {
+                    Self::Score(*value).write_to(writer)?;
+                }
+                Ok(())
+            }
+            Self::ScoredMembers(entries) if entries.is_empty() => writeln!(writer, "(nil)"),
+            Self::ScoredMembers(entries) => {
+                for (member, score) in entries {
+                    writer.write_all(member)?;
+                    writeln!(writer, "\n{score}")?;
                 }
                 Ok(())
             }

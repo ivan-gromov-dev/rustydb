@@ -723,3 +723,71 @@ fn sorted_set_ranks_are_read_only_across_aof_restart() {
     );
     assert_eq!(fs::metadata(aof).unwrap().len(), size);
 }
+
+#[test]
+fn sorted_set_stage_two_survives_replay_rewrite_and_snapshot() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "ZINCRBY board 1.5 alice\nZINCRBY board 2 bob\nZINCRBY board 1 alice\nEXPIRE board 600\nEXIT\n",
+    );
+    assert!(first.status.success());
+    let size = fs::metadata(&aof).unwrap().len();
+    let reads = "ZMSCORE board alice missing bob alice\nZCOUNT board (2 +inf\nZRANGE board 0 -1 WITHSCORES\nZRANGE board 0 0 REV\n";
+    let replay = run_cli_with_aof(&aof, &format!("{reads}ZINCRBY board NaN alice\nEXIT\n"));
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(
+        stdout.contains("db> 2.5\n(nil)\n2\n2.5\ndb> 1\ndb> bob\n2\nalice\n2.5\ndb> alice\n"),
+        "{stdout}"
+    );
+    assert_eq!(fs::metadata(&aof).unwrap().len(), size);
+    assert!(
+        run_cli_with_aof(&aof, "AOFREWRITE\nEXIT\n")
+            .status
+            .success()
+    );
+    let replay = run_cli_with_aof(&aof, &format!("{reads}TTL board\nEXIT\n"));
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> bob\n2\nalice\n2.5\n"), "{stdout}");
+    assert!(
+        !stdout.contains("db> -1\n") && !stdout.contains("db> -2\n"),
+        "{stdout}"
+    );
+
+    let snapshot = directory.snapshot();
+    assert!(
+        run_cli_with_snapshot(
+            &snapshot,
+            &[],
+            "ZINCRBY board -1.25 alice\nZINCRBY board 2.5 alice\nSAVE\nEXIT\n"
+        )
+        .status
+        .success()
+    );
+    let restored = run_cli_with_snapshot(&snapshot, &[], "ZRANGE board 0 -1 WITHSCORES\nEXIT\n");
+    assert!(restored.status.success());
+    assert!(
+        String::from_utf8(restored.stdout)
+            .unwrap()
+            .contains("db> alice\n1.25\n")
+    );
+}
+
+#[test]
+fn sorted_set_increment_overflow_is_not_appended_to_aof() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "ZINCRBY k 1e308 a\nEXIT\n")
+            .status
+            .success()
+    );
+    let size = fs::metadata(&aof).unwrap().len();
+    let failed = run_cli_with_aof(&aof, "ZINCRBY k 1e308 a\nEXIT\n");
+    assert!(failed.status.success());
+    assert!(String::from_utf8(failed.stdout).unwrap().contains("ERR"));
+    assert_eq!(fs::metadata(aof).unwrap().len(), size);
+}

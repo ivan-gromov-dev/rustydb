@@ -1717,3 +1717,75 @@ fn parses_sorted_set_ranks_with_strict_arity_and_no_aof_records() {
         }
     }
 }
+
+#[test]
+fn parses_sorted_set_stage_two_and_rejects_malformed_input() {
+    use crate::storage::ScoreBound;
+    assert_eq!(
+        Command::parse("ZCOUNT board (1.5 +INF"),
+        Ok(Command::ZCount {
+            key: b"board".to_vec(),
+            min: ScoreBound::Exclusive(1.5),
+            max: ScoreBound::PositiveInfinity,
+        })
+    );
+    assert_eq!(
+        Command::parse("ZRANGE board -2 -1 withscores rev"),
+        Ok(Command::ZRange {
+            key: b"board".to_vec(),
+            start: -2,
+            stop: -1,
+            reverse: true,
+            with_scores: true,
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"ZMSCORE", b"k\xff", b"", b"a", b"a"]),
+        Ok(Command::ZMScore {
+            key: b"k\xff".to_vec(),
+            members: vec![vec![], b"a".to_vec(), b"a".to_vec()],
+        })
+    );
+    let increment = Command::from_bytes(&[b"ZINCRBY", b"k\xff", b"-1.25", b"m\0"]).unwrap();
+    assert_eq!(
+        increment.aof_arguments(),
+        Some(vec![
+            b"ZINCRBY".to_vec(),
+            b"k\xff".to_vec(),
+            b"-1.25".to_vec(),
+            b"m\0".to_vec()
+        ])
+    );
+    for text in ["ZMSCORE k a", "ZCOUNT k -inf +inf", "ZRANGE k 0 -1"] {
+        let command = Command::parse(text).unwrap();
+        assert_eq!(command.name(), text.split_whitespace().next().unwrap());
+        assert_eq!(command.aof_arguments(), None);
+    }
+    for invalid in [
+        "ZMSCORE",
+        "ZMSCORE k",
+        "ZINCRBY k 1",
+        "ZINCRBY k 1 a extra",
+        "ZINCRBY k NaN a",
+        "ZINCRBY k inf a",
+        "ZINCRBY k 1e999 a",
+        "ZCOUNT k 0",
+        "ZCOUNT k 0 1 extra",
+        "ZCOUNT k NaN 2",
+        "ZCOUNT k 0 (NaN",
+        "ZCOUNT k (-inf +inf",
+        "ZCOUNT k 0 (+inf",
+        "ZCOUNT k ( 1",
+        "ZCOUNT k 0 1e999",
+        "ZRANGE k 0",
+        "ZRANGE k a 1",
+        "ZRANGE k 0 9223372036854775808",
+        "ZRANGE k 0 -1 REV REV",
+        "ZRANGE k 0 -1 WITHSCORES WITHSCORES",
+        "ZRANGE k 0 -1 BYSCORE",
+        "ZRANGE k 0 -1 BYLEX",
+        "ZRANGE k 0 -1 LIMIT 0 1",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}

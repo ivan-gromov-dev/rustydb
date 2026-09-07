@@ -210,3 +210,35 @@ fn sorted_set_ranks_support_binary_members_and_resp2_resp3_nulls() {
     shutdown.request();
     assert!(server.join().unwrap().is_ok());
 }
+
+#[test]
+fn sorted_set_stage_two_tcp_responses_preserve_binary_order_and_score_types() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = Vec::new();
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"DEL", b"board"],
+            &[b"ZINCRBY", b"board", b"1.5", b"\xff\0"],
+            &[b"ZINCRBY", b"board", b"1.5", b""],
+            &[b"ZMSCORE", b"board", b"", b"absent", b""],
+            &[b"ZSCORE", b"board", b"\xff\0"],
+            &[b"ZCOUNT", b"board", b"(1.5", b"+inf"],
+            &[b"ZRANGE", b"board", b"0", b"-1", b"WITHSCORES", b"REV"],
+            &[b"ZRANGE", b"board", b"-1", b"-1"],
+            &[b"ZRANGE", b"missing", b"0", b"-1", b"WITHSCORES"],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        let expected = if resp3 {
+            b":1\r\n,1.5\r\n,1.5\r\n*3\r\n,1.5\r\n_\r\n,1.5\r\n,1.5\r\n:0\r\n*2\r\n*2\r\n$2\r\n\xff\0\r\n,1.5\r\n*2\r\n$0\r\n\r\n,1.5\r\n*1\r\n$2\r\n\xff\0\r\n*0\r\n+OK\r\n".as_slice()
+        } else {
+            b":0\r\n$3\r\n1.5\r\n$3\r\n1.5\r\n*3\r\n$3\r\n1.5\r\n$-1\r\n$3\r\n1.5\r\n$3\r\n1.5\r\n:0\r\n*4\r\n$2\r\n\xff\0\r\n$3\r\n1.5\r\n$0\r\n\r\n$3\r\n1.5\r\n*1\r\n$2\r\n\xff\0\r\n*0\r\n+OK\r\n".as_slice()
+        };
+        assert!(output.ends_with(expected), "{output:?}");
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
