@@ -46,6 +46,10 @@ moving on.
 
 **Goal:** support local notifications and event-driven test applications.
 
+Direct binary-safe `PUBLISH`, `SUBSCRIBE`, and `UNSUBSCRIBE` delivery is now
+implemented for RESP2 and RESP3. Pattern subscriptions and introspection remain
+planned for this milestone.
+
 ### Work
 
 - Add `PUBLISH`, `SUBSCRIBE`, `UNSUBSCRIBE`, `PSUBSCRIBE`, and `PUNSUBSCRIBE`.

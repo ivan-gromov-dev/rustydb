@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::mpsc::Receiver;
 
 use crate::command::{ClientInfoAttribute, Command, ProtocolVersion};
 use crate::output::CommandOutput;
@@ -20,6 +21,7 @@ struct ConnectionState {
     _library_version: Option<Vec<u8>>,
     transaction: Option<TransactionState>,
     watched: HashMap<Vec<u8>, (u64, bool)>,
+    subscriptions: HashSet<Vec<u8>>,
 }
 
 struct TransactionState {
@@ -37,27 +39,64 @@ impl ConnectionState {
             _library_version: None,
             transaction: None,
             watched: HashMap::new(),
+            subscriptions: HashSet::new(),
         }
     }
 }
 
+#[cfg(test)]
 pub(crate) fn run_session<R, W, F>(reader: &mut R, writer: &mut W, execute: F) -> io::Result<()>
 where
     R: Read,
     W: Write,
     F: FnMut(Command) -> CommandOutput,
 {
-    let connection_id = NEXT_CONNECTION_ID
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-        .map_err(|_| io::Error::other("connection ID space exhausted"))?;
+    let connection_id = next_connection_id()?;
     run_session_with_id(reader, writer, execute, connection_id)
 }
 
+pub(crate) fn next_connection_id() -> io::Result<i64> {
+    NEXT_CONNECTION_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| io::Error::other("connection ID space exhausted"))
+}
+
+#[cfg(test)]
 pub(crate) fn run_session_with_id<R, W, F>(
+    reader: &mut R,
+    writer: &mut W,
+    execute: F,
+    connection_id: i64,
+) -> io::Result<()>
+where
+    R: Read,
+    W: Write,
+    F: FnMut(Command) -> CommandOutput,
+{
+    run_session_inner(reader, writer, execute, connection_id, None)
+}
+
+pub(crate) fn run_session_with_notifications<R, W, F>(
+    reader: &mut R,
+    writer: &mut W,
+    execute: F,
+    connection_id: i64,
+    notifications: &Receiver<CommandOutput>,
+) -> io::Result<()>
+where
+    R: Read,
+    W: Write,
+    F: FnMut(Command) -> CommandOutput,
+{
+    run_session_inner(reader, writer, execute, connection_id, Some(notifications))
+}
+
+fn run_session_inner<R, W, F>(
     reader: &mut R,
     writer: &mut W,
     mut execute: F,
     connection_id: i64,
+    notifications: Option<&Receiver<CommandOutput>>,
 ) -> io::Result<()>
 where
     R: Read,
@@ -70,6 +109,7 @@ where
     let mut read_chunk = [0; READ_CHUNK_SIZE];
 
     loop {
+        drain_notifications(notifications, writer, state.protocol)?;
         while !buffer.is_empty() {
             let decoded = {
                 #[cfg(feature = "profiling")]
@@ -98,6 +138,15 @@ where
         let bytes_read = match reader.read(&mut read_chunk) {
             Ok(bytes_read) => bytes_read,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error)
+                if notifications.is_some()
+                    && matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+            {
+                continue;
+            }
             Err(error) => return Err(error),
         };
 
@@ -110,6 +159,20 @@ where
 
         buffer.extend_from_slice(&read_chunk[..bytes_read]);
     }
+}
+
+fn drain_notifications(
+    notifications: Option<&Receiver<CommandOutput>>,
+    writer: &mut impl Write,
+    protocol: ProtocolVersion,
+) -> io::Result<()> {
+    let Some(notifications) = notifications else {
+        return Ok(());
+    };
+    while let Ok(output) = notifications.try_recv() {
+        frame_from_output_for_protocol(output, protocol).write_to(writer)?;
+    }
+    writer.flush()
 }
 
 fn process_frame<F>(
@@ -174,6 +237,18 @@ fn execute_connection_command<F>(
 where
     F: FnMut(Command) -> CommandOutput,
 {
+    if state.protocol == ProtocolVersion::Resp2 && !state.subscriptions.is_empty() {
+        match &command {
+            Command::Subscribe { .. } | Command::Unsubscribe { .. } | Command::Exit => {}
+            Command::Ping { message } => return CommandOutput::PubSubPong(message.clone()),
+            _ => {
+                return CommandOutput::Error(
+                    "only SUBSCRIBE, UNSUBSCRIBE, PING, and QUIT are allowed in subscribed mode"
+                        .to_owned(),
+                );
+            }
+        }
+    }
     match command {
         Command::Multi => {
             if state.transaction.is_some() {
@@ -239,6 +314,9 @@ where
                     | Command::ClientSetInfo { .. }
                     | Command::Watch { .. }
                     | Command::Unwatch
+                    | Command::Publish { .. }
+                    | Command::Subscribe { .. }
+                    | Command::Unsubscribe { .. }
                     | Command::AofRewrite
                     | Command::Exit
             ) {
@@ -272,6 +350,28 @@ where
                 ClientInfoAttribute::LibraryVersion => state._library_version = Some(value),
             }
             CommandOutput::Ok
+        }
+        Command::Subscribe { channels } => {
+            let output = execute(Command::Subscribe {
+                channels: channels.clone(),
+            });
+            for channel in channels {
+                state.subscriptions.insert(channel);
+            }
+            output
+        }
+        Command::Unsubscribe { channels } => {
+            let output = execute(Command::Unsubscribe {
+                channels: channels.clone(),
+            });
+            if channels.is_empty() {
+                state.subscriptions.clear();
+            } else {
+                for channel in channels {
+                    state.subscriptions.remove(&channel);
+                }
+            }
+            output
         }
         command => execute(command),
     }

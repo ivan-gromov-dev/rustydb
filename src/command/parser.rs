@@ -540,6 +540,19 @@ impl Command {
                 keys: many(args, "WATCH key [key ...]")?,
             }),
             "UNWATCH" => no_args(args, "UNWATCH", Self::Unwatch),
+            "PUBLISH" => {
+                exact(args, 3, "PUBLISH channel message")?;
+                Ok(Self::Publish {
+                    channel: owned(args[1]),
+                    message: owned(args[2]),
+                })
+            }
+            "SUBSCRIBE" => Ok(Self::Subscribe {
+                channels: many(args, "SUBSCRIBE channel [channel ...]")?,
+            }),
+            "UNSUBSCRIBE" => Ok(Self::Unsubscribe {
+                channels: args[1..].iter().map(|channel| owned(channel)).collect(),
+            }),
             "INFO" => no_args(args, "INFO", Self::Info),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),

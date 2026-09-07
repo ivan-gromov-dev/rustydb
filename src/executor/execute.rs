@@ -722,6 +722,10 @@ pub(crate) fn execute_with_snapshot(
             CommandOutput::Error("transaction commands require a server connection".to_owned())
         }
 
+        Command::Publish { .. } | Command::Subscribe { .. } | Command::Unsubscribe { .. } => {
+            CommandOutput::Error("Pub/Sub commands require a server connection".to_owned())
+        }
+
         Command::Info => CommandOutput::Error("INFO requires database metrics".to_owned()),
 
         Command::Help => CommandOutput::Help,

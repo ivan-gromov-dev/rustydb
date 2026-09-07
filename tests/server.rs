@@ -98,6 +98,109 @@ fn public_server_api_supports_ping_and_binary_echo() {
 }
 
 #[test]
+fn direct_pubsub_delivers_binary_messages_and_cleans_up_disconnects() {
+    let (address, shutdown, server) = start_server();
+    let mut subscriber = connect(address);
+    subscriber
+        .write_all(&request(&[b"SUBSCRIBE", b"news\0\xff"]))
+        .unwrap();
+    let mut subscribed = [0; 35];
+    subscriber.read_exact(&mut subscribed).unwrap();
+    assert_eq!(
+        &subscribed,
+        b"*3\r\n$9\r\nsubscribe\r\n$6\r\nnews\0\xff\r\n:1\r\n"
+    );
+
+    let message = b"hello\r\n\0\xff";
+    assert_eq!(
+        exchange(
+            connect(address),
+            &pipeline(&[&[b"PUBLISH", b"news\0\xff", message], &[b"QUIT"],])
+        ),
+        b":1\r\n+OK\r\n"
+    );
+    let mut expected = b"*3\r\n$7\r\nmessage\r\n$6\r\nnews\0\xff\r\n$9\r\n".to_vec();
+    expected.extend_from_slice(message);
+    expected.extend_from_slice(b"\r\n");
+    let mut delivered = vec![0; expected.len()];
+    subscriber.read_exact(&mut delivered).unwrap();
+    assert_eq!(delivered, expected);
+
+    subscriber
+        .write_all(&request(&[b"SET", b"blocked", b"value"]))
+        .unwrap();
+    let subscribed_mode_error =
+        b"-ERR only SUBSCRIBE, UNSUBSCRIBE, PING, and QUIT are allowed in subscribed mode\r\n";
+    let mut error = vec![0; subscribed_mode_error.len()];
+    subscriber.read_exact(&mut error).unwrap();
+    assert_eq!(error, subscribed_mode_error);
+
+    subscriber
+        .write_all(&request(&[b"UNSUBSCRIBE", b"news\0\xff"]))
+        .unwrap();
+    let expected_unsubscribe = b"*3\r\n$11\r\nunsubscribe\r\n$6\r\nnews\0\xff\r\n:0\r\n";
+    let mut unsubscribed = vec![0; expected_unsubscribe.len()];
+    subscriber.read_exact(&mut unsubscribed).unwrap();
+    assert_eq!(unsubscribed, expected_unsubscribe);
+    subscriber
+        .write_all(&request(&[b"SET", b"after-unsubscribe", b"allowed"]))
+        .unwrap();
+    let mut ok = [0; 5];
+    subscriber.read_exact(&mut ok).unwrap();
+    assert_eq!(&ok, b"+OK\r\n");
+
+    subscriber
+        .write_all(&request(&[b"SUBSCRIBE", b"news\0\xff"]))
+        .unwrap();
+    subscriber.read_exact(&mut subscribed).unwrap();
+    drop(subscriber);
+    thread::sleep(Duration::from_millis(75));
+    assert_eq!(
+        exchange(
+            connect(address),
+            &pipeline(&[&[b"PUBLISH", b"news\0\xff", b"after"], &[b"QUIT"]])
+        ),
+        b":0\r\n+OK\r\n"
+    );
+
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn direct_pubsub_uses_resp3_push_frames() {
+    let (address, shutdown, server) = start_server();
+    let mut subscriber = connect(address);
+    subscriber
+        .write_all(&pipeline(&[&[b"HELLO", b"3"], &[b"SUBSCRIBE", b"events"]]))
+        .unwrap();
+    let ack = b">3\r\n$9\r\nsubscribe\r\n$6\r\nevents\r\n:1\r\n";
+    let mut responses = Vec::new();
+    let mut chunk = [0; 512];
+    while !responses.windows(ack.len()).any(|window| window == ack) {
+        let count = subscriber.read(&mut chunk).unwrap();
+        assert!(count > 0);
+        responses.extend_from_slice(&chunk[..count]);
+    }
+
+    assert_eq!(
+        exchange(
+            connect(address),
+            &pipeline(&[&[b"PUBLISH", b"events", b"ready"], &[b"QUIT"]])
+        ),
+        b":1\r\n+OK\r\n"
+    );
+    let expected = b">3\r\n$7\r\nmessage\r\n$6\r\nevents\r\n$5\r\nready\r\n";
+    let mut delivered = vec![0; expected.len()];
+    subscriber.read_exact(&mut delivered).unwrap();
+    assert_eq!(delivered, expected);
+
+    drop(subscriber);
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
 fn public_server_executes_and_discards_connection_scoped_transactions() {
     let (address, shutdown, server) = start_server();
     let transaction = pipeline(&[

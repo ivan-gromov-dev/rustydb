@@ -552,6 +552,16 @@ pub(crate) enum Command {
         keys: Vec<Vec<u8>>,
     },
     Unwatch,
+    Publish {
+        channel: Vec<u8>,
+        message: Vec<u8>,
+    },
+    Subscribe {
+        channels: Vec<Vec<u8>>,
+    },
+    Unsubscribe {
+        channels: Vec<Vec<u8>>,
+    },
     Transaction {
         commands: Vec<Command>,
         watched: Vec<(Vec<u8>, u64, bool)>,
@@ -687,6 +697,9 @@ impl Command {
             Self::Discard => "DISCARD",
             Self::Watch { .. } => "WATCH",
             Self::Unwatch => "UNWATCH",
+            Self::Publish { .. } => "PUBLISH",
+            Self::Subscribe { .. } => "SUBSCRIBE",
+            Self::Unsubscribe { .. } => "UNSUBSCRIBE",
             Self::Info => "INFO",
             Self::Help => "HELP",
             Self::Exit => "EXIT",
@@ -1059,6 +1072,9 @@ impl Command {
             | Self::Discard
             | Self::Watch { .. }
             | Self::Unwatch
+            | Self::Publish { .. }
+            | Self::Subscribe { .. }
+            | Self::Unsubscribe { .. }
             | Self::Transaction { .. }
             | Self::Info
             | Self::Help

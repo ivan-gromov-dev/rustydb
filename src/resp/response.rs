@@ -155,7 +155,61 @@ pub(crate) fn frame_from_output_for_protocol(
             error_frame("EXECABORT Transaction discarded because of previous errors")
         }
         CommandOutput::WatchVersions(_) => RespFrame::SimpleString("OK".to_owned()),
+        CommandOutput::PubSubAcks(acks) => {
+            let frames = acks
+                .into_iter()
+                .map(|ack| {
+                    let values = vec![
+                        RespFrame::BulkString(
+                            if ack.subscribed {
+                                b"subscribe".as_slice()
+                            } else {
+                                b"unsubscribe".as_slice()
+                            }
+                            .to_vec(),
+                        ),
+                        ack.channel.map(RespFrame::BulkString).unwrap_or_else(|| {
+                            if protocol == ProtocolVersion::Resp3 {
+                                RespFrame::Null
+                            } else {
+                                RespFrame::NullBulkString
+                            }
+                        }),
+                        RespFrame::Integer(i64::try_from(ack.count).unwrap_or(i64::MAX)),
+                    ];
+                    if protocol == ProtocolVersion::Resp3 {
+                        RespFrame::Push(values)
+                    } else {
+                        RespFrame::Array(values)
+                    }
+                })
+                .collect();
+            RespFrame::Sequence(frames)
+        }
+        CommandOutput::PubSubMessage { channel, message } => pubsub_frame(
+            vec![
+                RespFrame::BulkString(b"message".to_vec()),
+                RespFrame::BulkString(channel),
+                RespFrame::BulkString(message),
+            ],
+            protocol,
+        ),
+        CommandOutput::PubSubPong(message) => pubsub_frame(
+            vec![
+                RespFrame::BulkString(b"pong".to_vec()),
+                RespFrame::BulkString(message.unwrap_or_default()),
+            ],
+            protocol,
+        ),
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
+    }
+}
+
+fn pubsub_frame(values: Vec<RespFrame>, protocol: ProtocolVersion) -> RespFrame {
+    if protocol == ProtocolVersion::Resp3 {
+        RespFrame::Push(values)
+    } else {
+        RespFrame::Array(values)
     }
 }
 

@@ -185,8 +185,9 @@ Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
 integers, lists, sets, and expiration output through a real client.
 
 RustyDB implements RESP3 response types needed by its documented command subset,
-but does not implement authentication, multiple logical databases, Pub/Sub, or
-configuration metadata commands such as `CONFIG`.
+but does not implement authentication, multiple logical databases, pattern
+subscriptions, Pub/Sub introspection, or configuration metadata commands such
+as `CONFIG`.
 Features of `redis-cli` that probe or depend on those commands are not supported.
 Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
 invocations to send RustyDB commands with those names. Command errors use
@@ -319,6 +320,9 @@ clients receive the corresponding protocol-specific typed value.
 | `HINCRBYFLOAT key field increment`                                                                               | Increment a finite floating-point hash field                                                          | Updated number                                                         |
 | `HSCAN key cursor [MATCH pattern] [COUNT count]`                                                                 | Deterministically inspect sorted hash-field batches                                                   | Next cursor followed by field/value pairs                              |
 | `PING [message]`                                                                                                 | Test the connection, optionally echoing a binary message                                              | `PONG` or the message                                                  |
+| `PUBLISH channel message`                                                                                        | Deliver a binary message to clients directly subscribed to a channel                                  | Number of recipients                                                   |
+| `SUBSCRIBE channel [channel ...]`                                                                                | Subscribe the RESP connection to one or more direct channels                                          | One subscription acknowledgement per channel                          |
+| `UNSUBSCRIBE [channel ...]`                                                                                      | Unsubscribe from named channels, or all direct channels when none are given                            | One unsubscription acknowledgement per channel                        |
 | `MULTI`                                                                                                          | Start queuing commands for an atomic transaction                                                      | `OK`                                                                  |
 | `EXEC`                                                                                                           | Execute the queued transaction                                                                        | One result per queued command, or an error                             |
 | `DISCARD`                                                                                                        | Discard the queued transaction                                                                         | `OK`                                                                  |

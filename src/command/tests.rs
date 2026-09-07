@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn parses_direct_pubsub_commands_with_binary_arguments() {
+    assert_eq!(
+        Command::from_bytes(&[b"PUBLISH", b"channel\0\xff", b"message\r\n\0\xff"]),
+        Ok(Command::Publish {
+            channel: b"channel\0\xff".to_vec(),
+            message: b"message\r\n\0\xff".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"SUBSCRIBE", b"first", b"second"]),
+        Ok(Command::Subscribe {
+            channels: vec![b"first".to_vec(), b"second".to_vec()],
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"UNSUBSCRIBE"]),
+        Ok(Command::Unsubscribe { channels: vec![] })
+    );
+    assert!(Command::from_bytes(&[b"PUBLISH", b"channel"]).is_err());
+    assert!(Command::from_bytes(&[b"SUBSCRIBE"]).is_err());
+}
+
+#[test]
 fn parses_basic_sorted_set_commands_and_rejects_invalid_scores() {
     assert_eq!(
         Command::from_args(&["ZADD", "board", "1.5", "alice", "2", "bob"]),
