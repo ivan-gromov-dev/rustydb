@@ -398,6 +398,25 @@ fn transaction_controls_accept_no_arguments() {
 }
 
 #[test]
+fn watch_commands_validate_keys_and_arity() {
+    assert_eq!(
+        Command::parse("WATCH first second"),
+        Ok(Command::Watch {
+            keys: vec![b"first".to_vec(), b"second".to_vec()]
+        })
+    );
+    assert_eq!(Command::parse("UNWATCH"), Ok(Command::Unwatch));
+    assert!(matches!(
+        Command::parse("WATCH"),
+        Err(CommandError::InvalidArguments(_))
+    ));
+    assert!(matches!(
+        Command::parse("UNWATCH extra"),
+        Err(CommandError::InvalidArguments(_))
+    ));
+}
+
+#[test]
 fn info_accepts_no_arguments() {
     assert_eq!(Command::parse("INFO"), Ok(Command::Info));
     assert_eq!(

@@ -247,6 +247,7 @@ fn multi_queues_commands_and_executes_one_transaction_batch() {
     assert_eq!(
         executed,
         vec![Command::Transaction {
+            watched: Vec::new(),
             commands: vec![
                 Command::Set {
                     key: b"key".to_vec(),

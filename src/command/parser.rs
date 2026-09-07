@@ -536,6 +536,10 @@ impl Command {
             "MULTI" => no_args(args, "MULTI", Self::Multi),
             "EXEC" => no_args(args, "EXEC", Self::Exec),
             "DISCARD" => no_args(args, "DISCARD", Self::Discard),
+            "WATCH" => Ok(Self::Watch {
+                keys: many(args, "WATCH key [key ...]")?,
+            }),
+            "UNWATCH" => no_args(args, "UNWATCH", Self::Unwatch),
             "INFO" => no_args(args, "INFO", Self::Info),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),

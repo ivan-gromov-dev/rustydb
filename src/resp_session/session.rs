@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -18,6 +19,7 @@ struct ConnectionState {
     _library_name: Option<Vec<u8>>,
     _library_version: Option<Vec<u8>>,
     transaction: Option<TransactionState>,
+    watched: HashMap<Vec<u8>, (u64, bool)>,
 }
 
 struct TransactionState {
@@ -34,6 +36,7 @@ impl ConnectionState {
             _library_name: None,
             _library_version: None,
             transaction: None,
+            watched: HashMap::new(),
         }
     }
 }
@@ -187,20 +190,44 @@ where
             let Some(transaction) = state.transaction.take() else {
                 return CommandOutput::Error("EXEC without MULTI".to_owned());
             };
+            let watched = std::mem::take(&mut state.watched)
+                .into_iter()
+                .map(|(key, (version, existed))| (key, version, existed))
+                .collect();
             if transaction.dirty {
                 CommandOutput::ExecAbort
             } else {
                 execute(Command::Transaction {
                     commands: transaction.commands,
+                    watched,
                 })
             }
         }
         Command::Discard => {
             if state.transaction.take().is_some() {
+                state.watched.clear();
                 CommandOutput::Ok
             } else {
                 CommandOutput::Error("DISCARD without MULTI".to_owned())
             }
+        }
+        Command::Watch { keys } => {
+            if state.transaction.is_some() {
+                return CommandOutput::Error("WATCH inside MULTI is not allowed".to_owned());
+            }
+            match execute(Command::Watch { keys }) {
+                CommandOutput::WatchVersions(versions) => {
+                    for (key, version, existed) in versions {
+                        state.watched.entry(key).or_insert((version, existed));
+                    }
+                    CommandOutput::Ok
+                }
+                output => output,
+            }
+        }
+        Command::Unwatch => {
+            state.watched.clear();
+            CommandOutput::Ok
         }
         command if state.transaction.is_some() => {
             if matches!(
@@ -210,6 +237,8 @@ where
                     | Command::ClientSetName { .. }
                     | Command::ClientGetName
                     | Command::ClientSetInfo { .. }
+                    | Command::Watch { .. }
+                    | Command::Unwatch
                     | Command::Exit
             ) {
                 if let Some(transaction) = &mut state.transaction {

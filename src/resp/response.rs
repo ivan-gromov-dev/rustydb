@@ -154,6 +154,7 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::ExecAbort => {
             error_frame("EXECABORT Transaction discarded because of previous errors")
         }
+        CommandOutput::WatchVersions(_) => RespFrame::SimpleString("OK".to_owned()),
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
     }
 }

@@ -123,6 +123,8 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  MULTI\n",
     "  EXEC\n",
     "  DISCARD\n",
+    "  WATCH key [key ...]\n",
+    "  UNWATCH\n",
     "  INFO\n",
     "  HELP\n",
     "  EXIT\n",
@@ -166,6 +168,7 @@ pub(crate) enum CommandOutput {
     CommandMetadata(Vec<Option<CommandMetadata>>),
     Error(String),
     ExecAbort,
+    WatchVersions(Vec<(Vec<u8>, u64, bool)>),
     Help,
     Exit,
 }
@@ -318,6 +321,7 @@ impl CommandOutput {
                     "ERR Transaction discarded because of previous errors"
                 )
             }
+            Self::WatchVersions(_) => writeln!(writer, "OK"),
             Self::Help => writer.write_all(HELP_TEXT.as_bytes()),
             Self::Exit => Ok(()),
         }

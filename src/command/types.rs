@@ -548,8 +548,13 @@ pub(crate) enum Command {
     Multi,
     Exec,
     Discard,
+    Watch {
+        keys: Vec<Vec<u8>>,
+    },
+    Unwatch,
     Transaction {
         commands: Vec<Command>,
+        watched: Vec<(Vec<u8>, u64, bool)>,
     },
     Info,
     Help,
@@ -680,6 +685,8 @@ impl Command {
             Self::Multi => "MULTI",
             Self::Exec | Self::Transaction { .. } => "EXEC",
             Self::Discard => "DISCARD",
+            Self::Watch { .. } => "WATCH",
+            Self::Unwatch => "UNWATCH",
             Self::Info => "INFO",
             Self::Help => "HELP",
             Self::Exit => "EXIT",
@@ -1050,6 +1057,8 @@ impl Command {
             | Self::Multi
             | Self::Exec
             | Self::Discard
+            | Self::Watch { .. }
+            | Self::Unwatch
             | Self::Transaction { .. }
             | Self::Info
             | Self::Help

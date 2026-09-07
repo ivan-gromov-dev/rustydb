@@ -12,6 +12,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Initial 0.14 transaction support for RESP clients through per-connection
   `MULTI`, `EXEC`, and `DISCARD` state, atomic queued execution, queue-time
   aborts, and per-command execution results.
+- Optimistic transaction locking through `WATCH` and `UNWATCH`, including
+  invalidation after writes, deletion, expiration, eviction, and connection
+  cleanup.
 
 ## [0.13.0] - 2026-09-07
 
