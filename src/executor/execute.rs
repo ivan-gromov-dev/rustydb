@@ -722,7 +722,11 @@ pub(crate) fn execute_with_snapshot(
             CommandOutput::Error("transaction commands require a server connection".to_owned())
         }
 
-        Command::Publish { .. } | Command::Subscribe { .. } | Command::Unsubscribe { .. } => {
+        Command::Publish { .. }
+        | Command::Subscribe { .. }
+        | Command::Unsubscribe { .. }
+        | Command::PSubscribe { .. }
+        | Command::PUnsubscribe { .. } => {
             CommandOutput::Error("Pub/Sub commands require a server connection".to_owned())
         }
 

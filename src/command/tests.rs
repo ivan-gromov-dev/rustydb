@@ -19,8 +19,19 @@ fn parses_direct_pubsub_commands_with_binary_arguments() {
         Command::from_bytes(&[b"UNSUBSCRIBE"]),
         Ok(Command::Unsubscribe { channels: vec![] })
     );
+    assert_eq!(
+        Command::from_bytes(&[b"PSUBSCRIBE", b"news:*"]),
+        Ok(Command::PSubscribe {
+            patterns: vec![b"news:*".to_vec()],
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PUNSUBSCRIBE"]),
+        Ok(Command::PUnsubscribe { patterns: vec![] })
+    );
     assert!(Command::from_bytes(&[b"PUBLISH", b"channel"]).is_err());
     assert!(Command::from_bytes(&[b"SUBSCRIBE"]).is_err());
+    assert!(Command::from_bytes(&[b"PSUBSCRIBE"]).is_err());
 }
 
 #[test]

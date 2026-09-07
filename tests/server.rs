@@ -129,8 +129,7 @@ fn direct_pubsub_delivers_binary_messages_and_cleans_up_disconnects() {
     subscriber
         .write_all(&request(&[b"SET", b"blocked", b"value"]))
         .unwrap();
-    let subscribed_mode_error =
-        b"-ERR only SUBSCRIBE, UNSUBSCRIBE, PING, and QUIT are allowed in subscribed mode\r\n";
+    let subscribed_mode_error = b"-ERR only SUBSCRIBE, UNSUBSCRIBE, PSUBSCRIBE, PUNSUBSCRIBE, PING, and QUIT are allowed in subscribed mode\r\n";
     let mut error = vec![0; subscribed_mode_error.len()];
     subscriber.read_exact(&mut error).unwrap();
     assert_eq!(error, subscribed_mode_error);
@@ -194,6 +193,49 @@ fn direct_pubsub_uses_resp3_push_frames() {
     let mut delivered = vec![0; expected.len()];
     subscriber.read_exact(&mut delivered).unwrap();
     assert_eq!(delivered, expected);
+
+    drop(subscriber);
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn pattern_pubsub_matches_binary_channels_and_counts_all_subscriptions() {
+    let (address, shutdown, server) = start_server();
+    let mut subscriber = connect(address);
+    subscriber
+        .write_all(&pipeline(&[
+            &[b"SUBSCRIBE", b"news:rust"],
+            &[b"PSUBSCRIBE", b"news:*"],
+        ]))
+        .unwrap();
+    let acknowledgements = b"*3\r\n$9\r\nsubscribe\r\n$9\r\nnews:rust\r\n:1\r\n*3\r\n$10\r\npsubscribe\r\n$6\r\nnews:*\r\n:2\r\n";
+    let mut received = vec![0; acknowledgements.len()];
+    subscriber.read_exact(&mut received).unwrap();
+    assert_eq!(received, acknowledgements);
+
+    assert_eq!(
+        exchange(
+            connect(address),
+            &pipeline(&[&[b"PUBLISH", b"news:rust", b"release\0\xff"], &[b"QUIT"],])
+        ),
+        b":2\r\n+OK\r\n"
+    );
+    let messages = b"*3\r\n$7\r\nmessage\r\n$9\r\nnews:rust\r\n$9\r\nrelease\0\xff\r\n*4\r\n$8\r\npmessage\r\n$6\r\nnews:*\r\n$9\r\nnews:rust\r\n$9\r\nrelease\0\xff\r\n";
+    let mut received = vec![0; messages.len()];
+    subscriber.read_exact(&mut received).unwrap();
+    assert_eq!(received, messages);
+
+    subscriber
+        .write_all(&pipeline(&[
+            &[b"PUNSUBSCRIBE", b"news:*"],
+            &[b"UNSUBSCRIBE"],
+        ]))
+        .unwrap();
+    let acknowledgements = b"*3\r\n$12\r\npunsubscribe\r\n$6\r\nnews:*\r\n:1\r\n*3\r\n$11\r\nunsubscribe\r\n$9\r\nnews:rust\r\n:0\r\n";
+    let mut received = vec![0; acknowledgements.len()];
+    subscriber.read_exact(&mut received).unwrap();
+    assert_eq!(received, acknowledgements);
 
     drop(subscriber);
     shutdown.request();

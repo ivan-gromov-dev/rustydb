@@ -22,6 +22,7 @@ struct ConnectionState {
     transaction: Option<TransactionState>,
     watched: HashMap<Vec<u8>, (u64, bool)>,
     subscriptions: HashSet<Vec<u8>>,
+    pattern_subscriptions: HashSet<Vec<u8>>,
 }
 
 struct TransactionState {
@@ -40,6 +41,7 @@ impl ConnectionState {
             transaction: None,
             watched: HashMap::new(),
             subscriptions: HashSet::new(),
+            pattern_subscriptions: HashSet::new(),
         }
     }
 }
@@ -237,13 +239,19 @@ fn execute_connection_command<F>(
 where
     F: FnMut(Command) -> CommandOutput,
 {
-    if state.protocol == ProtocolVersion::Resp2 && !state.subscriptions.is_empty() {
+    if state.protocol == ProtocolVersion::Resp2
+        && (!state.subscriptions.is_empty() || !state.pattern_subscriptions.is_empty())
+    {
         match &command {
-            Command::Subscribe { .. } | Command::Unsubscribe { .. } | Command::Exit => {}
+            Command::Subscribe { .. }
+            | Command::Unsubscribe { .. }
+            | Command::PSubscribe { .. }
+            | Command::PUnsubscribe { .. }
+            | Command::Exit => {}
             Command::Ping { message } => return CommandOutput::PubSubPong(message.clone()),
             _ => {
                 return CommandOutput::Error(
-                    "only SUBSCRIBE, UNSUBSCRIBE, PING, and QUIT are allowed in subscribed mode"
+                    "only SUBSCRIBE, UNSUBSCRIBE, PSUBSCRIBE, PUNSUBSCRIBE, PING, and QUIT are allowed in subscribed mode"
                         .to_owned(),
                 );
             }
@@ -317,6 +325,8 @@ where
                     | Command::Publish { .. }
                     | Command::Subscribe { .. }
                     | Command::Unsubscribe { .. }
+                    | Command::PSubscribe { .. }
+                    | Command::PUnsubscribe { .. }
                     | Command::AofRewrite
                     | Command::Exit
             ) {
@@ -369,6 +379,28 @@ where
             } else {
                 for channel in channels {
                     state.subscriptions.remove(&channel);
+                }
+            }
+            output
+        }
+        Command::PSubscribe { patterns } => {
+            let output = execute(Command::PSubscribe {
+                patterns: patterns.clone(),
+            });
+            for pattern in patterns {
+                state.pattern_subscriptions.insert(pattern);
+            }
+            output
+        }
+        Command::PUnsubscribe { patterns } => {
+            let output = execute(Command::PUnsubscribe {
+                patterns: patterns.clone(),
+            });
+            if patterns.is_empty() {
+                state.pattern_subscriptions.clear();
+            } else {
+                for pattern in patterns {
+                    state.pattern_subscriptions.remove(&pattern);
                 }
             }
             output

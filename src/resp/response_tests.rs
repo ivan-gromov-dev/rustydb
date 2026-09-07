@@ -10,6 +10,7 @@ fn pubsub_uses_arrays_in_resp2_and_pushes_in_resp3() {
     let ack = || {
         CommandOutput::PubSubAcks(vec![PubSubAck {
             subscribed: true,
+            pattern: false,
             channel: Some(b"news".to_vec()),
             count: 1,
         }])
@@ -40,6 +41,22 @@ fn pubsub_uses_arrays_in_resp2_and_pushes_in_resp3() {
         ),
         RespFrame::Push(_)
     ));
+    assert_eq!(
+        frame_from_output_for_protocol(
+            CommandOutput::PubSubPatternMessage {
+                pattern: b"news:*".to_vec(),
+                channel: b"news:rust".to_vec(),
+                message: b"hello".to_vec(),
+            },
+            ProtocolVersion::Resp3,
+        ),
+        RespFrame::Push(vec![
+            RespFrame::BulkString(b"pmessage".to_vec()),
+            RespFrame::BulkString(b"news:*".to_vec()),
+            RespFrame::BulkString(b"news:rust".to_vec()),
+            RespFrame::BulkString(b"hello".to_vec()),
+        ])
+    );
 }
 
 #[test]

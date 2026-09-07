@@ -5,6 +5,7 @@ use crate::command::{CommandMetadata, ProtocolVersion};
 #[derive(Debug, PartialEq)]
 pub(crate) struct PubSubAck {
     pub(crate) subscribed: bool,
+    pub(crate) pattern: bool,
     pub(crate) channel: Option<Vec<u8>>,
     pub(crate) count: usize,
 }
@@ -135,6 +136,8 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  PUBLISH channel message\n",
     "  SUBSCRIBE channel [channel ...]\n",
     "  UNSUBSCRIBE [channel ...]\n",
+    "  PSUBSCRIBE pattern [pattern ...]\n",
+    "  PUNSUBSCRIBE [pattern ...]\n",
     "  INFO\n",
     "  HELP\n",
     "  EXIT\n",
@@ -184,6 +187,11 @@ pub(crate) enum CommandOutput {
         channel: Vec<u8>,
         message: Vec<u8>,
     },
+    PubSubPatternMessage {
+        pattern: Vec<u8>,
+        channel: Vec<u8>,
+        message: Vec<u8>,
+    },
     PubSubPong(Option<Vec<u8>>),
     Help,
     Exit,
@@ -202,10 +210,11 @@ impl CommandOutput {
                     writeln!(
                         writer,
                         "{} {} {}",
-                        if ack.subscribed {
-                            "subscribe"
-                        } else {
-                            "unsubscribe"
+                        match (ack.pattern, ack.subscribed) {
+                            (false, true) => "subscribe",
+                            (false, false) => "unsubscribe",
+                            (true, true) => "psubscribe",
+                            (true, false) => "punsubscribe",
                         },
                         ack.channel
                             .as_deref()
@@ -219,6 +228,19 @@ impl CommandOutput {
             }
             Self::PubSubMessage { channel, message } => {
                 writer.write_all(b"message ")?;
+                writer.write_all(channel)?;
+                writer.write_all(b" ")?;
+                writer.write_all(message)?;
+                writeln!(writer)
+            }
+            Self::PubSubPatternMessage {
+                pattern,
+                channel,
+                message,
+            } => {
+                writer.write_all(b"pmessage ")?;
+                writer.write_all(pattern)?;
+                writer.write_all(b" ")?;
                 writer.write_all(channel)?;
                 writer.write_all(b" ")?;
                 writer.write_all(message)?;

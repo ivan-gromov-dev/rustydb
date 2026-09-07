@@ -161,10 +161,11 @@ pub(crate) fn frame_from_output_for_protocol(
                 .map(|ack| {
                     let values = vec![
                         RespFrame::BulkString(
-                            if ack.subscribed {
-                                b"subscribe".as_slice()
-                            } else {
-                                b"unsubscribe".as_slice()
+                            match (ack.pattern, ack.subscribed) {
+                                (false, true) => b"subscribe".as_slice(),
+                                (false, false) => b"unsubscribe".as_slice(),
+                                (true, true) => b"psubscribe".as_slice(),
+                                (true, false) => b"punsubscribe".as_slice(),
                             }
                             .to_vec(),
                         ),
@@ -189,6 +190,19 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::PubSubMessage { channel, message } => pubsub_frame(
             vec![
                 RespFrame::BulkString(b"message".to_vec()),
+                RespFrame::BulkString(channel),
+                RespFrame::BulkString(message),
+            ],
+            protocol,
+        ),
+        CommandOutput::PubSubPatternMessage {
+            pattern,
+            channel,
+            message,
+        } => pubsub_frame(
+            vec![
+                RespFrame::BulkString(b"pmessage".to_vec()),
+                RespFrame::BulkString(pattern),
                 RespFrame::BulkString(channel),
                 RespFrame::BulkString(message),
             ],

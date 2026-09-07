@@ -553,6 +553,12 @@ impl Command {
             "UNSUBSCRIBE" => Ok(Self::Unsubscribe {
                 channels: args[1..].iter().map(|channel| owned(channel)).collect(),
             }),
+            "PSUBSCRIBE" => Ok(Self::PSubscribe {
+                patterns: many(args, "PSUBSCRIBE pattern [pattern ...]")?,
+            }),
+            "PUNSUBSCRIBE" => Ok(Self::PUnsubscribe {
+                patterns: args[1..].iter().map(|pattern| owned(pattern)).collect(),
+            }),
             "INFO" => no_args(args, "INFO", Self::Info),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),

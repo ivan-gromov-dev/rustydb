@@ -1,5 +1,5 @@
 mod clock;
-mod glob;
+pub(crate) mod glob;
 mod in_memory;
 mod indexing;
 mod snapshot;
