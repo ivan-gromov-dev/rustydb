@@ -576,6 +576,63 @@ mod tests {
     }
 
     #[test]
+    fn sorted_set_snapshot_round_trips_extremes_and_rejects_invalid_records() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let members = vec![
+            (vec![], (-0.0f64).to_bits()),
+            (vec![0], f64::MAX.to_bits()),
+            (vec![255], (-f64::MAX).to_bits()),
+        ];
+        let entry = SnapshotEntry {
+            key: b"z".to_vec(),
+            value: SnapshotValue::SortedSet(members),
+            expires_at_unix_millis: Some(2000),
+        };
+        let bytes = encoded(&[entry]);
+        let mut store = InMemoryStore::new();
+        read_snapshot(Cursor::new(&bytes), &mut store, now).unwrap();
+        assert_eq!(
+            store.sorted_set_score("z", []).unwrap().unwrap().to_bits(),
+            0.0f64.to_bits()
+        );
+        assert_eq!(store.sorted_set_score("z", [0]), Ok(Some(f64::MAX)));
+        assert_eq!(store.sorted_set_score("z", [255]), Ok(Some(-f64::MAX)));
+        read_snapshot(
+            Cursor::new(&bytes),
+            &mut store,
+            now + Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(store.type_name("z"), "none");
+        for version in [1u16, 2] {
+            let mut old = bytes.clone();
+            old[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&version.to_le_bytes());
+            assert!(matches!(
+                read_snapshot(Cursor::new(old), &mut store, now),
+                Err(SnapshotError::InvalidValueType(4))
+            ));
+        }
+        for values in [
+            vec![],
+            vec![(vec![], f64::NAN.to_bits())],
+            vec![(vec![], f64::INFINITY.to_bits())],
+            vec![(vec![], 0.0f64.to_bits()), (vec![], 1.0f64.to_bits())],
+        ] {
+            store.set(b"keep".to_vec(), b"value".to_vec());
+            let malformed = encoded(&[SnapshotEntry {
+                key: b"z".to_vec(),
+                value: SnapshotValue::SortedSet(values),
+                expires_at_unix_millis: None,
+            }]);
+            assert!(read_snapshot(Cursor::new(malformed), &mut store, now).is_err());
+            assert_eq!(store.get("keep"), Ok(Some(b"value".as_slice())));
+        }
+        for cut in 0..bytes.len() {
+            assert!(read_snapshot(Cursor::new(&bytes[..cut]), &mut store, now).is_err());
+        }
+    }
+
+    #[test]
     fn round_trip_preserves_binary_values_types_and_expiration() {
         let wall_now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
         let expires_at = 1_060_000;

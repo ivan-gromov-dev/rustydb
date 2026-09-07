@@ -143,6 +143,7 @@ pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("zremrangebyrank", 4, WRITE, 1, 1, 1),
     metadata!("zremrangebyscore", 4, WRITE, 1, 1, 1),
     metadata!("zrevrank", 3, READ, 1, 1, 1),
+    metadata!("zscan", -3, READ, 1, 1, 1),
     metadata!("zscore", 3, READ, 1, 1, 1),
 ];
 

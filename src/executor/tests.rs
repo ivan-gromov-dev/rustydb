@@ -1758,3 +1758,19 @@ fn executes_sorted_set_stage_three_outputs_and_errors() {
         assert!(execute(Command::parse(text).unwrap(), &mut db).is_error());
     }
 }
+
+#[test]
+fn executes_sorted_set_scan() {
+    let mut db = Database::new();
+    db.sorted_set_add("k", vec![(1.5, b"a".to_vec()), (2.0, b"b".to_vec())])
+        .unwrap();
+    assert_eq!(
+        execute(Command::parse("ZSCAN k 0 COUNT 1").unwrap(), &mut db),
+        Response::SortedSetScan {
+            cursor: 1,
+            entries: vec![(b"a".to_vec(), 1.5)]
+        }
+    );
+    db.set(b"s".to_vec(), vec![]);
+    assert!(execute(Command::parse("ZSCAN s 0").unwrap(), &mut db).is_error());
+}

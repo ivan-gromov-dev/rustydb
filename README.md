@@ -283,6 +283,7 @@ clients receive the corresponding protocol-specific typed value.
 | `ZREM key member [member ...]` | Remove sorted-set members | Number of members removed |
 | `ZSCORE key member` | Read a sorted-set member's score | Score or `(nil)` |
 | `ZCARD key` | Read a sorted set's cardinality | Number of members, or `0` |
+| `ZSCAN key cursor [MATCH pattern] [COUNT count]` | Inspect sorted members and their scores in deterministic batches | Next cursor followed by alternating members and scores |
 | `ZMSCORE key member [member ...]` | Read member scores in request order, including duplicates | One score or `(nil)` per member |
 | `ZINCRBY key increment member` | Add a finite increment to a member score, creating the member if absent | Updated score |
 | `ZCOUNT key min max` | Count scores within inclusive or exclusive bounds | Number of matching members |
@@ -459,6 +460,35 @@ array (the score is a bulk string in RESP2 and a double in RESP3). Missing or
 expired keys and zero-count pops return an empty array. The CLI prints a member
 and score on separate lines, or `(nil)` when nothing is popped.
 
+`ZSCAN` examines members in lexicographic binary member order, independently of
+score order. Start at cursor `0` and continue with each returned cursor until
+it is `0` again. `COUNT` defaults to 10 and must be positive; it limits examined
+members before `MATCH`, so an empty batch can still have a nonzero cursor.
+`MATCH` uses the same binary glob rules as `HSCAN`. Each call sorts borrowed
+entries in O(n log n) time with O(n) temporary references. Cursors are offsets,
+not snapshots: writes between calls may cause omissions or repetitions. Reads
+preserve TTL, and missing or expired keys return cursor zero and no entries.
+Both RESP2 and RESP3 return a two-element array: a bulk-string cursor and a flat
+array of alternating member and score bulk strings. Unlike other sorted-set
+score replies, `ZSCAN` scores remain bulk strings in RESP3.
+
+Build RustyDB, then run the standalone sorted-set TCP examples with Python 3.10
+or newer:
+
+```console
+cargo build --bin rustydb
+python examples/leaderboard.py
+python examples/priority_queue.py
+```
+
+Each example starts a disposable local server in a temporary directory, verifies
+its replies, prints the results, and stops the server. They require only Python's
+standard library and accept an optional path to a RustyDB binary. The
+[leaderboard example](examples/leaderboard.py) updates scores, reads the top two,
+and iterates all players. The [priority-queue example](examples/priority_queue.py)
+uses atomic pops; equal priorities are ordered by job ID, not FIFO. A pop does
+not acknowledge job completion or provide retry delivery after consumer failure.
+
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary
 representation for deterministic output; RESP3 clients receive a map and RESP2
@@ -597,7 +627,7 @@ from the per-module calculation.
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the release plan and learning milestones.
-The ongoing 0.13 sorted-set milestone is broken down in
+The implemented 0.13 sorted-set milestone and verification status are recorded in
 [SORTED_SETS.md](SORTED_SETS.md); its implemented subset is listed above.
 
 ## Continuous integration

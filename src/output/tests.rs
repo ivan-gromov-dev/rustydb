@@ -179,3 +179,21 @@ fn renders_single_sorted_set_pop() {
         "job\n1.5\n"
     );
 }
+
+#[test]
+fn renders_sorted_set_scan_cursor_and_pairs() {
+    assert_eq!(
+        render(CommandOutput::SortedSetScan {
+            cursor: 2,
+            entries: vec![]
+        }),
+        "2\n"
+    );
+    assert_eq!(
+        render(CommandOutput::SortedSetScan {
+            cursor: 0,
+            entries: vec![(b"a".to_vec(), 1.5)]
+        }),
+        "0\na\n1.5\n"
+    );
+}

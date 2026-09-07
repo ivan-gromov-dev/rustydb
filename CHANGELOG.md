@@ -9,6 +9,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- `ZSCAN` with deterministic binary member order, `MATCH` / `COUNT`, and
+  protocol-specific cursor response tests, completing the planned sorted-set
+  commands for 0.13.
+- Executable TCP leaderboard and priority-queue examples, CI example runs,
+  and sorted-set coverage in the external `redis-cli` smoke test.
 - Score-based `ZRANGE` with `BYSCORE`, `REV`, and `LIMIT`; atomic `ZPOPMIN` and
   `ZPOPMAX`; and `ZREMRANGEBYRANK` / `ZREMRANGEBYSCORE`, with TTL preservation,
   deterministic AOF replay, and RESP2/RESP3 response coverage.

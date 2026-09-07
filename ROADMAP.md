@@ -24,10 +24,12 @@ moving on.
 
 **Goal:** support leaderboards, rankings, priority queues, and delayed work.
 
-**Status:** implementation is in progress following the delivery sequence in
-[SORTED_SETS.md](SORTED_SETS.md). Stages 1-3 are complete: membership,
-persistence, scores and rankings, rank/score ranges, pops, and range removal.
-Iteration (`ZSCAN`), executable examples, and final milestone verification remain.
+**Status:** implementation is complete following the delivery sequence in
+[SORTED_SETS.md](SORTED_SETS.md). All planned commands and executable examples
+are implemented, including `ZSCAN`. Local unit, CLI, TCP, persistence, and module
+coverage checks cover the milestone. The expanded external `redis-cli` smoke
+test is configured in CI; its local run requires an installed `redis-cli`.
+Release preparation and package-version changes are separate work.
 
 ### Work
 

@@ -613,3 +613,44 @@ fn sorted_set_stage_three_preserves_ttl_and_validates_types_even_for_empty_range
         Ok(0)
     );
 }
+
+#[test]
+fn sorted_set_scan_preserves_ttl_and_hides_expired_values() {
+    let (mut db, clock) = database_with_clock();
+    db.sorted_set_add("k", vec![(1.5, b"a".to_vec())]).unwrap();
+    db.set(b"s".to_vec(), vec![]);
+    db.expire("k", 2);
+    assert_eq!(
+        db.sorted_set_scan("k", 0, None, 10),
+        Ok((0, vec![(b"a".to_vec(), 1.5)]))
+    );
+    assert_eq!(db.ttl("k"), 2);
+    assert_eq!(
+        db.sorted_set_scan("s", usize::MAX, None, 1),
+        Err(super::super::in_memory::StoreError::WrongType)
+    );
+    clock.advance(Duration::from_secs(2));
+    assert_eq!(db.sorted_set_scan("k", 0, None, 1), Ok((0, vec![])));
+}
+
+#[test]
+fn sorted_set_copy_rename_and_active_expiration_preserve_value_and_deadline() {
+    let (mut db, clock) = database_with_clock();
+    db.sorted_set_add("k", vec![(1.5, b"\xff".to_vec())])
+        .unwrap();
+    db.expire("k", 10);
+    assert_eq!(db.copy("k", b"copy".to_vec(), false), Ok(true));
+    assert!(db.rename("copy", b"renamed".to_vec()));
+    assert_eq!(db.sorted_set_score("renamed", b"\xff"), Ok(Some(1.5)));
+    assert_eq!(
+        db.scan(0, None, 10, Some(b"zset")),
+        (0, vec![b"k".to_vec(), b"renamed".to_vec()])
+    );
+    db.sorted_set_increment("renamed", b"\xff".to_vec(), 1.0)
+        .unwrap();
+    assert_eq!(db.sorted_set_score("k", b"\xff"), Ok(Some(1.5)));
+    clock.advance(Duration::from_secs(10));
+    assert_eq!(db.active_expire(10), 2);
+    assert_eq!(db.type_name("k"), "none");
+    assert_eq!(db.type_name("renamed"), "none");
+}

@@ -569,6 +569,15 @@ pub(crate) fn execute_with_snapshot(
                 Err(error) => CommandOutput::Error(error.to_string()),
             }
         }
+        Command::ZScan {
+            key,
+            cursor,
+            pattern,
+            count,
+        } => match store.sorted_set_scan(&key, cursor, pattern.as_deref(), count) {
+            Ok((cursor, entries)) => CommandOutput::SortedSetScan { cursor, entries },
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
         Command::ZRank {
             key,
             member,

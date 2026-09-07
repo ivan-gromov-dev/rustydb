@@ -432,6 +432,12 @@ pub(crate) enum Command {
         min: ScoreBound,
         max: ScoreBound,
     },
+    ZScan {
+        key: Vec<u8>,
+        cursor: usize,
+        pattern: Option<Vec<u8>>,
+        count: usize,
+    },
     ZRank {
         key: Vec<u8>,
         member: Vec<u8>,
@@ -623,6 +629,7 @@ impl Command {
             Self::ZMScore { .. } => "ZMSCORE",
             Self::ZIncrBy { .. } => "ZINCRBY",
             Self::ZCount { .. } => "ZCOUNT",
+            Self::ZScan { .. } => "ZSCAN",
             Self::ZRange { .. } | Self::ZRangeByScore { .. } => "ZRANGE",
             Self::ZPop { reverse: false, .. } => "ZPOPMIN",
             Self::ZPop { reverse: true, .. } => "ZPOPMAX",
@@ -999,6 +1006,7 @@ impl Command {
             | Self::SCard { .. }
             | Self::ZMScore { .. }
             | Self::ZCount { .. }
+            | Self::ZScan { .. }
             | Self::ZRangeByScore { .. }
             | Self::ZRange { .. }
             | Self::ZRank { .. }

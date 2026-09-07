@@ -79,6 +79,7 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  ZMSCORE key member [member ...]\n",
     "  ZINCRBY key increment member\n",
     "  ZCOUNT key min max\n",
+    "  ZSCAN key cursor [MATCH pattern] [COUNT count]\n",
     "  ZRANGE key start stop [BYSCORE] [REV] [LIMIT offset count] [WITHSCORES]\n",
     "  ZPOPMIN key [count]\n",
     "  ZPOPMAX key [count]\n",
@@ -139,6 +140,10 @@ pub(crate) enum CommandOutput {
     Scores(Vec<Option<f64>>),
     ScoredMembers(Vec<(Vec<u8>, f64)>),
     PoppedMember(Option<(Vec<u8>, f64)>),
+    SortedSetScan {
+        cursor: usize,
+        entries: Vec<(Vec<u8>, f64)>,
+    },
     SimpleString(&'static str),
     Value(Vec<u8>),
     OptionalValues(Vec<Option<Vec<u8>>>),
@@ -197,6 +202,14 @@ impl CommandOutput {
             Self::Scores(values) => {
                 for value in values {
                     Self::Score(*value).write_to(writer)?;
+                }
+                Ok(())
+            }
+            Self::SortedSetScan { cursor, entries } => {
+                writeln!(writer, "{cursor}")?;
+                for (member, score) in entries {
+                    writer.write_all(member)?;
+                    writeln!(writer, "\n{score}")?;
                 }
                 Ok(())
             }

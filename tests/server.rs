@@ -320,3 +320,25 @@ fn concurrent_sorted_set_consumers_pop_each_member_at_most_once() {
     shutdown.request();
     assert!(server.join().unwrap().is_ok());
 }
+
+#[test]
+fn sorted_set_scan_tcp_uses_binary_order_and_filtered_cursors() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = vec![];
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"ZADD", b"scan", b"3", b"", b"2", b"\0", b"1", b"\xff"],
+            &[b"ZSCAN", b"scan", b"0", b"MATCH", b"\xff*", b"COUNT", b"2"],
+            &[b"ZSCAN", b"scan", b"2", b"MATCH", b"\xff*", b"COUNT", b"2"],
+            &[b"ZSCAN", b"missing", b"0"],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        assert!(output.ends_with(b"*2\r\n$1\r\n2\r\n*0\r\n*2\r\n$1\r\n0\r\n*2\r\n$1\r\n\xff\r\n$1\r\n1\r\n*2\r\n$1\r\n0\r\n*0\r\n+OK\r\n"), "{output:?}");
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}

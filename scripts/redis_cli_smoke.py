@@ -147,6 +147,26 @@ def main() -> int:
             raise AssertionError(
                 f"DBSIZE: expected a positive integer, got {database_size!r}"
             )
+        for protocol in (2, 3):
+            key = f"sorted:{protocol}"
+            def z(*args):
+                return redis(cli, port, *args, protocol=protocol)
+            expect(line(z("ZADD", key, "1", "a", "2", "b")), b"2", "ZADD")
+            expect(line(z("ZINCRBY", key, "0.5", "a")), b"1.5", "ZINCRBY")
+            expect(line(z("ZSCORE", key, "a")), b"1.5", "ZSCORE")
+            expect(z("ZMSCORE", key, "a", "missing"), b"1.5\n\n", "ZMSCORE")
+            expect(z("ZRANGE", key, "+inf", "-inf", "BYSCORE", "REV", "WITHSCORES"), b"b\n2\na\n1.5\n", "ZRANGE BYSCORE")
+            expect(line(z("ZRANK", key, "a")), b"0", "ZRANK")
+            expect(line(z("ZREVRANK", key, "a")), b"1", "ZREVRANK")
+            expect(line(z("ZCOUNT", key, "(1.5", "+inf")), b"1", "ZCOUNT")
+            expect(z("ZSCAN", key, "0"), b"0\na\n1.5\nb\n2\n", "ZSCAN")
+            expect(z("ZPOPMIN", key), b"a\n1.5\n", "ZPOPMIN")
+            expect(z("ZPOPMAX", key, "1"), b"b\n2\n", "ZPOPMAX")
+            expect(line(z("ZCARD", key)), b"0", "ZCARD")
+            expect(line(z("ZADD", key, "1", "a", "2", "b", "3", "c")), b"3", "ZADD removal setup")
+            expect(line(z("ZREM", key, "a")), b"1", "ZREM")
+            expect(line(z("ZREMRANGEBYRANK", key, "0", "0")), b"1", "ZREMRANGEBYRANK")
+            expect(line(z("ZREMRANGEBYSCORE", key, "-inf", "+inf")), b"1", "ZREMRANGEBYSCORE")
         expect(line(redis(cli, port, "FLUSHDB", "SYNC")), b"OK", "FLUSHDB SYNC")
         expect(line(redis(cli, port, "DBSIZE")), b"0", "DBSIZE after FLUSHDB")
     finally:

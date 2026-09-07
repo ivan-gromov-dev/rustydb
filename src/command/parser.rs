@@ -370,6 +370,7 @@ impl Command {
                 })
             }
             "ZRANGE" => parse_zrange(args),
+            "ZSCAN" => parse_zscan(args),
             "ZPOPMIN" | "ZPOPMAX" => {
                 let usage = if command == "ZPOPMAX" {
                     "ZPOPMAX key [count]"
@@ -886,6 +887,41 @@ fn parse_zadd(args: &[&[u8]]) -> Result<Command, CommandError> {
     Ok(Command::ZAdd {
         key: owned(args[1]),
         entries,
+    })
+}
+
+fn parse_zscan(args: &[&[u8]]) -> Result<Command, CommandError> {
+    const USAGE: &str = "ZSCAN key cursor [MATCH pattern] [COUNT count]";
+    if args.len() < 3 {
+        return Err(CommandError::InvalidArguments(USAGE));
+    }
+    let key = owned(args[1]);
+    let cursor = parse_usize(args[2])?;
+    let mut pattern = None;
+    let mut count = None;
+    let mut index = 3;
+    while index < args.len() {
+        let Some(value) = args.get(index + 1) else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        };
+        if args[index].eq_ignore_ascii_case(b"MATCH") && pattern.is_none() {
+            pattern = Some(owned(value));
+        } else if args[index].eq_ignore_ascii_case(b"COUNT") && count.is_none() {
+            let parsed = parse_usize(value)?;
+            if parsed == 0 {
+                return Err(CommandError::InvalidArguments(USAGE));
+            }
+            count = Some(parsed);
+        } else {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        index += 2;
+    }
+    Ok(Command::ZScan {
+        key,
+        cursor,
+        pattern,
+        count: count.unwrap_or(10),
     })
 }
 

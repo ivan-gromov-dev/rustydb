@@ -1,8 +1,9 @@
 # Sorted sets: implementation plan for 0.13
 
-Status: implementation in progress. Stages 1-3 are complete; stage 4 iteration,
-examples, and final verification remain. This document defines the delivery
-sequence and remaining independently verifiable work.
+Status: all four stages are implemented. Local Rust checks and standalone TCP
+examples verify the feature set. External `redis-cli` verification is included
+in CI and must pass before release; no local `redis-cli` executable is available
+in the current development environment. Package release preparation is separate.
 
 ## Data model and invariants
 
@@ -93,6 +94,12 @@ AOF replay/rewrite, snapshot round trips, and concurrent pop coverage.
 
 ### 4. Iteration and milestone verification
 
+Implemented: `ZSCAN` with member-order cursors, binary filtering, TTL tests,
+CLI and RESP2/RESP3 coverage; standalone leaderboard and priority-queue examples;
+additional sorted-set snapshot corruption, numeric-extreme, copy/rename, and
+active-expiration coverage. CI runs the examples and the expanded real-client
+smoke test. See README for exact response shapes and cursor limitations.
+
 - Add `ZSCAN key cursor [MATCH pattern] [COUNT count]` in binary member order,
   following existing `HSCAN` cursor and examined-entry count conventions.
   Match members, not scores, using the existing binary glob implementation.
@@ -106,9 +113,9 @@ AOF replay/rewrite, snapshot round trips, and concurrent pop coverage.
 
 ## Persistence design
 
-The current snapshot writer emits version 2 and reads versions 1 and 2. Write
-version 3 with a new value tag `4` for sorted sets, retaining readers for both
-older versions. Reject tag `4` in an older-version file. Encode a member count
+The snapshot writer emits version 3 with value tag `4` for sorted sets and
+retains readers for versions 1 and 2. Reject tag `4` in an older-version file.
+Encode a member count
 followed by member blobs and little-endian IEEE-754 score bits in deterministic
 member order, then the existing key expiration metadata. Retain collection,
 blob, checksum, and allocation limits.

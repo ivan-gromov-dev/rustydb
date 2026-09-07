@@ -324,3 +324,33 @@ fn sorted_set_pops_and_removals_obey_order_and_delete_final_keys() {
     );
     assert_eq!(db.type_name("k"), "none");
 }
+
+#[test]
+fn sorted_set_scan_uses_member_order_and_examined_count() {
+    let mut db = Database::new();
+    db.sorted_set_add("k", vec![(3.0, vec![]), (2.0, vec![0]), (1.0, vec![255])])
+        .unwrap();
+    assert_eq!(
+        db.sorted_set_scan("k", 0, None, 2),
+        Ok((2, vec![(vec![], 3.0), (vec![0], 2.0)]))
+    );
+    assert_eq!(
+        db.sorted_set_scan("k", 0, Some(b"\xff*"), 2),
+        Ok((2, vec![]))
+    );
+    assert_eq!(
+        db.sorted_set_scan("k", 2, Some(b"\xff*"), 2),
+        Ok((0, vec![(vec![255], 1.0)]))
+    );
+    assert_eq!(
+        db.sorted_set_scan("k", 1, None, usize::MAX),
+        Ok((0, vec![(vec![0], 2.0), (vec![255], 1.0)]))
+    );
+    assert_eq!(
+        db.sorted_set_scan("k", usize::MAX, None, 1),
+        Ok((0, vec![]))
+    );
+    assert_eq!(db.sorted_set_scan("missing", 0, None, 1), Ok((0, vec![])));
+    db.sorted_set_remove("k", &[vec![0]]).unwrap();
+    assert_eq!(db.sorted_set_scan("k", 2, None, 1), Ok((0, vec![])));
+}

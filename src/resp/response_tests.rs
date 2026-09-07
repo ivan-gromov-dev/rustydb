@@ -264,3 +264,20 @@ fn sorted_set_pop_without_count_is_flat_even_in_resp3() {
         assert_eq!(bytes, expected);
     }
 }
+
+#[test]
+fn sorted_set_scan_keeps_flat_bulk_string_scores_in_both_protocols() {
+    for protocol in [ProtocolVersion::Resp2, ProtocolVersion::Resp3] {
+        let mut bytes = vec![];
+        frame_from_output_for_protocol(
+            CommandOutput::SortedSetScan {
+                cursor: 2,
+                entries: vec![(b"\xff".to_vec(), 1.5)],
+            },
+            protocol,
+        )
+        .write_to(&mut bytes)
+        .unwrap();
+        assert_eq!(bytes, b"*2\r\n$1\r\n2\r\n*2\r\n$1\r\n\xff\r\n$3\r\n1.5\r\n");
+    }
+}

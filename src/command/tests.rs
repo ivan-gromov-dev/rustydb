@@ -1874,3 +1874,43 @@ fn sorted_set_stage_three_parses_ranges_pops_and_persisted_removals() {
         assert!(Command::parse(text).is_err(), "{text}");
     }
 }
+
+#[test]
+fn sorted_set_scan_parses_binary_patterns_and_strict_options() {
+    assert_eq!(
+        Command::from_bytes(&[b"zscan", b"k\0", b"2", b"COUNT", b"3", b"MATCH", b"\xff*"]),
+        Ok(Command::ZScan {
+            key: b"k\0".to_vec(),
+            cursor: 2,
+            pattern: Some(b"\xff*".to_vec()),
+            count: 3,
+        })
+    );
+    let command = Command::parse("ZSCAN k 0").unwrap();
+    assert_eq!(
+        command,
+        Command::ZScan {
+            key: b"k".to_vec(),
+            cursor: 0,
+            pattern: None,
+            count: 10
+        }
+    );
+    assert_eq!(command.name(), "ZSCAN");
+    assert_eq!(command.aof_arguments(), None);
+    for invalid in [
+        "ZSCAN",
+        "ZSCAN k",
+        "ZSCAN k -1",
+        "ZSCAN k x",
+        "ZSCAN k 0 COUNT",
+        "ZSCAN k 0 MATCH",
+        "ZSCAN k 0 COUNT 0",
+        "ZSCAN k 0 COUNT -1",
+        "ZSCAN k 0 MATCH a MATCH b",
+        "ZSCAN k 0 COUNT 1 COUNT 2",
+        "ZSCAN k 0 NOVALUES",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}

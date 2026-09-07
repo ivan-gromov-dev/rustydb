@@ -19,6 +19,7 @@ pub(crate) struct InMemoryStore {
 }
 
 type HashEntries = Vec<(Vec<u8>, Vec<u8>)>;
+type ScoredMembers = Vec<(Vec<u8>, f64)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SetOperation {
@@ -2038,6 +2039,33 @@ impl InMemoryStore {
             .map(|(member, _)| member.clone())
             .collect();
         self.sorted_set_remove(key, &members)
+    }
+
+    pub(crate) fn sorted_set_scan(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        cursor: usize,
+        pattern: Option<&[u8]>,
+        count: usize,
+    ) -> Result<(usize, ScoredMembers), StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok((0, Vec::new()));
+        };
+        let set = entry.sorted_set()?;
+        if cursor >= set.len() {
+            return Ok((0, Vec::new()));
+        }
+        let mut entries: Vec<_> = set.iter().collect();
+        entries.sort_unstable_by_key(|(member, _)| *member);
+        let end = cursor.saturating_add(count).min(entries.len());
+        let matched = entries[cursor..end]
+            .iter()
+            .filter(|(member, _)| pattern.is_none_or(|pattern| glob::matches(pattern, member)))
+            .map(|(member, score)| ((*member).clone(), score.get()))
+            .collect();
+        Ok((if end == entries.len() { 0 } else { end }, matched))
     }
 
     pub(crate) fn sorted_set_rank(

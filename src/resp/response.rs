@@ -29,6 +29,20 @@ pub(crate) fn frame_from_output_for_protocol(
                 .map(|score| score_frame(score, protocol))
                 .collect(),
         ),
+        CommandOutput::SortedSetScan { cursor, entries } => RespFrame::Array(vec![
+            RespFrame::BulkString(cursor.to_string().into_bytes()),
+            RespFrame::Array(
+                entries
+                    .into_iter()
+                    .flat_map(|(member, score)| {
+                        [
+                            RespFrame::BulkString(member),
+                            RespFrame::BulkString(score.to_string().into_bytes()),
+                        ]
+                    })
+                    .collect(),
+            ),
+        ]),
         CommandOutput::PoppedMember(entry) => RespFrame::Array(
             entry
                 .into_iter()

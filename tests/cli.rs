@@ -842,3 +842,23 @@ fn sorted_set_stage_three_mutations_survive_aof_and_snapshot_restarts() {
             .contains("db> b\n1\nf\n4\ndb> b\n")
     );
 }
+
+#[test]
+fn sorted_set_scan_after_aof_restart_does_not_append_records() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "ZADD k 2 a 1 b\nEXIT\n")
+            .status
+            .success()
+    );
+    let size = fs::metadata(&aof).unwrap().len();
+    let result = run_cli_with_aof(&aof, "ZSCAN k 0 COUNT 1\nZSCAN k 1\nEXIT\n");
+    assert!(result.status.success());
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .contains("db> 1\na\n2\ndb> 0\nb\n1\n")
+    );
+    assert_eq!(fs::metadata(aof).unwrap().len(), size);
+}
