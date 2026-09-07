@@ -118,6 +118,41 @@ fn hashes_survive_aof_replay_and_rewrite() {
 }
 
 #[test]
+fn sorted_sets_survive_snapshot_and_aof_rewrite() {
+    let directory = TestDirectory::new();
+    let snapshot = directory.snapshot();
+    let first = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        "ZADD board 1.5 alice 2 bob\nEXPIRE board 60\nSAVE\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+    let second = run_cli_with_snapshot(
+        &snapshot,
+        &[],
+        "TYPE board\nZSCORE board alice\nZCARD board\nTTL board\nEXIT\n",
+    );
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> zset\ndb> 1.5\ndb> 2\n"), "{stdout}");
+    assert!(
+        stdout.contains("db> 59\n") || stdout.contains("db> 60\n"),
+        "{stdout}"
+    );
+
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "ZADD queue 3 job-a 1 job-b\nZREM queue job-a\nAOFREWRITE\nEXIT\n",
+    );
+    assert!(first.status.success(), "{first:?}");
+    let second = run_cli_with_aof(&aof, "TYPE queue\nZSCORE queue job-b\nZCARD queue\nEXIT\n");
+    assert!(second.status.success(), "{second:?}");
+    let stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(stdout.contains("db> zset\ndb> 1\ndb> 1\n"), "{stdout}");
+}
+
+#[test]
 fn set_algebra_store_survives_aof_replay() {
     let directory = TestDirectory::new();
     let aof = directory.aof();
@@ -664,4 +699,166 @@ fn corrupt_snapshot_stops_startup_with_a_clear_error() {
         String::from_utf8(output.stderr).unwrap(),
         "Error: snapshot is truncated\n"
     );
+}
+
+#[test]
+fn sorted_set_ranks_are_read_only_across_aof_restart() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "ZADD board 2 bob 2 alice -1 first\nEXIT\n")
+            .status
+            .success()
+    );
+    let size = fs::metadata(&aof).unwrap().len();
+    let output = run_cli_with_aof(
+        &aof,
+        "ZRANK board alice\nZREVRANK board alice\nZRANK board first\nZREVRANK board first\nZRANK board absent\nZREVRANK missing member\nEXIT\n",
+    );
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("db> 1\ndb> 1\ndb> 0\ndb> 2\ndb> (nil)\ndb> (nil)\n"),
+        "{stdout}"
+    );
+    assert_eq!(fs::metadata(aof).unwrap().len(), size);
+}
+
+#[test]
+fn sorted_set_stage_two_survives_replay_rewrite_and_snapshot() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let first = run_cli_with_aof(
+        &aof,
+        "ZINCRBY board 1.5 alice\nZINCRBY board 2 bob\nZINCRBY board 1 alice\nEXPIRE board 600\nEXIT\n",
+    );
+    assert!(first.status.success());
+    let size = fs::metadata(&aof).unwrap().len();
+    let reads = "ZMSCORE board alice missing bob alice\nZCOUNT board (2 +inf\nZRANGE board 0 -1 WITHSCORES\nZRANGE board 0 0 REV\n";
+    let replay = run_cli_with_aof(&aof, &format!("{reads}ZINCRBY board NaN alice\nEXIT\n"));
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(
+        stdout.contains("db> 2.5\n(nil)\n2\n2.5\ndb> 1\ndb> bob\n2\nalice\n2.5\ndb> alice\n"),
+        "{stdout}"
+    );
+    assert_eq!(fs::metadata(&aof).unwrap().len(), size);
+    assert!(
+        run_cli_with_aof(&aof, "AOFREWRITE\nEXIT\n")
+            .status
+            .success()
+    );
+    let replay = run_cli_with_aof(&aof, &format!("{reads}TTL board\nEXIT\n"));
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> bob\n2\nalice\n2.5\n"), "{stdout}");
+    assert!(
+        !stdout.contains("db> -1\n") && !stdout.contains("db> -2\n"),
+        "{stdout}"
+    );
+
+    let snapshot = directory.snapshot();
+    assert!(
+        run_cli_with_snapshot(
+            &snapshot,
+            &[],
+            "ZINCRBY board -1.25 alice\nZINCRBY board 2.5 alice\nSAVE\nEXIT\n"
+        )
+        .status
+        .success()
+    );
+    let restored = run_cli_with_snapshot(&snapshot, &[], "ZRANGE board 0 -1 WITHSCORES\nEXIT\n");
+    assert!(restored.status.success());
+    assert!(
+        String::from_utf8(restored.stdout)
+            .unwrap()
+            .contains("db> alice\n1.25\n")
+    );
+}
+
+#[test]
+fn sorted_set_increment_overflow_is_not_appended_to_aof() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "ZINCRBY k 1e308 a\nEXIT\n")
+            .status
+            .success()
+    );
+    let size = fs::metadata(&aof).unwrap().len();
+    let failed = run_cli_with_aof(&aof, "ZINCRBY k 1e308 a\nEXIT\n");
+    assert!(failed.status.success());
+    assert!(String::from_utf8(failed.stdout).unwrap().contains("ERR"));
+    assert_eq!(fs::metadata(aof).unwrap().len(), size);
+}
+
+#[test]
+fn sorted_set_stage_three_mutations_survive_aof_and_snapshot_restarts() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let commands = "ZADD q 0 a 1 b 1 c 2 d 3 e 4 f 5 g 6 h\nEXPIRE q 600\nZPOPMIN q\nZPOPMAX q 2\nZREMRANGEBYRANK q 1 1\nZREMRANGEBYSCORE q (1 3\n";
+    let first = run_cli_with_aof(&aof, &format!("{commands}EXIT\n"));
+    assert!(first.status.success());
+    let stdout = String::from_utf8(first.stdout).unwrap();
+    assert!(
+        stdout.contains("db> a\n0\ndb> h\n6\ng\n5\ndb> 1\ndb> 2\n"),
+        "{stdout}"
+    );
+    let reads =
+        "ZRANGE q -inf +inf BYSCORE WITHSCORES\nZRANGE q +inf -inf BYSCORE REV LIMIT 1 -1\nTTL q\n";
+    let size = fs::metadata(&aof).unwrap().len();
+    let replay = run_cli_with_aof(
+        &aof,
+        &format!("{reads}ZREMRANGEBYSCORE q NaN +inf\nZPOPMIN q -1\nEXIT\n"),
+    );
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> b\n1\nf\n4\ndb> b\n"), "{stdout}");
+    assert_eq!(fs::metadata(&aof).unwrap().len(), size);
+    assert!(
+        run_cli_with_aof(&aof, "AOFREWRITE\nEXIT\n")
+            .status
+            .success()
+    );
+    let replay = run_cli_with_aof(&aof, &format!("{reads}EXIT\n"));
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> b\n1\nf\n4\ndb> b\n"), "{stdout}");
+    assert!(
+        !stdout.contains("db> -1\n") && !stdout.contains("db> -2\n"),
+        "{stdout}"
+    );
+    let snapshot = directory.snapshot();
+    assert!(
+        run_cli_with_snapshot(&snapshot, &[], &format!("{commands}SAVE\nEXIT\n"))
+            .status
+            .success()
+    );
+    let restored = run_cli_with_snapshot(&snapshot, &[], &format!("{reads}EXIT\n"));
+    assert!(restored.status.success());
+    assert!(
+        String::from_utf8(restored.stdout)
+            .unwrap()
+            .contains("db> b\n1\nf\n4\ndb> b\n")
+    );
+}
+
+#[test]
+fn sorted_set_scan_after_aof_restart_does_not_append_records() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "ZADD k 2 a 1 b\nEXIT\n")
+            .status
+            .success()
+    );
+    let size = fs::metadata(&aof).unwrap().len();
+    let result = run_cli_with_aof(&aof, "ZSCAN k 0 COUNT 1\nZSCAN k 1\nEXIT\n");
+    assert!(result.status.success());
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .contains("db> 1\na\n2\ndb> 0\nb\n1\n")
+    );
+    assert_eq!(fs::metadata(aof).unwrap().len(), size);
 }

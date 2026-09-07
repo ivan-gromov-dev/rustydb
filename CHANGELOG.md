@@ -7,6 +7,33 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-07
+
+### Added
+
+- `ZSCAN` with deterministic binary member order, `MATCH` / `COUNT`, and
+  protocol-specific cursor response tests, completing the planned sorted-set
+  commands for 0.13.
+- Executable TCP leaderboard and priority-queue examples, CI example runs,
+  and sorted-set coverage in the external `redis-cli` smoke test.
+- Score-based `ZRANGE` with `BYSCORE`, `REV`, and `LIMIT`; atomic `ZPOPMIN` and
+  `ZPOPMAX`; and `ZREMRANGEBYRANK` / `ZREMRANGEBYSCORE`, with TTL preservation,
+  deterministic AOF replay, and RESP2/RESP3 response coverage.
+- Sorted-set multi-score reads (`ZMSCORE`), finite score increments (`ZINCRBY`),
+  inclusive/exclusive score counts (`ZCOUNT`), and rank-based `ZRANGE` with
+  `REV` and `WITHSCORES`, including AOF replay and protocol-specific replies.
+- Sorted-set ranks through `ZRANK` and `ZREVRANK`, with binary member
+  tie-breaking, null results for absent members, and TTL-preserving reads.
+- Initial sorted-set support through `ZADD`, `ZREM`, `ZSCORE`, and `ZCARD`,
+  including finite-score validation, TTL-aware storage, snapshots, and AOF
+  replay and rewriting.
+
+### Changed
+
+- Sorted-set scores now use doubles in RESP3, including `ZSCORE`, which used
+  bulk strings in the initial unreleased 0.13 subset. RESP2 continues to use
+  bulk strings.
+
 ## [0.12.0] - 2026-08-31
 
 ### Added
@@ -280,7 +307,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.9.0...v0.10.0

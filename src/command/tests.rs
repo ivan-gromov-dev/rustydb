@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn parses_basic_sorted_set_commands_and_rejects_invalid_scores() {
+    assert_eq!(
+        Command::from_args(&["ZADD", "board", "1.5", "alice", "2", "bob"]),
+        Ok(Command::ZAdd {
+            key: b"board".to_vec(),
+            entries: vec![(1.5, b"alice".to_vec()), (2.0, b"bob".to_vec())]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ZREM", "board", "alice", "bob"]),
+        Ok(Command::ZRem {
+            key: b"board".to_vec(),
+            members: vec![b"alice".to_vec(), b"bob".to_vec()]
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ZSCORE", "board", "alice"]),
+        Ok(Command::ZScore {
+            key: b"board".to_vec(),
+            member: b"alice".to_vec()
+        })
+    );
+    assert_eq!(
+        Command::from_args(&["ZCARD", "board"]),
+        Ok(Command::ZCard {
+            key: b"board".to_vec()
+        })
+    );
+    assert!(matches!(
+        Command::from_args(&["ZADD", "board", "nan", "alice"]),
+        Err(CommandError::InvalidFloat(_))
+    ));
+    assert!(matches!(
+        Command::from_args(&["ZADD", "board", "1"]),
+        Err(CommandError::InvalidArguments(_))
+    ));
+}
+
+#[test]
 fn parses_type_touch_and_unlink() {
     assert_eq!(
         Command::from_args(&["TYPE", "key"]),
@@ -1647,6 +1686,230 @@ fn parses_set_algebra_store_and_scan_commands() {
         "SSCAN set 0 COUNT 0",
         "SSCAN set 0 MATCH",
         "SSCAN set 0 MATCH a MATCH b",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn parses_sorted_set_ranks_with_strict_arity_and_no_aof_records() {
+    for (name, reverse) in [("zrank", false), ("zrevrank", true)] {
+        let command = Command::from_bytes(&[name.as_bytes(), b"key\0\xff", b""]).unwrap();
+        assert_eq!(
+            command,
+            Command::ZRank {
+                key: b"key\0\xff".to_vec(),
+                member: vec![],
+                reverse
+            }
+        );
+        assert_eq!(command.name(), name.to_ascii_uppercase());
+        assert_eq!(command.aof_arguments(), None);
+        for args in [
+            vec![name],
+            vec![name, "key"],
+            vec![name, "key", "member", "WITHSCORE"],
+        ] {
+            assert!(matches!(
+                Command::from_args(&args),
+                Err(CommandError::InvalidArguments(_))
+            ));
+        }
+    }
+}
+
+#[test]
+fn parses_sorted_set_stage_two_and_rejects_malformed_input() {
+    use crate::storage::ScoreBound;
+    assert_eq!(
+        Command::parse("ZCOUNT board (1.5 +INF"),
+        Ok(Command::ZCount {
+            key: b"board".to_vec(),
+            min: ScoreBound::Exclusive(1.5),
+            max: ScoreBound::PositiveInfinity,
+        })
+    );
+    assert_eq!(
+        Command::parse("ZRANGE board -2 -1 withscores rev"),
+        Ok(Command::ZRange {
+            key: b"board".to_vec(),
+            start: -2,
+            stop: -1,
+            reverse: true,
+            with_scores: true,
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"ZMSCORE", b"k\xff", b"", b"a", b"a"]),
+        Ok(Command::ZMScore {
+            key: b"k\xff".to_vec(),
+            members: vec![vec![], b"a".to_vec(), b"a".to_vec()],
+        })
+    );
+    let increment = Command::from_bytes(&[b"ZINCRBY", b"k\xff", b"-1.25", b"m\0"]).unwrap();
+    assert_eq!(
+        increment.aof_arguments(),
+        Some(vec![
+            b"ZINCRBY".to_vec(),
+            b"k\xff".to_vec(),
+            b"-1.25".to_vec(),
+            b"m\0".to_vec()
+        ])
+    );
+    for text in ["ZMSCORE k a", "ZCOUNT k -inf +inf", "ZRANGE k 0 -1"] {
+        let command = Command::parse(text).unwrap();
+        assert_eq!(command.name(), text.split_whitespace().next().unwrap());
+        assert_eq!(command.aof_arguments(), None);
+    }
+    for invalid in [
+        "ZMSCORE",
+        "ZMSCORE k",
+        "ZINCRBY k 1",
+        "ZINCRBY k 1 a extra",
+        "ZINCRBY k NaN a",
+        "ZINCRBY k inf a",
+        "ZINCRBY k 1e999 a",
+        "ZCOUNT k 0",
+        "ZCOUNT k 0 1 extra",
+        "ZCOUNT k NaN 2",
+        "ZCOUNT k 0 (NaN",
+        "ZCOUNT k (-inf +inf",
+        "ZCOUNT k 0 (+inf",
+        "ZCOUNT k ( 1",
+        "ZCOUNT k 0 1e999",
+        "ZRANGE k 0",
+        "ZRANGE k a 1",
+        "ZRANGE k 0 9223372036854775808",
+        "ZRANGE k 0 -1 REV REV",
+        "ZRANGE k 0 -1 WITHSCORES WITHSCORES",
+        "ZRANGE k 0 -1 BYLEX",
+        "ZRANGE k 0 -1 LIMIT 0 1",
+    ] {
+        assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn sorted_set_stage_three_parses_ranges_pops_and_persisted_removals() {
+    use crate::storage::ScoreBound::*;
+    assert_eq!(
+        Command::parse("ZRANGE k +inf (1 BYSCORE LIMIT 2 -5 REV WITHSCORES"),
+        Ok(Command::ZRangeByScore {
+            key: b"k".to_vec(),
+            min: Exclusive(1.0),
+            max: PositiveInfinity,
+            reverse: true,
+            limit: Some((2, -5)),
+            with_scores: true,
+        })
+    );
+    assert_eq!(
+        Command::parse("ZRANGE k -inf 2 LIMIT 0 1 BYSCORE"),
+        Ok(Command::ZRangeByScore {
+            key: b"k".to_vec(),
+            min: NegativeInfinity,
+            max: Inclusive(2.0),
+            reverse: false,
+            limit: Some((0, 1)),
+            with_scores: false,
+        })
+    );
+    for (text, expected) in [
+        ("ZPOPMIN k", None),
+        ("ZPOPMIN k 0", Some(0)),
+        ("ZPOPMIN k 2", Some(2)),
+    ] {
+        assert_eq!(
+            Command::parse(text),
+            Ok(Command::ZPop {
+                key: b"k".to_vec(),
+                count: expected,
+                reverse: false
+            })
+        );
+    }
+    for text in [
+        "ZPOPMIN k",
+        "ZPOPMAX k 2",
+        "ZREMRANGEBYRANK k -2 -1",
+        "ZREMRANGEBYSCORE k (1.25 +inf",
+        "ZREMRANGEBYSCORE k -inf 2",
+    ] {
+        let command = Command::parse(text).unwrap();
+        assert_eq!(command.name(), text.split_whitespace().next().unwrap());
+        let arguments = command.aof_arguments().unwrap();
+        assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
+    }
+    assert_eq!(
+        Command::parse("ZRANGE k 0 1 BYSCORE")
+            .unwrap()
+            .aof_arguments(),
+        None
+    );
+    for text in [
+        "ZRANGE k 0 1 BYSCORE BYSCORE",
+        "ZRANGE k 0 1 BYSCORE REV REV",
+        "ZRANGE k 0 1 BYSCORE WITHSCORES WITHSCORES",
+        "ZRANGE k 0 1 BYLEX",
+        "ZRANGE k 0 1 BYSCORE LIMIT",
+        "ZRANGE k 0 1 BYSCORE LIMIT 0",
+        "ZRANGE k 0 1 BYSCORE LIMIT -1 2",
+        "ZRANGE k 0 1 BYSCORE LIMIT 0 x",
+        "ZRANGE k 0 1 BYSCORE LIMIT 0 1 LIMIT 0 2",
+        "ZRANGE k 0 1 LIMIT 0 1",
+        "ZRANGE k NaN 1 BYSCORE",
+        "ZRANGE k 0 (inf BYSCORE",
+        "ZPOPMIN",
+        "ZPOPMAX",
+        "ZPOPMIN k -1",
+        "ZPOPMAX k x",
+        "ZPOPMIN k 1 2",
+        "ZREMRANGEBYRANK k 1",
+        "ZREMRANGEBYRANK k 0 1 extra",
+        "ZREMRANGEBYRANK k x 1",
+        "ZREMRANGEBYSCORE k 0",
+        "ZREMRANGEBYSCORE k 0 1 extra",
+        "ZREMRANGEBYSCORE k NaN +inf",
+    ] {
+        assert!(Command::parse(text).is_err(), "{text}");
+    }
+}
+
+#[test]
+fn sorted_set_scan_parses_binary_patterns_and_strict_options() {
+    assert_eq!(
+        Command::from_bytes(&[b"zscan", b"k\0", b"2", b"COUNT", b"3", b"MATCH", b"\xff*"]),
+        Ok(Command::ZScan {
+            key: b"k\0".to_vec(),
+            cursor: 2,
+            pattern: Some(b"\xff*".to_vec()),
+            count: 3,
+        })
+    );
+    let command = Command::parse("ZSCAN k 0").unwrap();
+    assert_eq!(
+        command,
+        Command::ZScan {
+            key: b"k".to_vec(),
+            cursor: 0,
+            pattern: None,
+            count: 10
+        }
+    );
+    assert_eq!(command.name(), "ZSCAN");
+    assert_eq!(command.aof_arguments(), None);
+    for invalid in [
+        "ZSCAN",
+        "ZSCAN k",
+        "ZSCAN k -1",
+        "ZSCAN k x",
+        "ZSCAN k 0 COUNT",
+        "ZSCAN k 0 MATCH",
+        "ZSCAN k 0 COUNT 0",
+        "ZSCAN k 0 COUNT -1",
+        "ZSCAN k 0 MATCH a MATCH b",
+        "ZSCAN k 0 COUNT 1 COUNT 2",
+        "ZSCAN k 0 NOVALUES",
     ] {
         assert!(Command::parse(invalid).is_err(), "{invalid}");
     }

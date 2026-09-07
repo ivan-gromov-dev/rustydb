@@ -193,6 +193,16 @@ fn write_entry(
             }
             write_record(writer, timestamp, &arguments)?;
         }
+        SnapshotValue::SortedSet(values) => {
+            let mut arguments = vec![b"ZADD".to_vec(), entry.key.clone()];
+            for (member, score_bits) in values {
+                arguments.extend([
+                    f64::from_bits(*score_bits).to_string().into_bytes(),
+                    member.clone(),
+                ]);
+            }
+            write_record(writer, timestamp, &arguments)?;
+        }
     }
 
     if let Some(expires_at) = entry.expires_at_unix_millis {

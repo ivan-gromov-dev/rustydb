@@ -39,6 +39,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run all Cargo tests
         run: cargo test --all-features
+      - name: Run sorted-set examples
+        run: |
+          cargo build --bin rustydb
+          python3 examples/leaderboard.py
+          python3 examples/priority_queue.py
       - name: Smoke-test release benchmark runner
         run: >-
           cargo run --release --bin rustydb-benchmark --

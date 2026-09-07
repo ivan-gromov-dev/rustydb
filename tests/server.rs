@@ -177,3 +177,168 @@ fn public_server_api_isolates_a_bad_client() {
     shutdown.request();
     assert!(server.join().unwrap().is_ok());
 }
+
+#[test]
+fn sorted_set_ranks_support_binary_members_and_resp2_resp3_nulls() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = Vec::new();
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"ZADD", b"board", b"1", b"\xff", b"1", b"", b"1", b"\0"],
+            &[b"ZRANK", b"board", b""],
+            &[b"ZREVRANK", b"board", b""],
+            &[b"ZRANK", b"board", b"\0"],
+            &[b"ZREVRANK", b"board", b"\xff"],
+            &[b"ZRANK", b"board", b"missing"],
+            &[b"ZREVRANK", b"missing", b""],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        if resp3 {
+            assert!(output.starts_with(b"%7\r\n"));
+            assert!(output.ends_with(b":0\r\n:0\r\n:2\r\n:1\r\n:0\r\n_\r\n_\r\n+OK\r\n"));
+        } else {
+            assert_eq!(
+                output,
+                b":3\r\n:0\r\n:2\r\n:1\r\n:0\r\n$-1\r\n$-1\r\n+OK\r\n"
+            );
+        }
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn sorted_set_stage_two_tcp_responses_preserve_binary_order_and_score_types() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = Vec::new();
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"DEL", b"board"],
+            &[b"ZINCRBY", b"board", b"1.5", b"\xff\0"],
+            &[b"ZINCRBY", b"board", b"1.5", b""],
+            &[b"ZMSCORE", b"board", b"", b"absent", b""],
+            &[b"ZSCORE", b"board", b"\xff\0"],
+            &[b"ZCOUNT", b"board", b"(1.5", b"+inf"],
+            &[b"ZRANGE", b"board", b"0", b"-1", b"WITHSCORES", b"REV"],
+            &[b"ZRANGE", b"board", b"-1", b"-1"],
+            &[b"ZRANGE", b"missing", b"0", b"-1", b"WITHSCORES"],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        let expected = if resp3 {
+            b":1\r\n,1.5\r\n,1.5\r\n*3\r\n,1.5\r\n_\r\n,1.5\r\n,1.5\r\n:0\r\n*2\r\n*2\r\n$2\r\n\xff\0\r\n,1.5\r\n*2\r\n$0\r\n\r\n,1.5\r\n*1\r\n$2\r\n\xff\0\r\n*0\r\n+OK\r\n".as_slice()
+        } else {
+            b":0\r\n$3\r\n1.5\r\n$3\r\n1.5\r\n*3\r\n$3\r\n1.5\r\n$-1\r\n$3\r\n1.5\r\n$3\r\n1.5\r\n:0\r\n*4\r\n$2\r\n\xff\0\r\n$3\r\n1.5\r\n$0\r\n\r\n$3\r\n1.5\r\n*1\r\n$2\r\n\xff\0\r\n*0\r\n+OK\r\n".as_slice()
+        };
+        assert!(output.ends_with(expected), "{output:?}");
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn sorted_set_stage_three_tcp_shapes_and_score_pagination() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = vec![];
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"ZADD", b"q", b"1", b"", b"1", b"\xff\0", b"2", b"high"],
+            &[
+                b"ZRANGE",
+                b"q",
+                b"2",
+                b"1",
+                b"BYSCORE",
+                b"REV",
+                b"LIMIT",
+                b"1",
+                b"1",
+                b"WITHSCORES",
+            ],
+            &[b"ZPOPMIN", b"q"],
+            &[b"ZPOPMAX", b"q", b"1"],
+            &[b"ZPOPMAX", b"q", b"0"],
+            &[b"ZREMRANGEBYSCORE", b"q", b"1", b"1"],
+            &[b"ZREMRANGEBYRANK", b"q", b"0", b"-1"],
+            &[b"ZPOPMIN", b"q"],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        let expected = if resp3 {
+            b":3\r\n*1\r\n*2\r\n$2\r\n\xff\0\r\n,1\r\n*2\r\n$0\r\n\r\n,1\r\n*1\r\n*2\r\n$4\r\nhigh\r\n,2\r\n*0\r\n:1\r\n:0\r\n*0\r\n+OK\r\n".as_slice()
+        } else {
+            b":3\r\n*2\r\n$2\r\n\xff\0\r\n$1\r\n1\r\n*2\r\n$0\r\n\r\n$1\r\n1\r\n*2\r\n$4\r\nhigh\r\n$1\r\n2\r\n*0\r\n:1\r\n:0\r\n*0\r\n+OK\r\n".as_slice()
+        };
+        assert!(output.ends_with(expected), "{output:?}");
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn concurrent_sorted_set_consumers_pop_each_member_at_most_once() {
+    use std::sync::{Arc, Barrier};
+    let (address, shutdown, server) = start_server();
+    assert_eq!(
+        exchange(connect(address), &request(&[b"ZADD", b"q", b"1", b"job"])),
+        b":1\r\n"
+    );
+    let barrier = Arc::new(Barrier::new(3));
+    let consumers: Vec<_> = (0..2)
+        .map(|_| {
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                let stream = connect(address);
+                barrier.wait();
+                exchange(stream, &request(&[b"ZPOPMIN", b"q"]))
+            })
+        })
+        .collect();
+    barrier.wait();
+    let mut results: Vec<_> = consumers
+        .into_iter()
+        .map(|consumer| consumer.join().unwrap())
+        .collect();
+    results.sort();
+    assert_eq!(
+        results,
+        vec![
+            b"*0\r\n".to_vec(),
+            b"*2\r\n$3\r\njob\r\n$1\r\n1\r\n".to_vec()
+        ]
+    );
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn sorted_set_scan_tcp_uses_binary_order_and_filtered_cursors() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = vec![];
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"ZADD", b"scan", b"3", b"", b"2", b"\0", b"1", b"\xff"],
+            &[b"ZSCAN", b"scan", b"0", b"MATCH", b"\xff*", b"COUNT", b"2"],
+            &[b"ZSCAN", b"scan", b"2", b"MATCH", b"\xff*", b"COUNT", b"2"],
+            &[b"ZSCAN", b"missing", b"0"],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        assert!(output.ends_with(b"*2\r\n$1\r\n2\r\n*0\r\n*2\r\n$1\r\n0\r\n*2\r\n$1\r\n\xff\r\n$1\r\n1\r\n*2\r\n$1\r\n0\r\n*0\r\n+OK\r\n"), "{output:?}");
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}

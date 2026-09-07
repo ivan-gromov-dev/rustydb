@@ -7,7 +7,7 @@ use std::{fmt, process};
 use crate::storage::{InMemoryStore, SnapshotDataError, SnapshotEntry, SnapshotValue};
 
 const MAGIC: &[u8; 8] = b"RUSTYDB\0";
-const FORMAT_VERSION: u16 = 2;
+const FORMAT_VERSION: u16 = 3;
 const MIN_SUPPORTED_VERSION: u16 = 1;
 const MAX_ENTRIES: usize = 1_000_000;
 const MAX_COLLECTION_VALUES: usize = 1_000_000;
@@ -200,6 +200,14 @@ fn write_snapshot(mut writer: impl Write, entries: &[SnapshotEntry]) -> Result<(
                         write_blob(&mut checksummed, value)?;
                     }
                 }
+                SnapshotValue::SortedSet(values) => {
+                    checksummed.write_all(&[4])?;
+                    write_u64(&mut checksummed, length_as_u64(values.len())?)?;
+                    for (member, score_bits) in values {
+                        write_blob(&mut checksummed, member)?;
+                        write_u64(&mut checksummed, *score_bits)?;
+                    }
+                }
             }
 
             match entry.expires_at_unix_millis {
@@ -260,6 +268,18 @@ fn read_snapshot(
                     }
                     SnapshotValue::Hash(values)
                 }
+                4 if version >= 3 => {
+                    let length =
+                        read_length(&mut checksummed, MAX_COLLECTION_VALUES, "collection length")?;
+                    let mut values = Vec::new();
+                    values
+                        .try_reserve_exact(length)
+                        .map_err(|_| SnapshotDataError::AllocationFailed)?;
+                    for _ in 0..length {
+                        values.push((read_blob(&mut checksummed)?, read_u64(&mut checksummed)?));
+                    }
+                    SnapshotValue::SortedSet(values)
+                }
                 value_type => return Err(SnapshotError::InvalidValueType(value_type)),
             };
 
@@ -313,6 +333,12 @@ fn validate_entries(entries: &[SnapshotEntry]) -> Result<(), SnapshotError> {
                 for (field, value) in values {
                     ensure_limit(field.len(), MAX_BLOB_LENGTH, "blob length")?;
                     ensure_limit(value.len(), MAX_BLOB_LENGTH, "blob length")?;
+                }
+            }
+            SnapshotValue::SortedSet(values) => {
+                ensure_limit(values.len(), MAX_COLLECTION_VALUES, "collection length")?;
+                for (member, _) in values {
+                    ensure_limit(member.len(), MAX_BLOB_LENGTH, "blob length")?;
                 }
             }
         }
@@ -550,6 +576,63 @@ mod tests {
     }
 
     #[test]
+    fn sorted_set_snapshot_round_trips_extremes_and_rejects_invalid_records() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let members = vec![
+            (vec![], (-0.0f64).to_bits()),
+            (vec![0], f64::MAX.to_bits()),
+            (vec![255], (-f64::MAX).to_bits()),
+        ];
+        let entry = SnapshotEntry {
+            key: b"z".to_vec(),
+            value: SnapshotValue::SortedSet(members),
+            expires_at_unix_millis: Some(2000),
+        };
+        let bytes = encoded(&[entry]);
+        let mut store = InMemoryStore::new();
+        read_snapshot(Cursor::new(&bytes), &mut store, now).unwrap();
+        assert_eq!(
+            store.sorted_set_score("z", []).unwrap().unwrap().to_bits(),
+            0.0f64.to_bits()
+        );
+        assert_eq!(store.sorted_set_score("z", [0]), Ok(Some(f64::MAX)));
+        assert_eq!(store.sorted_set_score("z", [255]), Ok(Some(-f64::MAX)));
+        read_snapshot(
+            Cursor::new(&bytes),
+            &mut store,
+            now + Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(store.type_name("z"), "none");
+        for version in [1u16, 2] {
+            let mut old = bytes.clone();
+            old[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&version.to_le_bytes());
+            assert!(matches!(
+                read_snapshot(Cursor::new(old), &mut store, now),
+                Err(SnapshotError::InvalidValueType(4))
+            ));
+        }
+        for values in [
+            vec![],
+            vec![(vec![], f64::NAN.to_bits())],
+            vec![(vec![], f64::INFINITY.to_bits())],
+            vec![(vec![], 0.0f64.to_bits()), (vec![], 1.0f64.to_bits())],
+        ] {
+            store.set(b"keep".to_vec(), b"value".to_vec());
+            let malformed = encoded(&[SnapshotEntry {
+                key: b"z".to_vec(),
+                value: SnapshotValue::SortedSet(values),
+                expires_at_unix_millis: None,
+            }]);
+            assert!(read_snapshot(Cursor::new(malformed), &mut store, now).is_err());
+            assert_eq!(store.get("keep"), Ok(Some(b"value".as_slice())));
+        }
+        for cut in 0..bytes.len() {
+            assert!(read_snapshot(Cursor::new(&bytes[..cut]), &mut store, now).is_err());
+        }
+    }
+
+    #[test]
     fn round_trip_preserves_binary_values_types_and_expiration() {
         let wall_now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
         let expires_at = 1_060_000;
@@ -600,10 +683,10 @@ mod tests {
         ));
 
         let mut unsupported = valid.clone();
-        unsupported[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&3_u16.to_le_bytes());
+        unsupported[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&4_u16.to_le_bytes());
         assert!(matches!(
             read_snapshot(Cursor::new(unsupported), &mut store, wall_now),
-            Err(SnapshotError::UnsupportedVersion(3))
+            Err(SnapshotError::UnsupportedVersion(4))
         ));
 
         assert!(matches!(

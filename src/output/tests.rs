@@ -154,3 +154,46 @@ fn renders_command_metadata_for_the_interactive_cli() {
         "get arity:2 flags:readonly,fast keys:1/1/1\n(nil)\n"
     );
 }
+
+#[test]
+fn renders_sorted_set_scores_and_member_pairs() {
+    assert_eq!(render(CommandOutput::Score(Some(1.5))), "1.5\n");
+    assert_eq!(render(CommandOutput::Score(None)), "(nil)\n");
+    assert_eq!(
+        render(CommandOutput::Scores(vec![Some(1.5), None, Some(-2.0)])),
+        "1.5\n(nil)\n-2\n"
+    );
+    assert_eq!(render(CommandOutput::ScoredMembers(vec![])), "(nil)\n");
+    let mut bytes = vec![];
+    CommandOutput::ScoredMembers(vec![(b"\xff\0".to_vec(), 1.5)])
+        .write_to(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"\xff\0\n1.5\n");
+}
+
+#[test]
+fn renders_single_sorted_set_pop() {
+    assert_eq!(render(CommandOutput::PoppedMember(None)), "(nil)\n");
+    assert_eq!(
+        render(CommandOutput::PoppedMember(Some((b"job".to_vec(), 1.5)))),
+        "job\n1.5\n"
+    );
+}
+
+#[test]
+fn renders_sorted_set_scan_cursor_and_pairs() {
+    assert_eq!(
+        render(CommandOutput::SortedSetScan {
+            cursor: 2,
+            entries: vec![]
+        }),
+        "2\n"
+    );
+    assert_eq!(
+        render(CommandOutput::SortedSetScan {
+            cursor: 0,
+            entries: vec![(b"a".to_vec(), 1.5)]
+        }),
+        "0\na\n1.5\n"
+    );
+}

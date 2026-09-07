@@ -5,6 +5,7 @@ pub(crate) enum RespFrame {
     SimpleString(String),
     Error(String),
     Integer(i64),
+    Double(String),
     BulkString(Vec<u8>),
     Array(Vec<RespFrame>),
     Map(Vec<(RespFrame, RespFrame)>),
@@ -26,6 +27,7 @@ impl RespFrame {
                 writer.write_all(value.as_bytes())?;
                 writer.write_all(b"\r\n")
             }
+            Self::Double(value) => write!(writer, ",{value}\r\n"),
             Self::Integer(value) => write!(writer, ":{value}\r\n"),
             Self::BulkString(value) => {
                 write!(writer, "${}\r\n", value.len())?;

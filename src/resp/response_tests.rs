@@ -223,3 +223,61 @@ fn hash_scan_uses_cursor_and_flat_field_value_array() {
         ])
     );
 }
+
+#[test]
+fn sorted_set_scores_use_protocol_specific_numeric_and_pair_shapes() {
+    for (protocol, expected) in [
+        (ProtocolVersion::Resp2, b"$3\r\n1.5\r\n$-1\r\n*2\r\n$3\r\n1.5\r\n$-1\r\n*2\r\n$2\r\n\xff\0\r\n$2\r\n-2\r\n*0\r\n".as_slice()),
+        (ProtocolVersion::Resp3, b",1.5\r\n_\r\n*2\r\n,1.5\r\n_\r\n*1\r\n*2\r\n$2\r\n\xff\0\r\n,-2\r\n*0\r\n".as_slice()),
+    ] {
+        let mut bytes = vec![];
+        for output in [CommandOutput::Score(Some(1.5)), CommandOutput::Score(None),
+            CommandOutput::Scores(vec![Some(1.5), None]),
+            CommandOutput::ScoredMembers(vec![(b"\xff\0".to_vec(), -2.0)]), CommandOutput::ScoredMembers(vec![])] {
+            frame_from_output_for_protocol(output, protocol).write_to(&mut bytes).unwrap();
+        }
+        assert_eq!(bytes, expected);
+    }
+}
+
+#[test]
+fn sorted_set_pop_without_count_is_flat_even_in_resp3() {
+    for (protocol, expected) in [
+        (
+            ProtocolVersion::Resp2,
+            b"*2\r\n$2\r\n\xff\0\r\n$3\r\n1.5\r\n*0\r\n".as_slice(),
+        ),
+        (
+            ProtocolVersion::Resp3,
+            b"*2\r\n$2\r\n\xff\0\r\n,1.5\r\n*0\r\n".as_slice(),
+        ),
+    ] {
+        let mut bytes = vec![];
+        for output in [
+            CommandOutput::PoppedMember(Some((b"\xff\0".to_vec(), 1.5))),
+            CommandOutput::PoppedMember(None),
+        ] {
+            frame_from_output_for_protocol(output, protocol)
+                .write_to(&mut bytes)
+                .unwrap();
+        }
+        assert_eq!(bytes, expected);
+    }
+}
+
+#[test]
+fn sorted_set_scan_keeps_flat_bulk_string_scores_in_both_protocols() {
+    for protocol in [ProtocolVersion::Resp2, ProtocolVersion::Resp3] {
+        let mut bytes = vec![];
+        frame_from_output_for_protocol(
+            CommandOutput::SortedSetScan {
+                cursor: 2,
+                entries: vec![(b"\xff".to_vec(), 1.5)],
+            },
+            protocol,
+        )
+        .write_to(&mut bytes)
+        .unwrap();
+        assert_eq!(bytes, b"*2\r\n$1\r\n2\r\n*2\r\n$1\r\n\xff\r\n$3\r\n1.5\r\n");
+    }
+}

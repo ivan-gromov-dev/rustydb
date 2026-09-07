@@ -4,6 +4,50 @@ use crate::output::CommandOutput as Response;
 use crate::storage::InMemoryStore as Database;
 
 #[test]
+fn executes_basic_sorted_set_commands() {
+    let mut database = Database::new();
+    assert_eq!(
+        execute(
+            Command::ZAdd {
+                key: b"board".to_vec(),
+                entries: vec![(3.5, b"alice".to_vec()), (2.0, b"bob".to_vec())]
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::ZScore {
+                key: b"board".to_vec(),
+                member: b"alice".to_vec()
+            },
+            &mut database
+        ),
+        Response::Score(Some(3.5))
+    );
+    assert_eq!(
+        execute(
+            Command::ZCard {
+                key: b"board".to_vec()
+            },
+            &mut database
+        ),
+        Response::Integer(2)
+    );
+    assert_eq!(
+        execute(
+            Command::ZRem {
+                key: b"board".to_vec(),
+                members: vec![b"alice".to_vec()]
+            },
+            &mut database
+        ),
+        Response::Integer(1)
+    );
+}
+
+#[test]
 fn executes_type_touch_and_unlink() {
     let mut database = Database::new();
     database.set(b"string".to_vec(), b"value".to_vec());
@@ -1604,4 +1648,129 @@ fn execute_set_algebra_store_and_scan_commands() {
             keys: vec![b"b".to_vec()]
         }
     );
+}
+
+#[test]
+fn executes_sorted_set_ranks_as_integers_nulls_or_errors() {
+    let mut database = Database::new();
+    database
+        .sorted_set_add("board", vec![(1.0, b"a".to_vec()), (1.0, b"b".to_vec())])
+        .unwrap();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    for reverse in [false, true] {
+        for (key, member, expected) in [
+            ("board", "a", Response::Integer(i64::from(reverse))),
+            ("board", "missing", Response::Nil),
+            ("missing", "a", Response::Nil),
+            (
+                "string",
+                "a",
+                Response::Error("operation against a key holding the wrong kind of value".into()),
+            ),
+        ] {
+            assert_eq!(
+                execute(
+                    Command::ZRank {
+                        key: key.as_bytes().to_vec(),
+                        member: member.as_bytes().to_vec(),
+                        reverse
+                    },
+                    &mut database
+                ),
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn executes_sorted_set_stage_two_results_and_errors() {
+    let mut db = Database::new();
+    for (text, expected) in [
+        ("ZINCRBY k 1.5 a", Response::Score(Some(1.5))),
+        (
+            "ZMSCORE k a missing a",
+            Response::Scores(vec![Some(1.5), None, Some(1.5)]),
+        ),
+        ("ZCOUNT k -inf +inf", Response::Integer(1)),
+        ("ZRANGE k 0 -1", Response::KeyList(vec![b"a".to_vec()])),
+        (
+            "ZRANGE k 0 -1 WITHSCORES",
+            Response::ScoredMembers(vec![(b"a".to_vec(), 1.5)]),
+        ),
+        ("ZSCORE missing a", Response::Score(None)),
+    ] {
+        assert_eq!(execute(Command::parse(text).unwrap(), &mut db), expected);
+    }
+    db.set(b"s".to_vec(), vec![]);
+    for text in [
+        "ZINCRBY s 1 a",
+        "ZMSCORE s a",
+        "ZCOUNT s 0 1",
+        "ZRANGE s 0 -1",
+    ] {
+        assert!(execute(Command::parse(text).unwrap(), &mut db).is_error());
+    }
+}
+
+#[test]
+fn executes_sorted_set_stage_three_outputs_and_errors() {
+    let mut db = Database::new();
+    db.sorted_set_add(
+        "k",
+        vec![
+            (1.0, b"a".to_vec()),
+            (2.0, b"b".to_vec()),
+            (3.0, b"c".to_vec()),
+        ],
+    )
+    .unwrap();
+    for (text, expected) in [
+        (
+            "ZRANGE k +inf (1 BYSCORE REV LIMIT 0 1",
+            Response::KeyList(vec![b"c".to_vec()]),
+        ),
+        (
+            "ZRANGE k 2 2 BYSCORE WITHSCORES",
+            Response::ScoredMembers(vec![(b"b".to_vec(), 2.0)]),
+        ),
+        (
+            "ZPOPMAX k",
+            Response::PoppedMember(Some((b"c".to_vec(), 3.0))),
+        ),
+        (
+            "ZPOPMIN k 1",
+            Response::ScoredMembers(vec![(b"a".to_vec(), 1.0)]),
+        ),
+        ("ZREMRANGEBYSCORE k (2 +inf", Response::Integer(0)),
+        ("ZREMRANGEBYRANK k 0 -1", Response::Integer(1)),
+        ("ZPOPMIN k", Response::PoppedMember(None)),
+    ] {
+        assert_eq!(execute(Command::parse(text).unwrap(), &mut db), expected);
+    }
+    db.set(b"s".to_vec(), vec![]);
+    for text in [
+        "ZRANGE s 0 1 BYSCORE",
+        "ZPOPMIN s",
+        "ZREMRANGEBYRANK s 0 -1",
+        "ZREMRANGEBYSCORE s 0 1",
+    ] {
+        assert!(execute(Command::parse(text).unwrap(), &mut db).is_error());
+    }
+}
+
+#[test]
+fn executes_sorted_set_scan() {
+    let mut db = Database::new();
+    db.sorted_set_add("k", vec![(1.5, b"a".to_vec()), (2.0, b"b".to_vec())])
+        .unwrap();
+    assert_eq!(
+        execute(Command::parse("ZSCAN k 0 COUNT 1").unwrap(), &mut db),
+        Response::SortedSetScan {
+            cursor: 1,
+            entries: vec![(b"a".to_vec(), 1.5)]
+        }
+    );
+    db.set(b"s".to_vec(), vec![]);
+    assert!(execute(Command::parse("ZSCAN s 0").unwrap(), &mut db).is_error());
 }

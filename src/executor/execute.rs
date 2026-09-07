@@ -493,6 +493,104 @@ pub(crate) fn execute_with_snapshot(
             Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::ZAdd { key, entries } => match store.sorted_set_add(&key, entries) {
+            Ok(added) => CommandOutput::Integer(added as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRem { key, members } => match store.sorted_set_remove(&key, &members) {
+            Ok(removed) => CommandOutput::Integer(removed as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZScore { key, member } => match store.sorted_set_score(&key, &member) {
+            Ok(score) => CommandOutput::Score(score),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZMScore { key, members } => match store.sorted_set_scores(&key, &members) {
+            Ok(scores) => CommandOutput::Scores(scores),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZIncrBy {
+            key,
+            amount,
+            member,
+        } => match store.sorted_set_increment(&key, member, amount) {
+            Ok(score) => CommandOutput::Score(Some(score)),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZCount { key, min, max } => match store.sorted_set_count(&key, min, max) {
+            Ok(count) => CommandOutput::Integer(count as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRange {
+            key,
+            start,
+            stop,
+            reverse,
+            with_scores,
+        } => match store.sorted_set_range(&key, start, stop, reverse) {
+            Ok(entries) if with_scores => CommandOutput::ScoredMembers(entries),
+            Ok(entries) => {
+                CommandOutput::KeyList(entries.into_iter().map(|(member, _)| member).collect())
+            }
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRangeByScore {
+            key,
+            min,
+            max,
+            reverse,
+            limit,
+            with_scores,
+        } => match store.sorted_set_score_range(&key, min, max, reverse, limit) {
+            Ok(entries) if with_scores => CommandOutput::ScoredMembers(entries),
+            Ok(entries) => {
+                CommandOutput::KeyList(entries.into_iter().map(|(member, _)| member).collect())
+            }
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZPop {
+            key,
+            count,
+            reverse,
+        } => match store.sorted_set_pop(&key, count.unwrap_or(1), reverse) {
+            Ok(entries) if count.is_some() => CommandOutput::ScoredMembers(entries),
+            Ok(mut entries) => CommandOutput::PoppedMember(entries.pop()),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRemRangeByRank { key, start, stop } => {
+            match store.sorted_set_remove_rank_range(&key, start, stop) {
+                Ok(count) => CommandOutput::Integer(count as i64),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::ZRemRangeByScore { key, min, max } => {
+            match store.sorted_set_remove_score_range(&key, min, max) {
+                Ok(count) => CommandOutput::Integer(count as i64),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::ZScan {
+            key,
+            cursor,
+            pattern,
+            count,
+        } => match store.sorted_set_scan(&key, cursor, pattern.as_deref(), count) {
+            Ok((cursor, entries)) => CommandOutput::SortedSetScan { cursor, entries },
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRank {
+            key,
+            member,
+            reverse,
+        } => match store.sorted_set_rank(&key, &member, reverse) {
+            Ok(Some(rank)) => CommandOutput::Integer(rank as i64),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZCard { key } => match store.sorted_set_cardinality(&key) {
+            Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
 
         Command::HSet { key, entries } => match store.hash_set(&key, entries) {
             Ok(added) => CommandOutput::Integer(added as i64),

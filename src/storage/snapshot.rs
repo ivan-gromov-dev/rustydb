@@ -4,7 +4,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use super::in_memory::InMemoryStore;
 use super::stored_value::StoredValue;
-use super::value::Value;
+use super::value::{Score, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SnapshotEntry {
@@ -19,6 +19,7 @@ pub(crate) enum SnapshotValue {
     List(Vec<Vec<u8>>),
     Set(Vec<Vec<u8>>),
     Hash(Vec<(Vec<u8>, Vec<u8>)>),
+    SortedSet(Vec<(Vec<u8>, u64)>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,8 @@ pub(crate) enum SnapshotDataError {
     DuplicateKey,
     DuplicateSetMember,
     DuplicateHashField,
+    DuplicateSortedSetMember,
+    InvalidSortedSetScore,
     EmptyCollection,
     AllocationFailed,
 }
@@ -44,6 +47,12 @@ impl fmt::Display for SnapshotDataError {
             }
             Self::DuplicateHashField => {
                 write!(formatter, "snapshot contains a duplicate hash field")
+            }
+            Self::DuplicateSortedSetMember => {
+                write!(formatter, "snapshot contains a duplicate sorted-set member")
+            }
+            Self::InvalidSortedSetScore => {
+                write!(formatter, "snapshot contains a non-finite sorted-set score")
             }
             Self::EmptyCollection => write!(formatter, "snapshot contains an empty collection"),
             Self::AllocationFailed => write!(formatter, "snapshot is too large to fit in memory"),
@@ -178,6 +187,14 @@ fn snapshot_value(value: &Value) -> SnapshotValue {
             values.sort_by(|left, right| left.0.cmp(&right.0));
             SnapshotValue::Hash(values)
         }
+        Value::SortedSet(values) => {
+            let mut values: Vec<_> = values
+                .iter()
+                .map(|(member, score)| (member.clone(), score.get().to_bits()))
+                .collect();
+            values.sort_by(|left, right| left.0.cmp(&right.0));
+            SnapshotValue::SortedSet(values)
+        }
     }
 }
 
@@ -211,6 +228,23 @@ fn restored_value(value: SnapshotValue) -> Result<Value, SnapshotDataError> {
                 }
             }
             Ok(Value::Hash(fields))
+        }
+        SnapshotValue::SortedSet(values) if values.is_empty() => {
+            Err(SnapshotDataError::EmptyCollection)
+        }
+        SnapshotValue::SortedSet(values) => {
+            let mut members = HashMap::new();
+            members
+                .try_reserve(values.len())
+                .map_err(|_| SnapshotDataError::AllocationFailed)?;
+            for (member, bits) in values {
+                let score = Score::new(f64::from_bits(bits))
+                    .ok_or(SnapshotDataError::InvalidSortedSetScore)?;
+                if members.insert(member, score).is_some() {
+                    return Err(SnapshotDataError::DuplicateSortedSetMember);
+                }
+            }
+            Ok(Value::SortedSet(members))
         }
     }
 }
