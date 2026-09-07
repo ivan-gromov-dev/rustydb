@@ -9,6 +9,16 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Initial 0.15 publish/subscribe support through binary-safe `PUBLISH`,
+  `SUBSCRIBE`, and `UNSUBSCRIBE`, including RESP2/RESP3 delivery and disconnect
+  cleanup.
+- Binary glob subscriptions through `PSUBSCRIBE` and `PUNSUBSCRIBE`, including
+  distinct pattern-message frames and combined direct/pattern subscription
+  counts.
+- Pub/Sub introspection through deterministic `PUBSUB CHANNELS [pattern]` and
+  request-ordered `PUBSUB NUMSUB [channel ...]` results.
+- Multi-client fan-out coverage for ordered binary messages while unrelated
+  database commands continue to execute.
 - Initial 0.14 transaction support for RESP clients through per-connection
   `MULTI`, `EXEC`, and `DISCARD` state, atomic queued execution, queue-time
   aborts, and per-command execution results.

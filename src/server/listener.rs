@@ -1,6 +1,8 @@
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -9,8 +11,8 @@ use crate::command::Command;
 use crate::config::MemoryConfig;
 use crate::database::Database;
 use crate::logging::{self, LogLevel};
-use crate::output::CommandOutput;
-use crate::resp_session::run_session;
+use crate::output::{CommandOutput, PubSubAck};
+use crate::resp_session::{next_connection_id, run_session_with_notifications};
 
 use super::shutdown::Shutdown;
 
@@ -19,6 +21,15 @@ const ACTIVE_EXPIRATION_LIMIT: usize = 20;
 pub(crate) struct DatabaseState {
     pub(crate) database: Mutex<Database>,
     changed: Condvar,
+    pubsub: Mutex<PubSubBroker>,
+}
+
+#[derive(Default)]
+struct PubSubBroker {
+    channels: HashMap<Vec<u8>, HashMap<i64, Sender<CommandOutput>>>,
+    subscriptions: HashMap<i64, HashSet<Vec<u8>>>,
+    patterns: HashMap<Vec<u8>, HashMap<i64, Sender<CommandOutput>>>,
+    pattern_subscriptions: HashMap<i64, HashSet<Vec<u8>>>,
 }
 
 pub(crate) type SharedDatabase = Arc<DatabaseState>;
@@ -27,6 +38,7 @@ pub(crate) fn shared_database(database: Database) -> SharedDatabase {
     Arc::new(DatabaseState {
         database: Mutex::new(database),
         changed: Condvar::new(),
+        pubsub: Mutex::new(PubSubBroker::default()),
     })
 }
 
@@ -195,15 +207,31 @@ fn handle_client(mut stream: TcpStream, database: SharedDatabase) -> io::Result<
     stream.set_nonblocking(false)?;
 
     let mut reader = stream.try_clone()?;
+    reader.set_read_timeout(Some(Duration::from_millis(25)))?;
     let disconnect_probe = stream.try_clone()?;
+    let connection_id = next_connection_id()?;
+    let (messages, notifications) = mpsc::channel();
 
     with_database(&database, Database::client_connected);
     logging::event(LogLevel::Debug, "client_connected", &[]);
 
-    let result = run_session(&mut reader, &mut stream, |command| {
-        execute_server_command(&database, &disconnect_probe, command)
-    });
+    let result = run_session_with_notifications(
+        &mut reader,
+        &mut stream,
+        |command| {
+            execute_server_command(
+                &database,
+                &disconnect_probe,
+                connection_id,
+                &messages,
+                command,
+            )
+        },
+        connection_id,
+        &notifications,
+    );
 
+    unsubscribe_all(&database, connection_id);
     with_database(&database, Database::client_disconnected);
     logging::event(LogLevel::Debug, "client_disconnected", &[]);
 
@@ -240,9 +268,20 @@ fn lock_database(database: &SharedDatabase) -> MutexGuard<'_, Database> {
 fn execute_server_command(
     database: &SharedDatabase,
     disconnect_probe: &TcpStream,
+    connection_id: i64,
+    messages: &Sender<CommandOutput>,
     command: Command,
 ) -> CommandOutput {
     match command {
+        Command::Publish { channel, message } => {
+            CommandOutput::Integer(publish(database, channel, message))
+        }
+        Command::Subscribe { channels } => subscribe(database, connection_id, messages, channels),
+        Command::Unsubscribe { channels } => unsubscribe(database, connection_id, channels),
+        Command::PSubscribe { patterns } => psubscribe(database, connection_id, messages, patterns),
+        Command::PUnsubscribe { patterns } => punsubscribe(database, connection_id, patterns),
+        Command::PubSubChannels { pattern } => pubsub_channels(database, pattern),
+        Command::PubSubNumSub { channels } => pubsub_numsub(database, channels),
         Command::BLPop { keys, timeout } => {
             execute_blocking_pop(database, disconnect_probe, keys, false, timeout)
         }
@@ -266,6 +305,286 @@ fn execute_server_command(
         ),
         command => execute_shared(database, command),
     }
+}
+
+fn pubsub_channels(database: &SharedDatabase, pattern: Option<Vec<u8>>) -> CommandOutput {
+    let broker = lock_pubsub(database);
+    let mut channels: Vec<_> = broker
+        .channels
+        .keys()
+        .filter(|channel| {
+            pattern
+                .as_deref()
+                .is_none_or(|pattern| crate::storage::glob::matches(pattern, channel))
+        })
+        .cloned()
+        .collect();
+    channels.sort();
+    CommandOutput::KeyList(channels)
+}
+
+fn pubsub_numsub(database: &SharedDatabase, channels: Vec<Vec<u8>>) -> CommandOutput {
+    let broker = lock_pubsub(database);
+    CommandOutput::PubSubNumSub(
+        channels
+            .into_iter()
+            .map(|channel| {
+                let count = broker.channels.get(&channel).map_or(0, HashMap::len);
+                (channel, count)
+            })
+            .collect(),
+    )
+}
+
+fn lock_pubsub(database: &SharedDatabase) -> MutexGuard<'_, PubSubBroker> {
+    match database.pubsub.lock() {
+        Ok(broker) => broker,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn subscribe(
+    database: &SharedDatabase,
+    connection_id: i64,
+    messages: &Sender<CommandOutput>,
+    channels: Vec<Vec<u8>>,
+) -> CommandOutput {
+    let mut broker = lock_pubsub(database);
+    let mut acks = Vec::new();
+    for channel in channels {
+        let inserted = broker
+            .subscriptions
+            .entry(connection_id)
+            .or_default()
+            .insert(channel.clone());
+        if inserted {
+            broker
+                .channels
+                .entry(channel.clone())
+                .or_default()
+                .insert(connection_id, messages.clone());
+        }
+        let count = subscription_count(&broker, connection_id);
+        acks.push(PubSubAck {
+            subscribed: true,
+            pattern: false,
+            channel: Some(channel),
+            count,
+        });
+    }
+    CommandOutput::PubSubAcks(acks)
+}
+
+fn unsubscribe(
+    database: &SharedDatabase,
+    connection_id: i64,
+    mut channels: Vec<Vec<u8>>,
+) -> CommandOutput {
+    let mut broker = lock_pubsub(database);
+    if channels.is_empty() {
+        channels = broker
+            .subscriptions
+            .get(&connection_id)
+            .map(|current| {
+                let mut values: Vec<_> = current.iter().cloned().collect();
+                values.sort();
+                values
+            })
+            .unwrap_or_default();
+        if channels.is_empty() {
+            return CommandOutput::PubSubAcks(vec![PubSubAck {
+                subscribed: false,
+                pattern: false,
+                channel: None,
+                count: subscription_count(&broker, connection_id),
+            }]);
+        }
+    }
+
+    let mut acks = Vec::new();
+    for channel in channels {
+        if let Some(current) = broker.subscriptions.get_mut(&connection_id) {
+            current.remove(&channel);
+        }
+        if let Some(subscribers) = broker.channels.get_mut(&channel) {
+            subscribers.remove(&connection_id);
+            if subscribers.is_empty() {
+                broker.channels.remove(&channel);
+            }
+        }
+        let count = subscription_count(&broker, connection_id);
+        acks.push(PubSubAck {
+            subscribed: false,
+            pattern: false,
+            channel: Some(channel),
+            count,
+        });
+    }
+    if broker
+        .subscriptions
+        .get(&connection_id)
+        .is_some_and(HashSet::is_empty)
+    {
+        broker.subscriptions.remove(&connection_id);
+    }
+    CommandOutput::PubSubAcks(acks)
+}
+
+fn unsubscribe_all(database: &SharedDatabase, connection_id: i64) {
+    let mut broker = lock_pubsub(database);
+    for channel in broker
+        .subscriptions
+        .remove(&connection_id)
+        .unwrap_or_default()
+    {
+        if let Some(subscribers) = broker.channels.get_mut(&channel) {
+            subscribers.remove(&connection_id);
+            if subscribers.is_empty() {
+                broker.channels.remove(&channel);
+            }
+        }
+    }
+    for pattern in broker
+        .pattern_subscriptions
+        .remove(&connection_id)
+        .unwrap_or_default()
+    {
+        if let Some(subscribers) = broker.patterns.get_mut(&pattern) {
+            subscribers.remove(&connection_id);
+            if subscribers.is_empty() {
+                broker.patterns.remove(&pattern);
+            }
+        }
+    }
+}
+
+fn publish(database: &SharedDatabase, channel: Vec<u8>, message: Vec<u8>) -> i64 {
+    let mut broker = lock_pubsub(database);
+    let mut deliveries = 0usize;
+    if let Some(subscribers) = broker.channels.get_mut(&channel) {
+        subscribers.retain(|_, sender| {
+            let delivered = sender
+                .send(CommandOutput::PubSubMessage {
+                    channel: channel.clone(),
+                    message: message.clone(),
+                })
+                .is_ok();
+            deliveries += usize::from(delivered);
+            delivered
+        });
+    }
+    for (pattern, subscribers) in &mut broker.patterns {
+        if !crate::storage::glob::matches(pattern, &channel) {
+            continue;
+        }
+        subscribers.retain(|_, sender| {
+            let delivered = sender
+                .send(CommandOutput::PubSubPatternMessage {
+                    pattern: pattern.clone(),
+                    channel: channel.clone(),
+                    message: message.clone(),
+                })
+                .is_ok();
+            deliveries += usize::from(delivered);
+            delivered
+        });
+    }
+    i64::try_from(deliveries).unwrap_or(i64::MAX)
+}
+
+fn subscription_count(broker: &PubSubBroker, connection_id: i64) -> usize {
+    broker
+        .subscriptions
+        .get(&connection_id)
+        .map_or(0, HashSet::len)
+        + broker
+            .pattern_subscriptions
+            .get(&connection_id)
+            .map_or(0, HashSet::len)
+}
+
+fn psubscribe(
+    database: &SharedDatabase,
+    connection_id: i64,
+    messages: &Sender<CommandOutput>,
+    patterns: Vec<Vec<u8>>,
+) -> CommandOutput {
+    let mut broker = lock_pubsub(database);
+    let mut acks = Vec::new();
+    for pattern in patterns {
+        let inserted = broker
+            .pattern_subscriptions
+            .entry(connection_id)
+            .or_default()
+            .insert(pattern.clone());
+        if inserted {
+            broker
+                .patterns
+                .entry(pattern.clone())
+                .or_default()
+                .insert(connection_id, messages.clone());
+        }
+        acks.push(PubSubAck {
+            subscribed: true,
+            pattern: true,
+            channel: Some(pattern),
+            count: subscription_count(&broker, connection_id),
+        });
+    }
+    CommandOutput::PubSubAcks(acks)
+}
+
+fn punsubscribe(
+    database: &SharedDatabase,
+    connection_id: i64,
+    mut patterns: Vec<Vec<u8>>,
+) -> CommandOutput {
+    let mut broker = lock_pubsub(database);
+    if patterns.is_empty() {
+        patterns = broker
+            .pattern_subscriptions
+            .get(&connection_id)
+            .map(|current| {
+                let mut values: Vec<_> = current.iter().cloned().collect();
+                values.sort();
+                values
+            })
+            .unwrap_or_default();
+        if patterns.is_empty() {
+            return CommandOutput::PubSubAcks(vec![PubSubAck {
+                subscribed: false,
+                pattern: true,
+                channel: None,
+                count: subscription_count(&broker, connection_id),
+            }]);
+        }
+    }
+    let mut acks = Vec::new();
+    for pattern in patterns {
+        if let Some(current) = broker.pattern_subscriptions.get_mut(&connection_id) {
+            current.remove(&pattern);
+        }
+        if let Some(subscribers) = broker.patterns.get_mut(&pattern) {
+            subscribers.remove(&connection_id);
+            if subscribers.is_empty() {
+                broker.patterns.remove(&pattern);
+            }
+        }
+        acks.push(PubSubAck {
+            subscribed: false,
+            pattern: true,
+            channel: Some(pattern),
+            count: subscription_count(&broker, connection_id),
+        });
+    }
+    if broker
+        .pattern_subscriptions
+        .get(&connection_id)
+        .is_some_and(HashSet::is_empty)
+    {
+        broker.pattern_subscriptions.remove(&connection_id);
+    }
+    CommandOutput::PubSubAcks(acks)
 }
 
 fn execute_blocking_pop(

@@ -552,6 +552,28 @@ pub(crate) enum Command {
         keys: Vec<Vec<u8>>,
     },
     Unwatch,
+    Publish {
+        channel: Vec<u8>,
+        message: Vec<u8>,
+    },
+    Subscribe {
+        channels: Vec<Vec<u8>>,
+    },
+    Unsubscribe {
+        channels: Vec<Vec<u8>>,
+    },
+    PSubscribe {
+        patterns: Vec<Vec<u8>>,
+    },
+    PUnsubscribe {
+        patterns: Vec<Vec<u8>>,
+    },
+    PubSubChannels {
+        pattern: Option<Vec<u8>>,
+    },
+    PubSubNumSub {
+        channels: Vec<Vec<u8>>,
+    },
     Transaction {
         commands: Vec<Command>,
         watched: Vec<(Vec<u8>, u64, bool)>,
@@ -687,6 +709,12 @@ impl Command {
             Self::Discard => "DISCARD",
             Self::Watch { .. } => "WATCH",
             Self::Unwatch => "UNWATCH",
+            Self::Publish { .. } => "PUBLISH",
+            Self::Subscribe { .. } => "SUBSCRIBE",
+            Self::Unsubscribe { .. } => "UNSUBSCRIBE",
+            Self::PSubscribe { .. } => "PSUBSCRIBE",
+            Self::PUnsubscribe { .. } => "PUNSUBSCRIBE",
+            Self::PubSubChannels { .. } | Self::PubSubNumSub { .. } => "PUBSUB",
             Self::Info => "INFO",
             Self::Help => "HELP",
             Self::Exit => "EXIT",
@@ -1059,6 +1087,13 @@ impl Command {
             | Self::Discard
             | Self::Watch { .. }
             | Self::Unwatch
+            | Self::Publish { .. }
+            | Self::Subscribe { .. }
+            | Self::Unsubscribe { .. }
+            | Self::PSubscribe { .. }
+            | Self::PUnsubscribe { .. }
+            | Self::PubSubChannels { .. }
+            | Self::PubSubNumSub { .. }
             | Self::Transaction { .. }
             | Self::Info
             | Self::Help

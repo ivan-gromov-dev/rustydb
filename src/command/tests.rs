@@ -1,6 +1,55 @@
 use super::*;
 
 #[test]
+fn parses_direct_pubsub_commands_with_binary_arguments() {
+    assert_eq!(
+        Command::from_bytes(&[b"PUBLISH", b"channel\0\xff", b"message\r\n\0\xff"]),
+        Ok(Command::Publish {
+            channel: b"channel\0\xff".to_vec(),
+            message: b"message\r\n\0\xff".to_vec(),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"SUBSCRIBE", b"first", b"second"]),
+        Ok(Command::Subscribe {
+            channels: vec![b"first".to_vec(), b"second".to_vec()],
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"UNSUBSCRIBE"]),
+        Ok(Command::Unsubscribe { channels: vec![] })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PSUBSCRIBE", b"news:*"]),
+        Ok(Command::PSubscribe {
+            patterns: vec![b"news:*".to_vec()],
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PUNSUBSCRIBE"]),
+        Ok(Command::PUnsubscribe { patterns: vec![] })
+    );
+    assert!(Command::from_bytes(&[b"PUBLISH", b"channel"]).is_err());
+    assert!(Command::from_bytes(&[b"SUBSCRIBE"]).is_err());
+    assert!(Command::from_bytes(&[b"PSUBSCRIBE"]).is_err());
+    assert_eq!(
+        Command::from_bytes(&[b"PUBSUB", b"CHANNELS", b"news:*"]),
+        Ok(Command::PubSubChannels {
+            pattern: Some(b"news:*".to_vec()),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PUBSUB", b"NUMSUB", b"first", b"second"]),
+        Ok(Command::PubSubNumSub {
+            channels: vec![b"first".to_vec(), b"second".to_vec()],
+        })
+    );
+    assert!(Command::from_bytes(&[b"PUBSUB"]).is_err());
+    assert!(Command::from_bytes(&[b"PUBSUB", b"CHANNELS", b"a", b"b"]).is_err());
+    assert!(Command::from_bytes(&[b"PUBSUB", b"UNKNOWN"]).is_err());
+}
+
+#[test]
 fn parses_basic_sorted_set_commands_and_rejects_invalid_scores() {
     assert_eq!(
         Command::from_args(&["ZADD", "board", "1.5", "alice", "2", "bob"]),

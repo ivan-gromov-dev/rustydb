@@ -8,6 +8,8 @@ pub(crate) enum RespFrame {
     Double(String),
     BulkString(Vec<u8>),
     Array(Vec<RespFrame>),
+    Push(Vec<RespFrame>),
+    Sequence(Vec<RespFrame>),
     Map(Vec<(RespFrame, RespFrame)>),
     Null,
     NullBulkString,
@@ -41,6 +43,21 @@ impl RespFrame {
                     value.write_to(writer)?;
                 }
 
+                Ok(())
+            }
+            Self::Push(values) => {
+                write!(writer, ">{}\r\n", values.len())?;
+
+                for value in values {
+                    value.write_to(writer)?;
+                }
+
+                Ok(())
+            }
+            Self::Sequence(values) => {
+                for value in values {
+                    value.write_to(writer)?;
+                }
                 Ok(())
             }
             Self::Map(entries) => {

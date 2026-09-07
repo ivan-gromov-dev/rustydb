@@ -3,6 +3,71 @@ use crate::output::{CommandOutput, HELP_TEXT};
 
 use super::frame::RespFrame;
 use super::response::{frame_from_output, frame_from_output_for_protocol};
+use crate::output::PubSubAck;
+
+#[test]
+fn pubsub_uses_arrays_in_resp2_and_pushes_in_resp3() {
+    let ack = || {
+        CommandOutput::PubSubAcks(vec![PubSubAck {
+            subscribed: true,
+            pattern: false,
+            channel: Some(b"news".to_vec()),
+            count: 1,
+        }])
+    };
+    assert_eq!(
+        frame_from_output_for_protocol(ack(), ProtocolVersion::Resp2),
+        RespFrame::Sequence(vec![RespFrame::Array(vec![
+            RespFrame::BulkString(b"subscribe".to_vec()),
+            RespFrame::BulkString(b"news".to_vec()),
+            RespFrame::Integer(1),
+        ])])
+    );
+    assert_eq!(
+        frame_from_output_for_protocol(ack(), ProtocolVersion::Resp3),
+        RespFrame::Sequence(vec![RespFrame::Push(vec![
+            RespFrame::BulkString(b"subscribe".to_vec()),
+            RespFrame::BulkString(b"news".to_vec()),
+            RespFrame::Integer(1),
+        ])])
+    );
+    assert!(matches!(
+        frame_from_output_for_protocol(
+            CommandOutput::PubSubMessage {
+                channel: b"news".to_vec(),
+                message: b"hello".to_vec(),
+            },
+            ProtocolVersion::Resp3,
+        ),
+        RespFrame::Push(_)
+    ));
+    assert_eq!(
+        frame_from_output_for_protocol(
+            CommandOutput::PubSubPatternMessage {
+                pattern: b"news:*".to_vec(),
+                channel: b"news:rust".to_vec(),
+                message: b"hello".to_vec(),
+            },
+            ProtocolVersion::Resp3,
+        ),
+        RespFrame::Push(vec![
+            RespFrame::BulkString(b"pmessage".to_vec()),
+            RespFrame::BulkString(b"news:*".to_vec()),
+            RespFrame::BulkString(b"news:rust".to_vec()),
+            RespFrame::BulkString(b"hello".to_vec()),
+        ])
+    );
+    assert_eq!(
+        frame_from_output_for_protocol(
+            CommandOutput::PubSubNumSub(vec![(b"news".to_vec(), 2)]),
+            ProtocolVersion::Resp3,
+        ),
+        RespFrame::Array(vec![
+            RespFrame::BulkString(b"news".to_vec()),
+            RespFrame::Integer(2),
+        ])
+    );
+}
 
 #[test]
 fn converts_scalar_outputs() {

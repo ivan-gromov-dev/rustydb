@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub(super) fn matches(pattern: &[u8], value: &[u8]) -> bool {
+pub(crate) fn matches(pattern: &[u8], value: &[u8]) -> bool {
     matches_from(pattern, value, 0, 0, &mut HashMap::new())
 }
 

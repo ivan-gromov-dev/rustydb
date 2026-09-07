@@ -2,6 +2,14 @@ use std::io::{self, Write};
 
 use crate::command::{CommandMetadata, ProtocolVersion};
 
+#[derive(Debug, PartialEq)]
+pub(crate) struct PubSubAck {
+    pub(crate) subscribed: bool,
+    pub(crate) pattern: bool,
+    pub(crate) channel: Option<Vec<u8>>,
+    pub(crate) count: usize,
+}
+
 pub(crate) const HELP_TEXT: &str = concat!(
     "Available commands:\n",
     "  SET key value [NX|XX] [GET] [EX seconds|PX milliseconds|EXAT unix-seconds|PXAT unix-milliseconds|KEEPTTL]\n",
@@ -125,6 +133,13 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  DISCARD\n",
     "  WATCH key [key ...]\n",
     "  UNWATCH\n",
+    "  PUBLISH channel message\n",
+    "  SUBSCRIBE channel [channel ...]\n",
+    "  UNSUBSCRIBE [channel ...]\n",
+    "  PSUBSCRIBE pattern [pattern ...]\n",
+    "  PUNSUBSCRIBE [pattern ...]\n",
+    "  PUBSUB CHANNELS [pattern]\n",
+    "  PUBSUB NUMSUB [channel ...]\n",
     "  INFO\n",
     "  HELP\n",
     "  EXIT\n",
@@ -169,6 +184,18 @@ pub(crate) enum CommandOutput {
     Error(String),
     ExecAbort,
     WatchVersions(Vec<(Vec<u8>, u64, bool)>),
+    PubSubAcks(Vec<PubSubAck>),
+    PubSubMessage {
+        channel: Vec<u8>,
+        message: Vec<u8>,
+    },
+    PubSubPatternMessage {
+        pattern: Vec<u8>,
+        channel: Vec<u8>,
+        message: Vec<u8>,
+    },
+    PubSubPong(Option<Vec<u8>>),
+    PubSubNumSub(Vec<(Vec<u8>, usize)>),
     Help,
     Exit,
 }
@@ -181,6 +208,62 @@ impl CommandOutput {
     pub(crate) fn write_to(&self, writer: &mut impl Write) -> io::Result<()> {
         match self {
             Self::Ok => writeln!(writer, "OK"),
+            Self::PubSubAcks(acks) => {
+                for ack in acks {
+                    writeln!(
+                        writer,
+                        "{} {} {}",
+                        match (ack.pattern, ack.subscribed) {
+                            (false, true) => "subscribe",
+                            (false, false) => "unsubscribe",
+                            (true, true) => "psubscribe",
+                            (true, false) => "punsubscribe",
+                        },
+                        ack.channel
+                            .as_deref()
+                            .map(String::from_utf8_lossy)
+                            .as_deref()
+                            .unwrap_or("(nil)"),
+                        ack.count
+                    )?;
+                }
+                Ok(())
+            }
+            Self::PubSubMessage { channel, message } => {
+                writer.write_all(b"message ")?;
+                writer.write_all(channel)?;
+                writer.write_all(b" ")?;
+                writer.write_all(message)?;
+                writeln!(writer)
+            }
+            Self::PubSubPatternMessage {
+                pattern,
+                channel,
+                message,
+            } => {
+                writer.write_all(b"pmessage ")?;
+                writer.write_all(pattern)?;
+                writer.write_all(b" ")?;
+                writer.write_all(channel)?;
+                writer.write_all(b" ")?;
+                writer.write_all(message)?;
+                writeln!(writer)
+            }
+            Self::PubSubPong(message) => match message {
+                Some(message) => {
+                    writer.write_all(b"pong ")?;
+                    writer.write_all(message)?;
+                    writeln!(writer)
+                }
+                None => writeln!(writer, "pong"),
+            },
+            Self::PubSubNumSub(entries) => {
+                for (channel, count) in entries {
+                    writer.write_all(channel)?;
+                    writeln!(writer, "\n{count}")?;
+                }
+                Ok(())
+            }
             Self::Pong => writeln!(writer, "PONG"),
             Self::Hello {
                 protocol,
