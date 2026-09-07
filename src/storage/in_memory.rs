@@ -1952,6 +1952,94 @@ impl InMemoryStore {
             .collect())
     }
 
+    pub(crate) fn sorted_set_score_range(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        min: super::ScoreBound,
+        max: super::ScoreBound,
+        reverse: bool,
+        limit: Option<(usize, i64)>,
+    ) -> Result<Vec<(Vec<u8>, f64)>, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(Vec::new());
+        };
+        let set = entry.sorted_set()?;
+        let (offset, count) = limit.unwrap_or((0, -1));
+        if count == 0 || offset >= set.len() {
+            return Ok(Vec::new());
+        }
+        let mut entries: Vec<_> = set
+            .iter()
+            .filter(|(_, score)| min.allows_lower(score.get()) && max.allows_upper(score.get()))
+            .collect();
+        entries.sort_unstable_by(|(a, sa), (b, sb)| {
+            let order = sa.get().total_cmp(&sb.get()).then_with(|| a.cmp(b));
+            if reverse { order.reverse() } else { order }
+        });
+        let count = usize::try_from(count).unwrap_or(usize::MAX);
+        Ok(entries
+            .into_iter()
+            .skip(offset)
+            .take(count)
+            .map(|(member, score)| (member.clone(), score.get()))
+            .collect())
+    }
+
+    pub(crate) fn sorted_set_pop(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        count: usize,
+        reverse: bool,
+    ) -> Result<Vec<(Vec<u8>, f64)>, StoreError> {
+        let key = key.as_ref();
+        if count == 0 {
+            self.sorted_set_cardinality(key)?;
+            return Ok(Vec::new());
+        }
+        let stop = i64::try_from(count - 1).unwrap_or(i64::MAX);
+        let entries = self.sorted_set_range(key, 0, stop, reverse)?;
+        let members: Vec<_> = entries.iter().map(|(member, _)| member.clone()).collect();
+        self.sorted_set_remove(key, &members)?;
+        Ok(entries)
+    }
+
+    pub(crate) fn sorted_set_remove_rank_range(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        start: i64,
+        stop: i64,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        let members: Vec<_> = self
+            .sorted_set_range(key, start, stop, false)?
+            .into_iter()
+            .map(|(member, _)| member)
+            .collect();
+        self.sorted_set_remove(key, &members)
+    }
+
+    pub(crate) fn sorted_set_remove_score_range(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        min: super::ScoreBound,
+        max: super::ScoreBound,
+    ) -> Result<usize, StoreError> {
+        let key = key.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(0);
+        };
+        let members: Vec<_> = entry
+            .sorted_set()?
+            .iter()
+            .filter(|(_, score)| min.allows_lower(score.get()) && max.allows_upper(score.get()))
+            .map(|(member, _)| member.clone())
+            .collect();
+        self.sorted_set_remove(key, &members)
+    }
+
     pub(crate) fn sorted_set_rank(
         &mut self,
         key: impl AsRef<[u8]>,

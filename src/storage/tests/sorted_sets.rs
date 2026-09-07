@@ -207,3 +207,120 @@ fn sorted_set_increment_validates_before_mutation_or_eviction() {
     assert_eq!(db.sorted_set_score("new", "large"), Ok(Some(f64::MAX)));
     assert_eq!(db.sorted_set_cardinality("new"), Ok(2));
 }
+
+#[test]
+fn sorted_set_score_ranges_filter_before_pagination_and_reverse_ties() {
+    use crate::storage::ScoreBound::*;
+    let mut db = Database::new();
+    db.sorted_set_add(
+        "k",
+        vec![
+            (-2.0, b"low".to_vec()),
+            (1.0, vec![]),
+            (1.0, vec![0]),
+            (1.0, vec![255]),
+            (3.0, b"high".to_vec()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        db.sorted_set_score_range("k", Exclusive(-2.0), Exclusive(3.0), false, Some((1, 1))),
+        Ok(vec![(vec![0], 1.0)])
+    );
+    assert_eq!(
+        db.sorted_set_score_range("k", Inclusive(1.0), Inclusive(1.0), true, Some((1, -2))),
+        Ok(vec![(vec![0], 1.0), (vec![], 1.0)])
+    );
+    assert_eq!(
+        db.sorted_set_score_range("k", NegativeInfinity, PositiveInfinity, false, None)
+            .unwrap()
+            .len(),
+        5
+    );
+    for limit in [Some((0, 0)), Some((usize::MAX, -1)), Some((3, 2))] {
+        assert_eq!(
+            db.sorted_set_score_range("k", Inclusive(1.0), Inclusive(1.0), false, limit),
+            Ok(vec![])
+        );
+    }
+    for (min, max) in [
+        (Inclusive(2.0), Inclusive(1.0)),
+        (Exclusive(1.0), Inclusive(1.0)),
+        (PositiveInfinity, PositiveInfinity),
+        (NegativeInfinity, NegativeInfinity),
+    ] {
+        assert_eq!(
+            db.sorted_set_score_range("k", min, max, false, None),
+            Ok(vec![])
+        );
+    }
+    assert_eq!(
+        db.sorted_set_score_range("missing", NegativeInfinity, PositiveInfinity, false, None),
+        Ok(vec![])
+    );
+}
+
+#[test]
+fn sorted_set_pops_and_removals_obey_order_and_delete_final_keys() {
+    use crate::storage::ScoreBound::*;
+    for reverse in [false, true] {
+        let mut db = Database::new();
+        db.sorted_set_add("k", vec![(1.0, vec![]), (1.0, vec![0]), (1.0, vec![255])])
+            .unwrap();
+        assert_eq!(db.sorted_set_pop("k", 0, reverse), Ok(vec![]));
+        let expected = if reverse { vec![255] } else { vec![] };
+        assert_eq!(
+            db.sorted_set_pop("k", 1, reverse),
+            Ok(vec![(expected, 1.0)])
+        );
+        let expected = if reverse {
+            vec![(vec![0], 1.0), (vec![], 1.0)]
+        } else {
+            vec![(vec![0], 1.0), (vec![255], 1.0)]
+        };
+        assert_eq!(db.sorted_set_pop("k", usize::MAX, reverse), Ok(expected));
+        assert_eq!(db.type_name("k"), "none");
+        assert_eq!(db.sorted_set_pop("k", 1, reverse), Ok(vec![]));
+    }
+    let mut db = Database::new();
+    db.sorted_set_add(
+        "k",
+        vec![
+            (1.0, b"a".to_vec()),
+            (2.0, b"b".to_vec()),
+            (2.0, b"c".to_vec()),
+            (3.0, b"d".to_vec()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(db.sorted_set_remove_rank_range("k", 3, 0), Ok(0));
+    assert_eq!(db.sorted_set_remove_rank_range("k", -2, -1), Ok(2));
+    assert_eq!(db.sorted_set_score("k", "b"), Ok(Some(2.0)));
+    assert_eq!(
+        db.sorted_set_remove_score_range("k", Exclusive(2.0), PositiveInfinity),
+        Ok(0)
+    );
+    assert_eq!(
+        db.sorted_set_remove_score_range("k", Inclusive(2.0), Inclusive(2.0)),
+        Ok(1)
+    );
+    assert_eq!(
+        db.sorted_set_remove_score_range("k", NegativeInfinity, PositiveInfinity),
+        Ok(1)
+    );
+    assert_eq!(db.type_name("k"), "none");
+    assert_eq!(
+        db.sorted_set_remove_score_range("missing", NegativeInfinity, PositiveInfinity),
+        Ok(0)
+    );
+    assert_eq!(
+        db.sorted_set_remove_rank_range("missing", i64::MIN, i64::MAX),
+        Ok(0)
+    );
+    db.sorted_set_add("k", vec![(1.0, vec![])]).unwrap();
+    assert_eq!(
+        db.sorted_set_remove_rank_range("k", i64::MIN, i64::MAX),
+        Ok(1)
+    );
+    assert_eq!(db.type_name("k"), "none");
+}

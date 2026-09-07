@@ -1,8 +1,8 @@
 # Sorted sets: implementation plan for 0.13
 
-Status: implementation in progress. Stages 1 and 2 are complete; stage 3 and 4
-commands remain unavailable. This document defines the delivery sequence and
-remaining independently verifiable work.
+Status: implementation in progress. Stages 1-3 are complete; stage 4 iteration,
+examples, and final verification remain. This document defines the delivery
+sequence and remaining independently verifiable work.
 
 ## Data model and invariants
 
@@ -72,6 +72,10 @@ responses now use doubles, including `ZSCORE` from stage 1.
   existing list ranges. Missing keys and empty ranges return empty results.
 
 ### 3. Score ranges and queue consumption
+
+Implemented: all commands below, including validation, binary ordering,
+protocol-specific pop shapes with/without count, TTL and final-key deletion,
+AOF replay/rewrite, snapshot round trips, and concurrent pop coverage.
 
 - Extend `ZRANGE` with `BYSCORE`, `REV`, `LIMIT offset count`, and `WITHSCORES`.
   Score bounds use the same rules as `ZCOUNT`. Under `REV`, the first bound is

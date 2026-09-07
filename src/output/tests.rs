@@ -170,3 +170,12 @@ fn renders_sorted_set_scores_and_member_pairs() {
         .unwrap();
     assert_eq!(bytes, b"\xff\0\n1.5\n");
 }
+
+#[test]
+fn renders_single_sorted_set_pop() {
+    assert_eq!(render(CommandOutput::PoppedMember(None)), "(nil)\n");
+    assert_eq!(
+        render(CommandOutput::PoppedMember(Some((b"job".to_vec(), 1.5)))),
+        "job\n1.5\n"
+    );
+}

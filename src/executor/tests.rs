@@ -1712,3 +1712,49 @@ fn executes_sorted_set_stage_two_results_and_errors() {
         assert!(execute(Command::parse(text).unwrap(), &mut db).is_error());
     }
 }
+
+#[test]
+fn executes_sorted_set_stage_three_outputs_and_errors() {
+    let mut db = Database::new();
+    db.sorted_set_add(
+        "k",
+        vec![
+            (1.0, b"a".to_vec()),
+            (2.0, b"b".to_vec()),
+            (3.0, b"c".to_vec()),
+        ],
+    )
+    .unwrap();
+    for (text, expected) in [
+        (
+            "ZRANGE k +inf (1 BYSCORE REV LIMIT 0 1",
+            Response::KeyList(vec![b"c".to_vec()]),
+        ),
+        (
+            "ZRANGE k 2 2 BYSCORE WITHSCORES",
+            Response::ScoredMembers(vec![(b"b".to_vec(), 2.0)]),
+        ),
+        (
+            "ZPOPMAX k",
+            Response::PoppedMember(Some((b"c".to_vec(), 3.0))),
+        ),
+        (
+            "ZPOPMIN k 1",
+            Response::ScoredMembers(vec![(b"a".to_vec(), 1.0)]),
+        ),
+        ("ZREMRANGEBYSCORE k (2 +inf", Response::Integer(0)),
+        ("ZREMRANGEBYRANK k 0 -1", Response::Integer(1)),
+        ("ZPOPMIN k", Response::PoppedMember(None)),
+    ] {
+        assert_eq!(execute(Command::parse(text).unwrap(), &mut db), expected);
+    }
+    db.set(b"s".to_vec(), vec![]);
+    for text in [
+        "ZRANGE s 0 1 BYSCORE",
+        "ZPOPMIN s",
+        "ZREMRANGEBYRANK s 0 -1",
+        "ZREMRANGEBYSCORE s 0 1",
+    ] {
+        assert!(execute(Command::parse(text).unwrap(), &mut db).is_error());
+    }
+}

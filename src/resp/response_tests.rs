@@ -239,3 +239,28 @@ fn sorted_set_scores_use_protocol_specific_numeric_and_pair_shapes() {
         assert_eq!(bytes, expected);
     }
 }
+
+#[test]
+fn sorted_set_pop_without_count_is_flat_even_in_resp3() {
+    for (protocol, expected) in [
+        (
+            ProtocolVersion::Resp2,
+            b"*2\r\n$2\r\n\xff\0\r\n$3\r\n1.5\r\n*0\r\n".as_slice(),
+        ),
+        (
+            ProtocolVersion::Resp3,
+            b"*2\r\n$2\r\n\xff\0\r\n,1.5\r\n*0\r\n".as_slice(),
+        ),
+    ] {
+        let mut bytes = vec![];
+        for output in [
+            CommandOutput::PoppedMember(Some((b"\xff\0".to_vec(), 1.5))),
+            CommandOutput::PoppedMember(None),
+        ] {
+            frame_from_output_for_protocol(output, protocol)
+                .write_to(&mut bytes)
+                .unwrap();
+        }
+        assert_eq!(bytes, expected);
+    }
+}

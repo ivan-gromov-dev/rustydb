@@ -791,3 +791,54 @@ fn sorted_set_increment_overflow_is_not_appended_to_aof() {
     assert!(String::from_utf8(failed.stdout).unwrap().contains("ERR"));
     assert_eq!(fs::metadata(aof).unwrap().len(), size);
 }
+
+#[test]
+fn sorted_set_stage_three_mutations_survive_aof_and_snapshot_restarts() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    let commands = "ZADD q 0 a 1 b 1 c 2 d 3 e 4 f 5 g 6 h\nEXPIRE q 600\nZPOPMIN q\nZPOPMAX q 2\nZREMRANGEBYRANK q 1 1\nZREMRANGEBYSCORE q (1 3\n";
+    let first = run_cli_with_aof(&aof, &format!("{commands}EXIT\n"));
+    assert!(first.status.success());
+    let stdout = String::from_utf8(first.stdout).unwrap();
+    assert!(
+        stdout.contains("db> a\n0\ndb> h\n6\ng\n5\ndb> 1\ndb> 2\n"),
+        "{stdout}"
+    );
+    let reads =
+        "ZRANGE q -inf +inf BYSCORE WITHSCORES\nZRANGE q +inf -inf BYSCORE REV LIMIT 1 -1\nTTL q\n";
+    let size = fs::metadata(&aof).unwrap().len();
+    let replay = run_cli_with_aof(
+        &aof,
+        &format!("{reads}ZREMRANGEBYSCORE q NaN +inf\nZPOPMIN q -1\nEXIT\n"),
+    );
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> b\n1\nf\n4\ndb> b\n"), "{stdout}");
+    assert_eq!(fs::metadata(&aof).unwrap().len(), size);
+    assert!(
+        run_cli_with_aof(&aof, "AOFREWRITE\nEXIT\n")
+            .status
+            .success()
+    );
+    let replay = run_cli_with_aof(&aof, &format!("{reads}EXIT\n"));
+    assert!(replay.status.success());
+    let stdout = String::from_utf8(replay.stdout).unwrap();
+    assert!(stdout.contains("db> b\n1\nf\n4\ndb> b\n"), "{stdout}");
+    assert!(
+        !stdout.contains("db> -1\n") && !stdout.contains("db> -2\n"),
+        "{stdout}"
+    );
+    let snapshot = directory.snapshot();
+    assert!(
+        run_cli_with_snapshot(&snapshot, &[], &format!("{commands}SAVE\nEXIT\n"))
+            .status
+            .success()
+    );
+    let restored = run_cli_with_snapshot(&snapshot, &[], &format!("{reads}EXIT\n"));
+    assert!(restored.status.success());
+    assert!(
+        String::from_utf8(restored.stdout)
+            .unwrap()
+            .contains("db> b\n1\nf\n4\ndb> b\n")
+    );
+}

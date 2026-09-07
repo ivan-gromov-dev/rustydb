@@ -242,3 +242,81 @@ fn sorted_set_stage_two_tcp_responses_preserve_binary_order_and_score_types() {
     shutdown.request();
     assert!(server.join().unwrap().is_ok());
 }
+
+#[test]
+fn sorted_set_stage_three_tcp_shapes_and_score_pagination() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = vec![];
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"ZADD", b"q", b"1", b"", b"1", b"\xff\0", b"2", b"high"],
+            &[
+                b"ZRANGE",
+                b"q",
+                b"2",
+                b"1",
+                b"BYSCORE",
+                b"REV",
+                b"LIMIT",
+                b"1",
+                b"1",
+                b"WITHSCORES",
+            ],
+            &[b"ZPOPMIN", b"q"],
+            &[b"ZPOPMAX", b"q", b"1"],
+            &[b"ZPOPMAX", b"q", b"0"],
+            &[b"ZREMRANGEBYSCORE", b"q", b"1", b"1"],
+            &[b"ZREMRANGEBYRANK", b"q", b"0", b"-1"],
+            &[b"ZPOPMIN", b"q"],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        let expected = if resp3 {
+            b":3\r\n*1\r\n*2\r\n$2\r\n\xff\0\r\n,1\r\n*2\r\n$0\r\n\r\n,1\r\n*1\r\n*2\r\n$4\r\nhigh\r\n,2\r\n*0\r\n:1\r\n:0\r\n*0\r\n+OK\r\n".as_slice()
+        } else {
+            b":3\r\n*2\r\n$2\r\n\xff\0\r\n$1\r\n1\r\n*2\r\n$0\r\n\r\n$1\r\n1\r\n*2\r\n$4\r\nhigh\r\n$1\r\n2\r\n*0\r\n:1\r\n:0\r\n*0\r\n+OK\r\n".as_slice()
+        };
+        assert!(output.ends_with(expected), "{output:?}");
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
+fn concurrent_sorted_set_consumers_pop_each_member_at_most_once() {
+    use std::sync::{Arc, Barrier};
+    let (address, shutdown, server) = start_server();
+    assert_eq!(
+        exchange(connect(address), &request(&[b"ZADD", b"q", b"1", b"job"])),
+        b":1\r\n"
+    );
+    let barrier = Arc::new(Barrier::new(3));
+    let consumers: Vec<_> = (0..2)
+        .map(|_| {
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                let stream = connect(address);
+                barrier.wait();
+                exchange(stream, &request(&[b"ZPOPMIN", b"q"]))
+            })
+        })
+        .collect();
+    barrier.wait();
+    let mut results: Vec<_> = consumers
+        .into_iter()
+        .map(|consumer| consumer.join().unwrap())
+        .collect();
+    results.sort();
+    assert_eq!(
+        results,
+        vec![
+            b"*0\r\n".to_vec(),
+            b"*2\r\n$3\r\njob\r\n$1\r\n1\r\n".to_vec()
+        ]
+    );
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}

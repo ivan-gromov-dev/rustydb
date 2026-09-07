@@ -556,3 +556,60 @@ fn sorted_set_stage_two_preserves_ttl_and_respects_wrong_types_and_expiration() 
     assert_eq!(db.sorted_set_increment("k", b"a".to_vec(), 1.0), Ok(1.0));
     assert_eq!(db.ttl("k"), -1);
 }
+
+#[test]
+fn sorted_set_stage_three_preserves_ttl_and_validates_types_even_for_empty_ranges() {
+    use super::super::in_memory::StoreError;
+    use crate::storage::ScoreBound::*;
+    let (mut db, clock) = database_with_clock();
+    db.sorted_set_add("k", (0..5).map(|n| (f64::from(n), vec![n as u8])).collect())
+        .unwrap();
+    db.set(b"s".to_vec(), b"value".to_vec());
+    db.expire("k", 60);
+    db.expire("s", 60);
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        db.sorted_set_score_range("k", Inclusive(0.0), Inclusive(1.0), false, None)
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(db.sorted_set_pop("k", 1, false), Ok(vec![(vec![0], 0.0)]));
+    assert_eq!(db.sorted_set_remove_rank_range("k", 0, 0), Ok(1));
+    assert_eq!(
+        db.sorted_set_remove_score_range("k", Inclusive(2.0), Inclusive(2.0)),
+        Ok(1)
+    );
+    assert_eq!(
+        db.sorted_set_remove_score_range("k", Inclusive(10.0), PositiveInfinity),
+        Ok(0)
+    );
+    assert_eq!(db.ttl("k"), 59);
+    assert_eq!(
+        db.sorted_set_score_range("s", NegativeInfinity, PositiveInfinity, false, Some((0, 0))),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(db.sorted_set_pop("s", 0, false), Err(StoreError::WrongType));
+    assert_eq!(db.sorted_set_pop("s", 1, true), Err(StoreError::WrongType));
+    assert_eq!(
+        db.sorted_set_remove_rank_range("s", 2, 0),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(
+        db.sorted_set_remove_score_range("s", PositiveInfinity, NegativeInfinity),
+        Err(StoreError::WrongType)
+    );
+    assert_eq!(db.get("s"), Ok(Some(b"value".as_slice())));
+    assert_eq!(db.ttl("s"), 59);
+    clock.advance(Duration::from_secs(59));
+    assert_eq!(db.sorted_set_pop("k", 1, true), Ok(vec![]));
+    assert_eq!(db.sorted_set_remove_rank_range("s", 0, -1), Ok(0));
+    assert_eq!(
+        db.sorted_set_score_range("k", NegativeInfinity, PositiveInfinity, false, None),
+        Ok(vec![])
+    );
+    assert_eq!(
+        db.sorted_set_remove_score_range("k", NegativeInfinity, PositiveInfinity),
+        Ok(0)
+    );
+}

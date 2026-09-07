@@ -29,6 +29,17 @@ pub(crate) fn frame_from_output_for_protocol(
                 .map(|score| score_frame(score, protocol))
                 .collect(),
         ),
+        CommandOutput::PoppedMember(entry) => RespFrame::Array(
+            entry
+                .into_iter()
+                .flat_map(|(member, score)| {
+                    [
+                        RespFrame::BulkString(member),
+                        score_frame(Some(score), protocol),
+                    ]
+                })
+                .collect(),
+        ),
         CommandOutput::ScoredMembers(entries) => {
             if protocol == ProtocolVersion::Resp3 {
                 RespFrame::Array(

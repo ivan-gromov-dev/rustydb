@@ -79,7 +79,11 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  ZMSCORE key member [member ...]\n",
     "  ZINCRBY key increment member\n",
     "  ZCOUNT key min max\n",
-    "  ZRANGE key start stop [REV] [WITHSCORES]\n",
+    "  ZRANGE key start stop [BYSCORE] [REV] [LIMIT offset count] [WITHSCORES]\n",
+    "  ZPOPMIN key [count]\n",
+    "  ZPOPMAX key [count]\n",
+    "  ZREMRANGEBYRANK key start stop\n",
+    "  ZREMRANGEBYSCORE key min max\n",
     "  ZRANK key member\n",
     "  ZREVRANK key member\n",
     "  HSET key field value [field value ...]\n",
@@ -134,6 +138,7 @@ pub(crate) enum CommandOutput {
     Score(Option<f64>),
     Scores(Vec<Option<f64>>),
     ScoredMembers(Vec<(Vec<u8>, f64)>),
+    PoppedMember(Option<(Vec<u8>, f64)>),
     SimpleString(&'static str),
     Value(Vec<u8>),
     OptionalValues(Vec<Option<Vec<u8>>>),
@@ -194,6 +199,11 @@ impl CommandOutput {
                     Self::Score(*value).write_to(writer)?;
                 }
                 Ok(())
+            }
+            Self::PoppedMember(None) => writeln!(writer, "(nil)"),
+            Self::PoppedMember(Some((member, score))) => {
+                writer.write_all(member)?;
+                writeln!(writer, "\n{score}")
             }
             Self::ScoredMembers(entries) if entries.is_empty() => writeln!(writer, "(nil)"),
             Self::ScoredMembers(entries) => {

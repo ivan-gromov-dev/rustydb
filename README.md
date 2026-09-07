@@ -286,7 +286,11 @@ clients receive the corresponding protocol-specific typed value.
 | `ZMSCORE key member [member ...]` | Read member scores in request order, including duplicates | One score or `(nil)` per member |
 | `ZINCRBY key increment member` | Add a finite increment to a member score, creating the member if absent | Updated score |
 | `ZCOUNT key min max` | Count scores within inclusive or exclusive bounds | Number of matching members |
-| `ZRANGE key start stop [REV] [WITHSCORES]` | Read an inclusive rank range, optionally reversed and including scores | Members, or alternating members and scores; `(nil)` for an empty range |
+| `ZRANGE key start stop [BYSCORE] [REV] [LIMIT offset count] [WITHSCORES]` | Read a rank or score range, optionally reversed, paginated by score, and including scores | Members, or alternating members and scores; `(nil)` for an empty range |
+| `ZPOPMIN key [count]` | Atomically remove up to `count` members from the lowest score end (default one) | Alternating members and scores, or `(nil)` |
+| `ZPOPMAX key [count]` | Atomically remove up to `count` members from the highest score end (default one) | Alternating members and scores, or `(nil)` |
+| `ZREMRANGEBYRANK key start stop` | Remove an inclusive rank range in ascending order | Number removed |
+| `ZREMRANGEBYSCORE key min max` | Remove members within inclusive or exclusive score bounds | Number removed |
 | `ZRANK key member` | Read a member's zero-based rank in ascending score order | Rank or `(nil)` |
 | `ZREVRANK key member` | Read a member's zero-based rank in descending score order | Rank or `(nil)` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
@@ -414,10 +418,30 @@ rejected. Reversed or empty intervals return zero.
 
 `ZRANGE` uses inclusive zero-based ranks. Negative indexes count from the end
 of the selected order, and out-of-range indexes are clamped. `REV` reverses
-score order and binary member tie-breaking before selecting indexes. `BYSCORE`,
-`BYLEX`, and `LIMIT` are not supported yet; repeated options are rejected.
+score order and binary member tie-breaking before selecting indexes.
+`ZRANGE ... BYSCORE` uses the same bounds as `ZCOUNT`. With `REV`, supply the
+upper bound first and the lower bound second. Optional `LIMIT offset count`
+applies after score filtering and ordering: offset must be nonnegative, zero
+count returns no members, and any negative count returns all remaining matches.
+`LIMIT` is rejected in rank mode. `BYLEX` and repeated options are rejected.
 Range reads sort borrowed entries in O(n log n) time with O(n) temporary
 references. `ZCOUNT` scans the set; `ZMSCORE` performs one lookup per argument.
+
+`ZPOPMIN` and `ZPOPMAX` default to one member/score pair. An explicit count must
+be nonnegative; zero returns an empty result, and counts above cardinality
+remove all members. Results follow ascending order for `ZPOPMIN` and descending
+order for `ZPOPMAX`, including binary member tie-breaking. Each pop executes
+atomically under the shared database lock, so competing clients cannot consume
+the same member twice. Pops are non-blocking. A separate score-range read
+followed by a removal is not an atomic delayed-queue claim.
+
+`ZREMRANGEBYRANK` uses the ascending rank-range rules, including negative indexes.
+`ZREMRANGEBYSCORE` uses the score-bound rules of `ZCOUNT`. Both return the number
+removed. All these mutations preserve a live key's TTL while members remain and
+delete the key after removing its last member. Empty/reversed ranges remove
+nothing, and wrong-type errors leave live data and TTL unchanged. Pops and rank
+removal sort entries; score removal scans the set. All mutations are persisted
+in AOF mode with deterministic replay.
 
 Sorted-set score replies (`ZSCORE`, `ZINCRBY`, and each `ZMSCORE` element) use
 bulk strings in RESP2 and doubles in RESP3, with protocol-specific nulls for
@@ -428,6 +452,12 @@ alternating member/score array; RESP3 returns an array of two-element arrays
 containing a member bulk string and a double. Empty ranges return empty arrays
 in both protocols. The CLI prints each result on its own line and uses `(nil)`
 for an empty range.
+
+Pops with an explicit count use the same response shape as `ZRANGE WITHSCORES`.
+Without a count, both RESP2 and RESP3 return a flat two-element member/score
+array (the score is a bulk string in RESP2 and a double in RESP3). Missing or
+expired keys and zero-count pops return an empty array. The CLI prints a member
+and score on separate lines, or `(nil)` when nothing is popped.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary

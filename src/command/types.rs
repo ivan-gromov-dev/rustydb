@@ -409,6 +409,29 @@ pub(crate) enum Command {
         reverse: bool,
         with_scores: bool,
     },
+    ZRangeByScore {
+        key: Vec<u8>,
+        min: ScoreBound,
+        max: ScoreBound,
+        reverse: bool,
+        limit: Option<(usize, i64)>,
+        with_scores: bool,
+    },
+    ZPop {
+        key: Vec<u8>,
+        count: Option<usize>,
+        reverse: bool,
+    },
+    ZRemRangeByRank {
+        key: Vec<u8>,
+        start: i64,
+        stop: i64,
+    },
+    ZRemRangeByScore {
+        key: Vec<u8>,
+        min: ScoreBound,
+        max: ScoreBound,
+    },
     ZRank {
         key: Vec<u8>,
         member: Vec<u8>,
@@ -600,7 +623,11 @@ impl Command {
             Self::ZMScore { .. } => "ZMSCORE",
             Self::ZIncrBy { .. } => "ZINCRBY",
             Self::ZCount { .. } => "ZCOUNT",
-            Self::ZRange { .. } => "ZRANGE",
+            Self::ZRange { .. } | Self::ZRangeByScore { .. } => "ZRANGE",
+            Self::ZPop { reverse: false, .. } => "ZPOPMIN",
+            Self::ZPop { reverse: true, .. } => "ZPOPMAX",
+            Self::ZRemRangeByRank { .. } => "ZREMRANGEBYRANK",
+            Self::ZRemRangeByScore { .. } => "ZREMRANGEBYSCORE",
             Self::ZRank { reverse: false, .. } => "ZRANK",
             Self::ZRank { reverse: true, .. } => "ZREVRANK",
             Self::ZCard { .. } => "ZCARD",
@@ -862,6 +889,25 @@ impl Command {
                 amount.to_string().into_bytes(),
                 member.clone(),
             ],
+            Self::ZPop { key, count, .. } => {
+                let mut args = vec![self.name().as_bytes().to_vec(), key.clone()];
+                if let Some(count) = count {
+                    args.push(count.to_string().into_bytes());
+                }
+                args
+            }
+            Self::ZRemRangeByRank { key, start, stop } => vec![
+                b"ZREMRANGEBYRANK".to_vec(),
+                key.clone(),
+                start.to_string().into_bytes(),
+                stop.to_string().into_bytes(),
+            ],
+            Self::ZRemRangeByScore { key, min, max } => vec![
+                b"ZREMRANGEBYSCORE".to_vec(),
+                key.clone(),
+                score_bound_argument(*min),
+                score_bound_argument(*max),
+            ],
             Self::ZRem { key, members } => with_values(b"ZREM", key, members),
             Self::SPop { key, count } => {
                 let mut values = vec![b"SPOP".to_vec(), key.clone()];
@@ -953,6 +999,7 @@ impl Command {
             | Self::SCard { .. }
             | Self::ZMScore { .. }
             | Self::ZCount { .. }
+            | Self::ZRangeByScore { .. }
             | Self::ZRange { .. }
             | Self::ZRank { .. }
             | Self::ZScore { .. }
@@ -989,6 +1036,15 @@ impl Command {
         };
         arguments.shrink_to_fit();
         Some(arguments)
+    }
+}
+
+fn score_bound_argument(bound: ScoreBound) -> Vec<u8> {
+    match bound {
+        ScoreBound::NegativeInfinity => b"-inf".to_vec(),
+        ScoreBound::PositiveInfinity => b"+inf".to_vec(),
+        ScoreBound::Inclusive(value) => value.to_string().into_bytes(),
+        ScoreBound::Exclusive(value) => format!("({value}").into_bytes(),
     }
 }
 

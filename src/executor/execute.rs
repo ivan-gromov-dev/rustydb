@@ -534,6 +534,41 @@ pub(crate) fn execute_with_snapshot(
             }
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::ZRangeByScore {
+            key,
+            min,
+            max,
+            reverse,
+            limit,
+            with_scores,
+        } => match store.sorted_set_score_range(&key, min, max, reverse, limit) {
+            Ok(entries) if with_scores => CommandOutput::ScoredMembers(entries),
+            Ok(entries) => {
+                CommandOutput::KeyList(entries.into_iter().map(|(member, _)| member).collect())
+            }
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZPop {
+            key,
+            count,
+            reverse,
+        } => match store.sorted_set_pop(&key, count.unwrap_or(1), reverse) {
+            Ok(entries) if count.is_some() => CommandOutput::ScoredMembers(entries),
+            Ok(mut entries) => CommandOutput::PoppedMember(entries.pop()),
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
+        Command::ZRemRangeByRank { key, start, stop } => {
+            match store.sorted_set_remove_rank_range(&key, start, stop) {
+                Ok(count) => CommandOutput::Integer(count as i64),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
+        Command::ZRemRangeByScore { key, min, max } => {
+            match store.sorted_set_remove_score_range(&key, min, max) {
+                Ok(count) => CommandOutput::Integer(count as i64),
+                Err(error) => CommandOutput::Error(error.to_string()),
+            }
+        }
         Command::ZRank {
             key,
             member,

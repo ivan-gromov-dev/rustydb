@@ -25,9 +25,9 @@ moving on.
 **Goal:** support leaderboards, rankings, priority queues, and delayed work.
 
 **Status:** implementation is in progress following the delivery sequence in
-[SORTED_SETS.md](SORTED_SETS.md). Stages 1 and 2 are complete: membership,
-persistence, multi-score reads, rankings, score increments and counts, and
-rank-based ranges. Score-based ranges, pops, range removal, and iteration remain.
+[SORTED_SETS.md](SORTED_SETS.md). Stages 1-3 are complete: membership,
+persistence, scores and rankings, rank/score ranges, pops, and range removal.
+Iteration (`ZSCAN`), executable examples, and final milestone verification remain.
 
 ### Work
 

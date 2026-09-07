@@ -9,6 +9,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Score-based `ZRANGE` with `BYSCORE`, `REV`, and `LIMIT`; atomic `ZPOPMIN` and
+  `ZPOPMAX`; and `ZREMRANGEBYRANK` / `ZREMRANGEBYSCORE`, with TTL preservation,
+  deterministic AOF replay, and RESP2/RESP3 response coverage.
 - Sorted-set multi-score reads (`ZMSCORE`), finite score increments (`ZINCRBY`),
   inclusive/exclusive score counts (`ZCOUNT`), and rank-based `ZRANGE` with
   `REV` and `WITHSCORES`, including AOF replay and protocol-specific replies.

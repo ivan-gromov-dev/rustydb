@@ -1782,10 +1782,95 @@ fn parses_sorted_set_stage_two_and_rejects_malformed_input() {
         "ZRANGE k 0 9223372036854775808",
         "ZRANGE k 0 -1 REV REV",
         "ZRANGE k 0 -1 WITHSCORES WITHSCORES",
-        "ZRANGE k 0 -1 BYSCORE",
         "ZRANGE k 0 -1 BYLEX",
         "ZRANGE k 0 -1 LIMIT 0 1",
     ] {
         assert!(Command::parse(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn sorted_set_stage_three_parses_ranges_pops_and_persisted_removals() {
+    use crate::storage::ScoreBound::*;
+    assert_eq!(
+        Command::parse("ZRANGE k +inf (1 BYSCORE LIMIT 2 -5 REV WITHSCORES"),
+        Ok(Command::ZRangeByScore {
+            key: b"k".to_vec(),
+            min: Exclusive(1.0),
+            max: PositiveInfinity,
+            reverse: true,
+            limit: Some((2, -5)),
+            with_scores: true,
+        })
+    );
+    assert_eq!(
+        Command::parse("ZRANGE k -inf 2 LIMIT 0 1 BYSCORE"),
+        Ok(Command::ZRangeByScore {
+            key: b"k".to_vec(),
+            min: NegativeInfinity,
+            max: Inclusive(2.0),
+            reverse: false,
+            limit: Some((0, 1)),
+            with_scores: false,
+        })
+    );
+    for (text, expected) in [
+        ("ZPOPMIN k", None),
+        ("ZPOPMIN k 0", Some(0)),
+        ("ZPOPMIN k 2", Some(2)),
+    ] {
+        assert_eq!(
+            Command::parse(text),
+            Ok(Command::ZPop {
+                key: b"k".to_vec(),
+                count: expected,
+                reverse: false
+            })
+        );
+    }
+    for text in [
+        "ZPOPMIN k",
+        "ZPOPMAX k 2",
+        "ZREMRANGEBYRANK k -2 -1",
+        "ZREMRANGEBYSCORE k (1.25 +inf",
+        "ZREMRANGEBYSCORE k -inf 2",
+    ] {
+        let command = Command::parse(text).unwrap();
+        assert_eq!(command.name(), text.split_whitespace().next().unwrap());
+        let arguments = command.aof_arguments().unwrap();
+        assert_eq!(Command::from_owned_bytes(arguments), Ok(command));
+    }
+    assert_eq!(
+        Command::parse("ZRANGE k 0 1 BYSCORE")
+            .unwrap()
+            .aof_arguments(),
+        None
+    );
+    for text in [
+        "ZRANGE k 0 1 BYSCORE BYSCORE",
+        "ZRANGE k 0 1 BYSCORE REV REV",
+        "ZRANGE k 0 1 BYSCORE WITHSCORES WITHSCORES",
+        "ZRANGE k 0 1 BYLEX",
+        "ZRANGE k 0 1 BYSCORE LIMIT",
+        "ZRANGE k 0 1 BYSCORE LIMIT 0",
+        "ZRANGE k 0 1 BYSCORE LIMIT -1 2",
+        "ZRANGE k 0 1 BYSCORE LIMIT 0 x",
+        "ZRANGE k 0 1 BYSCORE LIMIT 0 1 LIMIT 0 2",
+        "ZRANGE k 0 1 LIMIT 0 1",
+        "ZRANGE k NaN 1 BYSCORE",
+        "ZRANGE k 0 (inf BYSCORE",
+        "ZPOPMIN",
+        "ZPOPMAX",
+        "ZPOPMIN k -1",
+        "ZPOPMAX k x",
+        "ZPOPMIN k 1 2",
+        "ZREMRANGEBYRANK k 1",
+        "ZREMRANGEBYRANK k 0 1 extra",
+        "ZREMRANGEBYRANK k x 1",
+        "ZREMRANGEBYSCORE k 0",
+        "ZREMRANGEBYSCORE k 0 1 extra",
+        "ZREMRANGEBYSCORE k NaN +inf",
+    ] {
+        assert!(Command::parse(text).is_err(), "{text}");
     }
 }

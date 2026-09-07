@@ -370,6 +370,37 @@ impl Command {
                 })
             }
             "ZRANGE" => parse_zrange(args),
+            "ZPOPMIN" | "ZPOPMAX" => {
+                let usage = if command == "ZPOPMAX" {
+                    "ZPOPMAX key [count]"
+                } else {
+                    "ZPOPMIN key [count]"
+                };
+                if !(2..=3).contains(&args.len()) {
+                    return Err(CommandError::InvalidArguments(usage));
+                }
+                Ok(Self::ZPop {
+                    key: owned(args[1]),
+                    count: args.get(2).map(|value| parse_usize(value)).transpose()?,
+                    reverse: command == "ZPOPMAX",
+                })
+            }
+            "ZREMRANGEBYRANK" => {
+                exact(args, 4, "ZREMRANGEBYRANK key start stop")?;
+                Ok(Self::ZRemRangeByRank {
+                    key: owned(args[1]),
+                    start: parse_i64(args[2])?,
+                    stop: parse_i64(args[3])?,
+                })
+            }
+            "ZREMRANGEBYSCORE" => {
+                exact(args, 4, "ZREMRANGEBYSCORE key min max")?;
+                Ok(Self::ZRemRangeByScore {
+                    key: owned(args[1]),
+                    min: parse_score_bound(args[2])?,
+                    max: parse_score_bound(args[3])?,
+                })
+            }
             "ZREM" => {
                 let (key, members) = collection_values(args, "ZREM key member [member ...]")?;
                 Ok(Self::ZRem { key, members })
@@ -785,30 +816,62 @@ fn parse_score_bound(value: &[u8]) -> Result<crate::storage::ScoreBound, Command
 }
 
 fn parse_zrange(args: &[&[u8]]) -> Result<Command, CommandError> {
-    const USAGE: &str = "ZRANGE key start stop [REV] [WITHSCORES]";
+    const USAGE: &str = "ZRANGE key start stop [BYSCORE] [REV] [LIMIT offset count] [WITHSCORES]";
     if args.len() < 4 {
         return Err(CommandError::InvalidArguments(USAGE));
     }
-    let start = parse_i64(args[2])?;
-    let stop = parse_i64(args[3])?;
     let mut reverse = false;
     let mut with_scores = false;
-    for option in &args[4..] {
+    let mut by_score = false;
+    let mut limit = None;
+    let mut index = 4;
+    while index < args.len() {
+        let option = args[index];
         if option.eq_ignore_ascii_case(b"REV") && !reverse {
             reverse = true;
         } else if option.eq_ignore_ascii_case(b"WITHSCORES") && !with_scores {
             with_scores = true;
+        } else if option.eq_ignore_ascii_case(b"BYSCORE") && !by_score {
+            by_score = true;
+        } else if option.eq_ignore_ascii_case(b"LIMIT") && limit.is_none() {
+            let (Some(offset), Some(count)) = (args.get(index + 1), args.get(index + 2)) else {
+                return Err(CommandError::InvalidArguments(USAGE));
+            };
+            limit = Some((parse_usize(offset)?, parse_i64(count)?));
+            index += 2;
         } else {
             return Err(CommandError::InvalidArguments(USAGE));
         }
+        index += 1;
     }
-    Ok(Command::ZRange {
-        key: owned(args[1]),
-        start,
-        stop,
-        reverse,
-        with_scores,
-    })
+    if by_score {
+        let first = parse_score_bound(args[2])?;
+        let last = parse_score_bound(args[3])?;
+        let (min, max) = if reverse {
+            (last, first)
+        } else {
+            (first, last)
+        };
+        Ok(Command::ZRangeByScore {
+            key: owned(args[1]),
+            min,
+            max,
+            reverse,
+            limit,
+            with_scores,
+        })
+    } else {
+        if limit.is_some() {
+            return Err(CommandError::InvalidArguments(USAGE));
+        }
+        Ok(Command::ZRange {
+            key: owned(args[1]),
+            start: parse_i64(args[2])?,
+            stop: parse_i64(args[3])?,
+            reverse,
+            with_scores,
+        })
+    }
 }
 
 fn parse_zadd(args: &[&[u8]]) -> Result<Command, CommandError> {
