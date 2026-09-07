@@ -18,6 +18,7 @@ pub(crate) struct Database {
     metrics: DatabaseMetrics,
     key_versions: HashMap<Vec<u8>, u64>,
     next_key_version: u64,
+    transaction_records: Option<Vec<Vec<Vec<u8>>>>,
 }
 
 #[derive(Default)]
@@ -114,10 +115,30 @@ impl Database {
             if changed {
                 return CommandOutput::NullArray;
             }
+            let collects_aof = self.aof.is_some() && self.transaction_records.is_none();
+            if collects_aof {
+                self.transaction_records = Some(Vec::new());
+            }
             let outputs = commands
                 .into_iter()
                 .map(|command| self.execute_inner(command))
                 .collect();
+            if collects_aof {
+                let records = self.transaction_records.take().unwrap_or_default();
+                if !records.is_empty()
+                    && let Some(aof) = &mut self.aof
+                {
+                    if let Err(error) = aof.append_transaction(&records) {
+                        self.metrics.persistence_failures =
+                            self.metrics.persistence_failures.saturating_add(1);
+                        return CommandOutput::Error(format!(
+                            "AOF transaction append failed: {error}"
+                        ));
+                    }
+                    self.metrics.persistence_successes =
+                        self.metrics.persistence_successes.saturating_add(1);
+                }
+            }
             return CommandOutput::Transaction(outputs);
         }
         if command == Command::Info {
@@ -191,26 +212,27 @@ impl Database {
         if !output.is_error()
             && (!aof_requires_integer_one || output == CommandOutput::Integer(1))
             && aof_should_append
-            && let Some(aof) = &mut self.aof
+            && self.aof.is_some()
         {
-            if let Some(arguments) = aof_arguments.as_ref()
-                && let Err(error) = aof.append(arguments)
-            {
-                self.metrics.persistence_failures =
-                    self.metrics.persistence_failures.saturating_add(1);
-                return CommandOutput::Error(format!("AOF append failed: {error}"));
-            } else if aof_arguments.is_some() {
-                self.metrics.persistence_successes =
-                    self.metrics.persistence_successes.saturating_add(1);
+            let mut records = Vec::new();
+            if let Some(arguments) = aof_arguments {
+                records.push(arguments);
             }
             for key in evicted_keys {
-                if let Err(error) = aof.append(&[b"DEL".to_vec(), key]) {
-                    self.metrics.persistence_failures =
-                        self.metrics.persistence_failures.saturating_add(1);
-                    return CommandOutput::Error(format!("AOF append failed: {error}"));
+                records.push(vec![b"DEL".to_vec(), key]);
+            }
+            if let Some(transaction_records) = &mut self.transaction_records {
+                transaction_records.extend(records);
+            } else if let Some(aof) = &mut self.aof {
+                for arguments in records {
+                    if let Err(error) = aof.append(&arguments) {
+                        self.metrics.persistence_failures =
+                            self.metrics.persistence_failures.saturating_add(1);
+                        return CommandOutput::Error(format!("AOF append failed: {error}"));
+                    }
+                    self.metrics.persistence_successes =
+                        self.metrics.persistence_successes.saturating_add(1);
                 }
-                self.metrics.persistence_successes =
-                    self.metrics.persistence_successes.saturating_add(1);
             }
         }
         if records_snapshot_save {
@@ -289,6 +311,7 @@ impl Database {
             metrics: DatabaseMetrics::default(),
             key_versions: HashMap::new(),
             next_key_version: 1,
+            transaction_records: None,
         })
     }
 
@@ -300,7 +323,7 @@ impl Database {
         let mut store = InMemoryStore::with_max_keys(memory_config.max_keys());
         let mut replay_evictions = Vec::new();
         for command in commands {
-            let output = execute_with_snapshot(command, &mut store, None);
+            let output = execute_replay(command, &mut store);
             if output.is_error() {
                 return Err(AofError::InvalidCommand(format!(
                     "replay failed: {output:?}"
@@ -323,6 +346,7 @@ impl Database {
             metrics: DatabaseMetrics::default(),
             key_versions: HashMap::new(),
             next_key_version: 1,
+            transaction_records: None,
         })
     }
 
@@ -342,6 +366,7 @@ impl Database {
             metrics: DatabaseMetrics::default(),
             key_versions: HashMap::new(),
             next_key_version: 1,
+            transaction_records: None,
         }
     }
 
@@ -358,6 +383,18 @@ impl Database {
             *current = version;
         }
     }
+}
+
+fn execute_replay(command: Command, store: &mut InMemoryStore) -> CommandOutput {
+    if let Command::Transaction { commands, .. } = command {
+        return CommandOutput::Transaction(
+            commands
+                .into_iter()
+                .map(|command| execute_replay(command, store))
+                .collect(),
+        );
+    }
+    execute_with_snapshot(command, store, None)
 }
 
 fn command_keys(arguments: &[Vec<u8>]) -> Vec<Vec<u8>> {

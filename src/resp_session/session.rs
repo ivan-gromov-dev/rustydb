@@ -239,6 +239,7 @@ where
                     | Command::ClientSetInfo { .. }
                     | Command::Watch { .. }
                     | Command::Unwatch
+                    | Command::AofRewrite
                     | Command::Exit
             ) {
                 if let Some(transaction) = &mut state.transaction {

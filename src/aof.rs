@@ -11,6 +11,7 @@ const MAGIC: &[u8; 8] = b"RUSTAOF\0";
 const VERSION: u16 = 1;
 const MAX_RECORD_LENGTH: usize = 512 * 1024 * 1024;
 const MAX_ARGUMENTS: usize = 2_000_001;
+const TRANSACTION_MARKER: &[u8] = b"__RUSTYDB_TRANSACTION__";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
@@ -106,6 +107,11 @@ impl Aof {
         write_record(file, timestamp, arguments)?;
         file.sync_all()?;
         Ok(())
+    }
+
+    pub(crate) fn append_transaction(&mut self, commands: &[Vec<Vec<u8>>]) -> Result<(), AofError> {
+        let encoded = encode_transaction(commands)?;
+        self.append(&[TRANSACTION_MARKER.to_vec(), encoded])
     }
 
     pub(crate) fn rewrite(
@@ -375,10 +381,111 @@ fn decode_payload(payload: &[u8], now_millis: u64) -> Result<Command, AofError> 
     if !cursor.is_empty() {
         return Err(AofError::InvalidRecord);
     }
+    if arguments
+        .first()
+        .is_some_and(|value| *value == TRANSACTION_MARKER)
+    {
+        if arguments.len() != 2 {
+            return Err(AofError::InvalidRecord);
+        }
+        let commands = decode_transaction(arguments[1], now_millis.saturating_sub(timestamp))?;
+        return Ok(Command::Transaction {
+            commands,
+            watched: Vec::new(),
+        });
+    }
     let mut command = Command::from_bytes(&arguments)
         .map_err(|error| AofError::InvalidCommand(error.to_string()))?;
     adjust_expiration(&mut command, now_millis.saturating_sub(timestamp));
     Ok(command)
+}
+
+fn encode_transaction(commands: &[Vec<Vec<u8>>]) -> Result<Vec<u8>, AofError> {
+    if commands.is_empty() {
+        return Err(AofError::InvalidRecord);
+    }
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(
+        &u64::try_from(commands.len())
+            .map_err(|_| AofError::LimitExceeded)?
+            .to_le_bytes(),
+    );
+    let mut total_arguments = 0_usize;
+    for arguments in commands {
+        if arguments.is_empty() {
+            return Err(AofError::InvalidRecord);
+        }
+        total_arguments = total_arguments
+            .checked_add(arguments.len())
+            .ok_or(AofError::LimitExceeded)?;
+        if total_arguments > MAX_ARGUMENTS {
+            return Err(AofError::LimitExceeded);
+        }
+        encoded.extend_from_slice(
+            &u64::try_from(arguments.len())
+                .map_err(|_| AofError::LimitExceeded)?
+                .to_le_bytes(),
+        );
+        for argument in arguments {
+            encoded.extend_from_slice(
+                &u64::try_from(argument.len())
+                    .map_err(|_| AofError::LimitExceeded)?
+                    .to_le_bytes(),
+            );
+            encoded.extend_from_slice(argument);
+            if encoded.len() > MAX_RECORD_LENGTH {
+                return Err(AofError::LimitExceeded);
+            }
+        }
+    }
+    Ok(encoded)
+}
+
+fn decode_transaction(mut encoded: &[u8], elapsed_millis: u64) -> Result<Vec<Command>, AofError> {
+    let count = usize::try_from(take_u64(&mut encoded)?).map_err(|_| AofError::LimitExceeded)?;
+    if count == 0 || count > MAX_ARGUMENTS {
+        return Err(AofError::LimitExceeded);
+    }
+    let mut commands = Vec::new();
+    commands
+        .try_reserve_exact(count)
+        .map_err(|_| AofError::LimitExceeded)?;
+    let mut total_arguments = 0_usize;
+    for _ in 0..count {
+        let argument_count =
+            usize::try_from(take_u64(&mut encoded)?).map_err(|_| AofError::LimitExceeded)?;
+        if argument_count == 0 {
+            return Err(AofError::InvalidRecord);
+        }
+        total_arguments = total_arguments
+            .checked_add(argument_count)
+            .ok_or(AofError::LimitExceeded)?;
+        if total_arguments > MAX_ARGUMENTS {
+            return Err(AofError::LimitExceeded);
+        }
+        let mut arguments = Vec::new();
+        arguments
+            .try_reserve_exact(argument_count)
+            .map_err(|_| AofError::LimitExceeded)?;
+        for _ in 0..argument_count {
+            let length =
+                usize::try_from(take_u64(&mut encoded)?).map_err(|_| AofError::LimitExceeded)?;
+            if length > encoded.len() {
+                return Err(AofError::InvalidRecord);
+            }
+            let (argument, remaining) = encoded.split_at(length);
+            arguments.push(argument);
+            encoded = remaining;
+        }
+        let mut command = Command::from_bytes(&arguments)
+            .map_err(|error| AofError::InvalidCommand(error.to_string()))?;
+        adjust_expiration(&mut command, elapsed_millis);
+        commands.push(command);
+    }
+    if !encoded.is_empty() {
+        return Err(AofError::InvalidRecord);
+    }
+    Ok(commands)
 }
 
 fn adjust_expiration(command: &mut Command, elapsed_millis: u64) {
@@ -523,6 +630,46 @@ mod tests {
                 value: b"v\xff".to_vec()
             }
         );
+    }
+
+    #[test]
+    fn transaction_payload_round_trip_preserves_one_logical_command() {
+        let commands = vec![
+            vec![b"SET".to_vec(), b"key\0".to_vec(), b"value\xff".to_vec()],
+            vec![b"PEXPIRE".to_vec(), b"key\0".to_vec(), b"500".to_vec()],
+        ];
+        let encoded = encode_transaction(&commands).unwrap();
+        let payload = encode_payload(1_000, &[TRANSACTION_MARKER.to_vec(), encoded]).unwrap();
+
+        assert_eq!(
+            decode_payload(&payload, 1_200).unwrap(),
+            Command::Transaction {
+                commands: vec![
+                    Command::Set {
+                        key: b"key\0".to_vec(),
+                        value: b"value\xff".to_vec(),
+                    },
+                    Command::PExpire {
+                        key: b"key\0".to_vec(),
+                        milliseconds: 300,
+                    },
+                ],
+                watched: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn transaction_decoder_rejects_partial_nested_commands() {
+        let mut encoded =
+            encode_transaction(&[vec![b"SET".to_vec(), b"key".to_vec(), b"value".to_vec()]])
+                .unwrap();
+        encoded.pop();
+
+        assert!(matches!(
+            decode_transaction(&encoded, 0),
+            Err(AofError::InvalidRecord)
+        ));
     }
 
     #[test]

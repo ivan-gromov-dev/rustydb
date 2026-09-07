@@ -59,6 +59,10 @@ exclusive. If a crash leaves the final AOF record incomplete, startup discards
 that tail at the previous valid record boundary and continues. A checksum
 mismatch or malformed complete record remains a startup error.
 
+The successful mutations produced by one `EXEC` are encoded in one checksummed
+AOF record and synchronized together. Replay therefore applies the transaction
+as one logical batch; a truncated transaction record is discarded in full.
+
 Run `AOFREWRITE` in AOF mode to compact command history into the minimum
 canonical sequence needed to reproduce the current strings, lists, sets,
 hashes, and expirations. The replacement is written and synchronized as a
@@ -664,7 +668,8 @@ gate. The final `CI Success` job succeeds only when all five jobs succeed.
 - Snapshot format version 3 limits a snapshot to 1,000,000 keys, each list,
   set, hash, or sorted set to 1,000,000 elements, and each binary field to 512
   MiB. Versions 1 and 2 remain readable.
-- AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments.
+- AOF format version 1 limits one record to 512 MiB and 2,000,001 arguments,
+  counted across all commands in a transaction record.
 
 ### Intentional scope
 

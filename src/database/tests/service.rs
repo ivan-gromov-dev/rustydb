@@ -196,6 +196,52 @@ fn watched_transaction_detects_expiration_flush_and_eviction() {
 }
 
 #[test]
+fn aof_replays_an_executed_transaction_as_one_batch() {
+    use crate::config::MemoryConfig;
+
+    let path = std::env::temp_dir().join(format!(
+        "rustydb-transaction-{}-{}.aof",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    {
+        let mut database = Database::open_aof_with_config(&path, MemoryConfig::default()).unwrap();
+        assert_eq!(
+            database.execute(Command::Transaction {
+                commands: vec![
+                    Command::Set {
+                        key: b"counter".to_vec(),
+                        value: b"1".to_vec(),
+                    },
+                    Command::Increment {
+                        key: b"counter".to_vec(),
+                    },
+                ],
+                watched: Vec::new(),
+            }),
+            CommandOutput::Transaction(vec![CommandOutput::Ok, CommandOutput::Integer(2)])
+        );
+    }
+
+    let bytes = std::fs::read(&path).unwrap();
+    let record_length = u64::from_le_bytes(bytes[10..18].try_into().unwrap()) as usize;
+    assert_eq!(bytes.len(), 10 + 8 + record_length + 8);
+
+    let mut reopened = Database::open_aof_with_config(&path, MemoryConfig::default()).unwrap();
+    assert_eq!(
+        reopened.execute(Command::Get {
+            key: b"counter".to_vec(),
+        }),
+        CommandOutput::Value(b"2".to_vec())
+    );
+    drop(reopened);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn instances_have_independent_state() {
     let mut first = Database::default();
     let mut second = Database::default();

@@ -15,6 +15,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Optimistic transaction locking through `WATCH` and `UNWATCH`, including
   invalidation after writes, deletion, expiration, eviction, and connection
   cleanup.
+- Single-record AOF persistence for executed transactions, with binary-safe
+  nested commands, downtime-adjusted expirations, all-or-nothing tail recovery,
+  and replay as one logical batch.
 
 ## [0.13.0] - 2026-09-07
 
