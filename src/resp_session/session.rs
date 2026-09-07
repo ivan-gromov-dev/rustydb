@@ -327,6 +327,8 @@ where
                     | Command::Unsubscribe { .. }
                     | Command::PSubscribe { .. }
                     | Command::PUnsubscribe { .. }
+                    | Command::PubSubChannels { .. }
+                    | Command::PubSubNumSub { .. }
                     | Command::AofRewrite
                     | Command::Exit
             ) {

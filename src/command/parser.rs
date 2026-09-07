@@ -559,12 +559,37 @@ impl Command {
             "PUNSUBSCRIBE" => Ok(Self::PUnsubscribe {
                 patterns: args[1..].iter().map(|pattern| owned(pattern)).collect(),
             }),
+            "PUBSUB" => parse_pubsub(args),
             "INFO" => no_args(args, "INFO", Self::Info),
             "HELP" => no_args(args, "HELP", Self::Help),
             "EXIT" | "QUIT" => no_args(args, "EXIT", Self::Exit),
             _ => Err(CommandError::UnknownCommand(command)),
         }
     }
+}
+
+fn parse_pubsub(args: &[&[u8]]) -> Result<Command, CommandError> {
+    let Some(subcommand) = args.get(1) else {
+        return Err(CommandError::InvalidArguments(
+            "PUBSUB CHANNELS [pattern] | NUMSUB [channel ...]",
+        ));
+    };
+    if subcommand.eq_ignore_ascii_case(b"CHANNELS") {
+        if args.len() > 3 {
+            return Err(CommandError::InvalidArguments("PUBSUB CHANNELS [pattern]"));
+        }
+        return Ok(Command::PubSubChannels {
+            pattern: args.get(2).map(|pattern| owned(pattern)),
+        });
+    }
+    if subcommand.eq_ignore_ascii_case(b"NUMSUB") {
+        return Ok(Command::PubSubNumSub {
+            channels: args[2..].iter().map(|channel| owned(channel)).collect(),
+        });
+    }
+    Err(CommandError::InvalidArguments(
+        "PUBSUB CHANNELS [pattern] | NUMSUB [channel ...]",
+    ))
 }
 
 fn split_with_tail(input: &str, head_len: usize) -> Vec<&str> {

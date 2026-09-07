@@ -32,6 +32,21 @@ fn parses_direct_pubsub_commands_with_binary_arguments() {
     assert!(Command::from_bytes(&[b"PUBLISH", b"channel"]).is_err());
     assert!(Command::from_bytes(&[b"SUBSCRIBE"]).is_err());
     assert!(Command::from_bytes(&[b"PSUBSCRIBE"]).is_err());
+    assert_eq!(
+        Command::from_bytes(&[b"PUBSUB", b"CHANNELS", b"news:*"]),
+        Ok(Command::PubSubChannels {
+            pattern: Some(b"news:*".to_vec()),
+        })
+    );
+    assert_eq!(
+        Command::from_bytes(&[b"PUBSUB", b"NUMSUB", b"first", b"second"]),
+        Ok(Command::PubSubNumSub {
+            channels: vec![b"first".to_vec(), b"second".to_vec()],
+        })
+    );
+    assert!(Command::from_bytes(&[b"PUBSUB"]).is_err());
+    assert!(Command::from_bytes(&[b"PUBSUB", b"CHANNELS", b"a", b"b"]).is_err());
+    assert!(Command::from_bytes(&[b"PUBSUB", b"UNKNOWN"]).is_err());
 }
 
 #[test]

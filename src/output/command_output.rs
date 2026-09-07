@@ -138,6 +138,8 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  UNSUBSCRIBE [channel ...]\n",
     "  PSUBSCRIBE pattern [pattern ...]\n",
     "  PUNSUBSCRIBE [pattern ...]\n",
+    "  PUBSUB CHANNELS [pattern]\n",
+    "  PUBSUB NUMSUB [channel ...]\n",
     "  INFO\n",
     "  HELP\n",
     "  EXIT\n",
@@ -193,6 +195,7 @@ pub(crate) enum CommandOutput {
         message: Vec<u8>,
     },
     PubSubPong(Option<Vec<u8>>),
+    PubSubNumSub(Vec<(Vec<u8>, usize)>),
     Help,
     Exit,
 }
@@ -254,6 +257,13 @@ impl CommandOutput {
                 }
                 None => writeln!(writer, "pong"),
             },
+            Self::PubSubNumSub(entries) => {
+                for (channel, count) in entries {
+                    writer.write_all(channel)?;
+                    writeln!(writer, "\n{count}")?;
+                }
+                Ok(())
+            }
             Self::Pong => writeln!(writer, "PONG"),
             Self::Hello {
                 protocol,

@@ -46,8 +46,8 @@ moving on.
 
 **Goal:** support local notifications and event-driven test applications.
 
-Direct and pattern-based binary-safe subscriptions are now implemented for
-RESP2 and RESP3. Pub/Sub introspection remains planned for this milestone.
+Direct and pattern-based binary-safe subscriptions plus `PUBSUB CHANNELS` and
+`PUBSUB NUMSUB` introspection are now implemented for RESP2 and RESP3.
 
 ### Work
 

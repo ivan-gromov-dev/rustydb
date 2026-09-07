@@ -15,6 +15,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Binary glob subscriptions through `PSUBSCRIBE` and `PUNSUBSCRIBE`, including
   distinct pattern-message frames and combined direct/pattern subscription
   counts.
+- Pub/Sub introspection through deterministic `PUBSUB CHANNELS [pattern]` and
+  request-ordered `PUBSUB NUMSUB [channel ...]` results.
 - Initial 0.14 transaction support for RESP clients through per-connection
   `MULTI`, `EXEC`, and `DISCARD` state, atomic queued execution, queue-time
   aborts, and per-command execution results.

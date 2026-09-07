@@ -185,8 +185,8 @@ Set `RUSTYDB_REDIS_CLI` to an explicit executable path if `redis-cli` is not on
 integers, lists, sets, and expiration output through a real client.
 
 RustyDB implements RESP3 response types needed by its documented command subset,
-but does not implement authentication, multiple logical databases, Pub/Sub
-introspection, or configuration metadata commands such as `CONFIG`.
+but does not implement authentication, multiple logical databases, or
+configuration metadata commands such as `CONFIG`.
 Features of `redis-cli` that probe or depend on those commands are not supported.
 Interactive `HELP` and `CLEAR` are client-side `redis-cli` commands; use one-shot
 invocations to send RustyDB commands with those names. Command errors use
@@ -324,6 +324,8 @@ clients receive the corresponding protocol-specific typed value.
 | `UNSUBSCRIBE [channel ...]`                                                                                      | Unsubscribe from named channels, or all direct channels when none are given                            | One unsubscription acknowledgement per channel                        |
 | `PSUBSCRIBE pattern [pattern ...]`                                                                               | Subscribe the RESP connection to binary glob patterns                                                  | One pattern-subscription acknowledgement per pattern                   |
 | `PUNSUBSCRIBE [pattern ...]`                                                                                     | Unsubscribe from named patterns, or all patterns when none are given                                   | One pattern-unsubscription acknowledgement per pattern                 |
+| `PUBSUB CHANNELS [pattern]`                                                                                      | List active direct-subscription channels, optionally filtered by a binary glob                         | Channels in deterministic binary order                                |
+| `PUBSUB NUMSUB [channel ...]`                                                                                    | Count direct subscribers for each requested channel                                                    | Flat channel/count pairs in request order                              |
 | `MULTI`                                                                                                          | Start queuing commands for an atomic transaction                                                      | `OK`                                                                  |
 | `EXEC`                                                                                                           | Execute the queued transaction                                                                        | One result per queued command, or an error                             |
 | `DISCARD`                                                                                                        | Discard the queued transaction                                                                         | `OK`                                                                  |

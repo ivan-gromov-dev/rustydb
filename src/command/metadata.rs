@@ -101,6 +101,7 @@ pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("psubscribe", -2, CONNECTION, 0, 0, 0),
     metadata!("pttl", 2, READ, 1, 1, 1),
     metadata!("publish", 3, CONNECTION, 0, 0, 0),
+    metadata!("pubsub", -2, CONNECTION, 0, 0, 0),
     metadata!("punsubscribe", -1, CONNECTION, 0, 0, 0),
     metadata!("quit", 1, CONNECTION, 0, 0, 0),
     metadata!("randomkey", 1, READ, 0, 0, 0),

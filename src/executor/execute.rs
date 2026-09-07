@@ -726,7 +726,9 @@ pub(crate) fn execute_with_snapshot(
         | Command::Subscribe { .. }
         | Command::Unsubscribe { .. }
         | Command::PSubscribe { .. }
-        | Command::PUnsubscribe { .. } => {
+        | Command::PUnsubscribe { .. }
+        | Command::PubSubChannels { .. }
+        | Command::PubSubNumSub { .. } => {
             CommandOutput::Error("Pub/Sub commands require a server connection".to_owned())
         }
 

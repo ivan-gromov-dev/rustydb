@@ -255,4 +255,9 @@ fn renders_pubsub_outputs_for_the_interactive_boundary() {
         .write_to(&mut bytes)
         .unwrap();
     assert_eq!(bytes, b"pong binary\0\xff\n");
+    let mut bytes = Vec::new();
+    CommandOutput::PubSubNumSub(vec![(b"news\0\xff".to_vec(), 2)])
+        .write_to(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"news\0\xff\n2\n");
 }

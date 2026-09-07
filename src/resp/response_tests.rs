@@ -57,6 +57,16 @@ fn pubsub_uses_arrays_in_resp2_and_pushes_in_resp3() {
             RespFrame::BulkString(b"hello".to_vec()),
         ])
     );
+    assert_eq!(
+        frame_from_output_for_protocol(
+            CommandOutput::PubSubNumSub(vec![(b"news".to_vec(), 2)]),
+            ProtocolVersion::Resp3,
+        ),
+        RespFrame::Array(vec![
+            RespFrame::BulkString(b"news".to_vec()),
+            RespFrame::Integer(2),
+        ])
+    );
 }
 
 #[test]

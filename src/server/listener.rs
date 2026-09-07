@@ -280,6 +280,8 @@ fn execute_server_command(
         Command::Unsubscribe { channels } => unsubscribe(database, connection_id, channels),
         Command::PSubscribe { patterns } => psubscribe(database, connection_id, messages, patterns),
         Command::PUnsubscribe { patterns } => punsubscribe(database, connection_id, patterns),
+        Command::PubSubChannels { pattern } => pubsub_channels(database, pattern),
+        Command::PubSubNumSub { channels } => pubsub_numsub(database, channels),
         Command::BLPop { keys, timeout } => {
             execute_blocking_pop(database, disconnect_probe, keys, false, timeout)
         }
@@ -303,6 +305,35 @@ fn execute_server_command(
         ),
         command => execute_shared(database, command),
     }
+}
+
+fn pubsub_channels(database: &SharedDatabase, pattern: Option<Vec<u8>>) -> CommandOutput {
+    let broker = lock_pubsub(database);
+    let mut channels: Vec<_> = broker
+        .channels
+        .keys()
+        .filter(|channel| {
+            pattern
+                .as_deref()
+                .is_none_or(|pattern| crate::storage::glob::matches(pattern, channel))
+        })
+        .cloned()
+        .collect();
+    channels.sort();
+    CommandOutput::KeyList(channels)
+}
+
+fn pubsub_numsub(database: &SharedDatabase, channels: Vec<Vec<u8>>) -> CommandOutput {
+    let broker = lock_pubsub(database);
+    CommandOutput::PubSubNumSub(
+        channels
+            .into_iter()
+            .map(|channel| {
+                let count = broker.channels.get(&channel).map_or(0, HashMap::len);
+                (channel, count)
+            })
+            .collect(),
+    )
 }
 
 fn lock_pubsub(database: &SharedDatabase) -> MutexGuard<'_, PubSubBroker> {

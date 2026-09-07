@@ -215,6 +215,17 @@ pub(crate) fn frame_from_output_for_protocol(
             ],
             protocol,
         ),
+        CommandOutput::PubSubNumSub(entries) => RespFrame::Array(
+            entries
+                .into_iter()
+                .flat_map(|(channel, count)| {
+                    [
+                        RespFrame::BulkString(channel),
+                        RespFrame::Integer(i64::try_from(count).unwrap_or(i64::MAX)),
+                    ]
+                })
+                .collect(),
+        ),
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
     }
 }

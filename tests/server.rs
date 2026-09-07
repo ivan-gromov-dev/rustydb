@@ -217,6 +217,25 @@ fn pattern_pubsub_matches_binary_channels_and_counts_all_subscriptions() {
     assert_eq!(
         exchange(
             connect(address),
+            &pipeline(&[
+                &[b"PUBSUB", b"CHANNELS"],
+                &[b"PUBSUB", b"CHANNELS", b"other:*"],
+                &[
+                    b"PUBSUB",
+                    b"NUMSUB",
+                    b"news:rust",
+                    b"missing",
+                    b"news:rust",
+                ],
+                &[b"QUIT"],
+            ])
+        ),
+        b"*1\r\n$9\r\nnews:rust\r\n*0\r\n*6\r\n$9\r\nnews:rust\r\n:1\r\n$7\r\nmissing\r\n:0\r\n$9\r\nnews:rust\r\n:1\r\n+OK\r\n"
+    );
+
+    assert_eq!(
+        exchange(
+            connect(address),
             &pipeline(&[&[b"PUBLISH", b"news:rust", b"release\0\xff"], &[b"QUIT"],])
         ),
         b":2\r\n+OK\r\n"
