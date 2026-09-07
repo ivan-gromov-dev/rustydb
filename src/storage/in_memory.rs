@@ -1865,6 +1865,40 @@ impl InMemoryStore {
             .map(Option::flatten)
     }
 
+    pub(crate) fn sorted_set_rank(
+        &mut self,
+        key: impl AsRef<[u8]>,
+        member: impl AsRef<[u8]>,
+        reverse: bool,
+    ) -> Result<Option<usize>, StoreError> {
+        let key = key.as_ref();
+        let member = member.as_ref();
+        self.remove_if_expired(key);
+        let Some(entry) = self.storage.get(key) else {
+            return Ok(None);
+        };
+        let set = entry.sorted_set()?;
+        let Some(score) = set.get(member) else {
+            return Ok(None);
+        };
+        // Count predecessors without allocating and sorting the whole set for one rank.
+        let rank = set
+            .iter()
+            .filter(|(candidate, candidate_score)| {
+                let order = candidate_score
+                    .get()
+                    .total_cmp(&score.get())
+                    .then_with(|| candidate.as_slice().cmp(member));
+                if reverse {
+                    order.is_gt()
+                } else {
+                    order.is_lt()
+                }
+            })
+            .count();
+        Ok(Some(rank))
+    }
+
     pub(crate) fn sorted_set_cardinality(
         &mut self,
         key: impl AsRef<[u8]>,

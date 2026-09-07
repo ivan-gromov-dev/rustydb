@@ -1649,3 +1649,36 @@ fn execute_set_algebra_store_and_scan_commands() {
         }
     );
 }
+
+#[test]
+fn executes_sorted_set_ranks_as_integers_nulls_or_errors() {
+    let mut database = Database::new();
+    database
+        .sorted_set_add("board", vec![(1.0, b"a".to_vec()), (1.0, b"b".to_vec())])
+        .unwrap();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    for reverse in [false, true] {
+        for (key, member, expected) in [
+            ("board", "a", Response::Integer(i64::from(reverse))),
+            ("board", "missing", Response::Nil),
+            ("missing", "a", Response::Nil),
+            (
+                "string",
+                "a",
+                Response::Error("operation against a key holding the wrong kind of value".into()),
+            ),
+        ] {
+            assert_eq!(
+                execute(
+                    Command::ZRank {
+                        key: key.as_bytes().to_vec(),
+                        member: member.as_bytes().to_vec(),
+                        reverse
+                    },
+                    &mut database
+                ),
+                expected
+            );
+        }
+    }
+}

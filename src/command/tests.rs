@@ -1690,3 +1690,30 @@ fn parses_set_algebra_store_and_scan_commands() {
         assert!(Command::parse(invalid).is_err(), "{invalid}");
     }
 }
+
+#[test]
+fn parses_sorted_set_ranks_with_strict_arity_and_no_aof_records() {
+    for (name, reverse) in [("zrank", false), ("zrevrank", true)] {
+        let command = Command::from_bytes(&[name.as_bytes(), b"key\0\xff", b""]).unwrap();
+        assert_eq!(
+            command,
+            Command::ZRank {
+                key: b"key\0\xff".to_vec(),
+                member: vec![],
+                reverse
+            }
+        );
+        assert_eq!(command.name(), name.to_ascii_uppercase());
+        assert_eq!(command.aof_arguments(), None);
+        for args in [
+            vec![name],
+            vec![name, "key"],
+            vec![name, "key", "member", "WITHSCORE"],
+        ] {
+            assert!(matches!(
+                Command::from_args(&args),
+                Err(CommandError::InvalidArguments(_))
+            ));
+        }
+    }
+}

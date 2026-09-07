@@ -387,6 +387,11 @@ pub(crate) enum Command {
         key: Vec<u8>,
         member: Vec<u8>,
     },
+    ZRank {
+        key: Vec<u8>,
+        member: Vec<u8>,
+        reverse: bool,
+    },
     ZCard {
         key: Vec<u8>,
     },
@@ -570,6 +575,8 @@ impl Command {
             Self::ZAdd { .. } => "ZADD",
             Self::ZRem { .. } => "ZREM",
             Self::ZScore { .. } => "ZSCORE",
+            Self::ZRank { reverse: false, .. } => "ZRANK",
+            Self::ZRank { reverse: true, .. } => "ZREVRANK",
             Self::ZCard { .. } => "ZCARD",
             Self::HSet { .. } => "HSET",
             Self::HSetNx { .. } => "HSETNX",
@@ -908,6 +915,7 @@ impl Command {
             | Self::SScan { .. }
             | Self::SMembers { .. }
             | Self::SCard { .. }
+            | Self::ZRank { .. }
             | Self::ZScore { .. }
             | Self::ZCard { .. }
             | Self::HGet { .. }

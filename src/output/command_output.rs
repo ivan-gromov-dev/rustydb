@@ -76,6 +76,8 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  ZREM key member [member ...]\n",
     "  ZSCORE key member\n",
     "  ZCARD key\n",
+    "  ZRANK key member\n",
+    "  ZREVRANK key member\n",
     "  HSET key field value [field value ...]\n",
     "  HSETNX key field value\n",
     "  HGET key field\n",

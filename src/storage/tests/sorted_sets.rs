@@ -53,3 +53,55 @@ fn invalid_scores_and_wrong_types_do_not_mutate() {
     );
     assert_eq!(database.get("value"), Ok(Some(b"text".as_slice())));
 }
+
+#[test]
+fn sorted_set_ranks_order_scores_then_binary_members_and_follow_updates() {
+    let mut database = Database::new();
+    let members = [
+        b"low".to_vec(),
+        vec![],
+        vec![0],
+        vec![255],
+        b"high".to_vec(),
+    ];
+    database
+        .sorted_set_add(
+            "board",
+            vec![
+                (f64::MAX, members[4].clone()),
+                (0.0, members[3].clone()),
+                (-0.0, members[1].clone()),
+                (-f64::MAX, members[0].clone()),
+                (0.0, members[2].clone()),
+            ],
+        )
+        .unwrap();
+    for (rank, member) in members.iter().enumerate() {
+        assert_eq!(
+            database.sorted_set_rank("board", member, false),
+            Ok(Some(rank))
+        );
+        assert_eq!(
+            database.sorted_set_rank("board", member, true),
+            Ok(Some(4 - rank))
+        );
+    }
+    for reverse in [false, true] {
+        assert_eq!(
+            database.sorted_set_rank("board", "absent", reverse),
+            Ok(None)
+        );
+        assert_eq!(
+            database.sorted_set_rank("missing", "absent", reverse),
+            Ok(None)
+        );
+    }
+    database
+        .sorted_set_add("board", vec![(1.5, vec![])])
+        .unwrap();
+    assert_eq!(database.sorted_set_rank("board", [], false), Ok(Some(3)));
+    database
+        .sorted_set_remove("board", &[b"low".to_vec()])
+        .unwrap();
+    assert_eq!(database.sorted_set_rank("board", [], false), Ok(Some(2)));
+}

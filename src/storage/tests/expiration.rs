@@ -467,3 +467,33 @@ fn active_expiration_follows_renamed_key() {
     assert_eq!(database.active_expire(2), 1);
     assert!(!database.storage.contains_key(b"new".as_slice()));
 }
+
+#[test]
+fn sorted_set_ranks_preserve_ttl_and_hide_expired_keys() {
+    let (mut database, clock) = database_with_clock();
+    database
+        .sorted_set_add("board", vec![(1.0, b"a".to_vec())])
+        .unwrap();
+    database.set(b"string".to_vec(), b"value".to_vec());
+    database.expire("board", 60);
+    database.expire("string", 60);
+    for reverse in [false, true] {
+        assert_eq!(database.sorted_set_rank("board", "a", reverse), Ok(Some(0)));
+        assert_eq!(
+            database.sorted_set_rank("board", "missing", reverse),
+            Ok(None)
+        );
+        assert_eq!(
+            database.sorted_set_rank("string", "a", reverse),
+            Err(super::super::in_memory::StoreError::WrongType)
+        );
+        assert_eq!(database.ttl("board"), 60);
+        assert_eq!(database.ttl("string"), 60);
+    }
+    assert_eq!(database.get("string"), Ok(Some(b"value".as_slice())));
+    clock.advance(Duration::from_secs(60));
+    for reverse in [false, true] {
+        assert_eq!(database.sorted_set_rank("board", "a", reverse), Ok(None));
+        assert_eq!(database.sorted_set_rank("string", "a", reverse), Ok(None));
+    }
+}

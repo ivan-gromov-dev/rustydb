@@ -360,6 +360,23 @@ impl Command {
                     member: owned(args[2]),
                 })
             }
+            "ZRANK" | "ZREVRANK" => {
+                let reverse = command == "ZREVRANK";
+                exact(
+                    args,
+                    3,
+                    if reverse {
+                        "ZREVRANK key member"
+                    } else {
+                        "ZRANK key member"
+                    },
+                )?;
+                Ok(Self::ZRank {
+                    key: owned(args[1]),
+                    member: owned(args[2]),
+                    reverse,
+                })
+            }
             "ZCARD" => Ok(Self::ZCard {
                 key: one(args, "ZCARD key")?,
             }),

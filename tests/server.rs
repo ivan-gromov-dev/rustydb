@@ -177,3 +177,36 @@ fn public_server_api_isolates_a_bad_client() {
     shutdown.request();
     assert!(server.join().unwrap().is_ok());
 }
+
+#[test]
+fn sorted_set_ranks_support_binary_members_and_resp2_resp3_nulls() {
+    let (address, shutdown, server) = start_server();
+    for resp3 in [false, true] {
+        let mut input = Vec::new();
+        if resp3 {
+            input.extend(request(&[b"HELLO", b"3"]));
+        }
+        input.extend(pipeline(&[
+            &[b"ZADD", b"board", b"1", b"\xff", b"1", b"", b"1", b"\0"],
+            &[b"ZRANK", b"board", b""],
+            &[b"ZREVRANK", b"board", b""],
+            &[b"ZRANK", b"board", b"\0"],
+            &[b"ZREVRANK", b"board", b"\xff"],
+            &[b"ZRANK", b"board", b"missing"],
+            &[b"ZREVRANK", b"missing", b""],
+            &[b"QUIT"],
+        ]));
+        let output = exchange(connect(address), &input);
+        if resp3 {
+            assert!(output.starts_with(b"%7\r\n"));
+            assert!(output.ends_with(b":0\r\n:0\r\n:2\r\n:1\r\n:0\r\n_\r\n_\r\n+OK\r\n"));
+        } else {
+            assert_eq!(
+                output,
+                b":3\r\n:0\r\n:2\r\n:1\r\n:0\r\n$-1\r\n$-1\r\n+OK\r\n"
+            );
+        }
+    }
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}

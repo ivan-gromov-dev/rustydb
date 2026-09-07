@@ -283,6 +283,8 @@ clients receive the corresponding protocol-specific typed value.
 | `ZREM key member [member ...]` | Remove sorted-set members | Number of members removed |
 | `ZSCORE key member` | Read a sorted-set member's score | Score or `(nil)` |
 | `ZCARD key` | Read a sorted set's cardinality | Number of members, or `0` |
+| `ZRANK key member` | Read a member's zero-based rank in ascending score order | Rank or `(nil)` |
+| `ZREVRANK key member` | Read a member's zero-based rank in descending score order | Rank or `(nil)` |
 | `HSET key field value [field value ...]` | Set one or more hash fields | Number of newly added fields |
 | `HSETNX key field value` | Set a hash field only when it does not exist | `1` if added, otherwise `0` |
 | `HGET key field` | Read a hash field | Value or `(nil)` |
@@ -388,6 +390,13 @@ Sorted-set members are binary-safe for RESP clients and have finite floating-poi
 scores. Adding an existing member updates its score, while the result counts only
 new members. Mutations preserve TTL while members remain, and removing the last
 member removes the key. Snapshots and AOF persistence preserve sorted sets.
+
+`ZRANK` orders members by ascending score, breaking ties by lexicographic byte
+order. `ZREVRANK` reverses both comparisons. Missing members and missing or
+expired keys return `(nil)` in the CLI, a null bulk string in RESP2, and null
+in RESP3; present members return integers in both protocols. Rank reads preserve
+TTL and run in O(n) time with O(1) auxiliary space. The optional Redis
+`WITHSCORE` rank syntax is not supported.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary

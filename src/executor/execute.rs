@@ -506,6 +506,15 @@ pub(crate) fn execute_with_snapshot(
             Ok(None) => CommandOutput::Nil,
             Err(error) => CommandOutput::Error(error.to_string()),
         },
+        Command::ZRank {
+            key,
+            member,
+            reverse,
+        } => match store.sorted_set_rank(&key, &member, reverse) {
+            Ok(Some(rank)) => CommandOutput::Integer(rank as i64),
+            Ok(None) => CommandOutput::Nil,
+            Err(error) => CommandOutput::Error(error.to_string()),
+        },
         Command::ZCard { key } => match store.sorted_set_cardinality(&key) {
             Ok(cardinality) => CommandOutput::Integer(cardinality as i64),
             Err(error) => CommandOutput::Error(error.to_string()),

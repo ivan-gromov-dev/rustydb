@@ -132,7 +132,9 @@ pub(crate) const COMMANDS: &[CommandMetadata] = &[
     metadata!("unlink", -2, WRITE, 1, -1, 1),
     metadata!("zadd", -4, WRITE, 1, 1, 1),
     metadata!("zcard", 2, READ, 1, 1, 1),
+    metadata!("zrank", 3, READ, 1, 1, 1),
     metadata!("zrem", -3, WRITE, 1, 1, 1),
+    metadata!("zrevrank", 3, READ, 1, 1, 1),
     metadata!("zscore", 3, READ, 1, 1, 1),
 ];
 

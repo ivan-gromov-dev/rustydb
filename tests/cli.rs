@@ -700,3 +700,26 @@ fn corrupt_snapshot_stops_startup_with_a_clear_error() {
         "Error: snapshot is truncated\n"
     );
 }
+
+#[test]
+fn sorted_set_ranks_are_read_only_across_aof_restart() {
+    let directory = TestDirectory::new();
+    let aof = directory.aof();
+    assert!(
+        run_cli_with_aof(&aof, "ZADD board 2 bob 2 alice -1 first\nEXIT\n")
+            .status
+            .success()
+    );
+    let size = fs::metadata(&aof).unwrap().len();
+    let output = run_cli_with_aof(
+        &aof,
+        "ZRANK board alice\nZREVRANK board alice\nZRANK board first\nZREVRANK board first\nZRANK board absent\nZREVRANK missing member\nEXIT\n",
+    );
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("db> 1\ndb> 1\ndb> 0\ndb> 2\ndb> (nil)\ndb> (nil)\n"),
+        "{stdout}"
+    );
+    assert_eq!(fs::metadata(aof).unwrap().len(), size);
+}
