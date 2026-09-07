@@ -17,6 +17,12 @@ struct ConnectionState {
     name: Option<Vec<u8>>,
     _library_name: Option<Vec<u8>>,
     _library_version: Option<Vec<u8>>,
+    transaction: Option<TransactionState>,
+}
+
+struct TransactionState {
+    commands: Vec<Command>,
+    dirty: bool,
 }
 
 impl ConnectionState {
@@ -27,6 +33,7 @@ impl ConnectionState {
             name: None,
             _library_name: None,
             _library_version: None,
+            transaction: None,
         }
     }
 }
@@ -121,6 +128,9 @@ where
     let command = match parsed {
         Ok(command) => command,
         Err(error) => {
+            if let Some(transaction) = &mut state.transaction {
+                transaction.dirty = true;
+            }
             error_frame(error.response_message()).write_to(writer)?;
             writer.flush()?;
             return Ok(false);
@@ -131,16 +141,10 @@ where
         Command::Hello { protocol } => protocol.unwrap_or(state.protocol),
         _ => state.protocol,
     };
-    let connection_output = execute_connection_command(&command, state);
-    let output = if let Some(output) = connection_output {
-        output
-    } else {
-        #[cfg(feature = "profiling")]
-        let _scope = crate::server::profiling::profile_scope(
-            crate::server::profiling::ProfilePhase::Execute,
-        );
-        execute(command)
-    };
+    #[cfg(feature = "profiling")]
+    let _scope =
+        crate::server::profiling::profile_scope(crate::server::profiling::ProfilePhase::Execute);
+    let output = execute_connection_command(command, state, execute);
     let should_exit = matches!(output, CommandOutput::Exit);
     let is_hello = matches!(output, CommandOutput::Hello { .. });
     {
@@ -159,32 +163,87 @@ where
     Ok(should_exit)
 }
 
-fn execute_connection_command(
-    command: &Command,
+fn execute_connection_command<F>(
+    command: Command,
     state: &mut ConnectionState,
-) -> Option<CommandOutput> {
+    execute: &mut F,
+) -> CommandOutput
+where
+    F: FnMut(Command) -> CommandOutput,
+{
     match command {
-        Command::Hello { protocol } => Some(CommandOutput::Hello {
-            protocol: *protocol,
-            connection_id: Some(state.id),
-        }),
-        Command::ClientId => Some(CommandOutput::Integer(state.id)),
-        Command::ClientSetName { name } => {
-            state.name = (!name.is_empty()).then(|| name.clone());
-            Some(CommandOutput::Ok)
+        Command::Multi => {
+            if state.transaction.is_some() {
+                CommandOutput::Error("MULTI calls can not be nested".to_owned())
+            } else {
+                state.transaction = Some(TransactionState {
+                    commands: Vec::new(),
+                    dirty: false,
+                });
+                CommandOutput::Ok
+            }
         }
-        Command::ClientGetName => Some(match &state.name {
+        Command::Exec => {
+            let Some(transaction) = state.transaction.take() else {
+                return CommandOutput::Error("EXEC without MULTI".to_owned());
+            };
+            if transaction.dirty {
+                CommandOutput::ExecAbort
+            } else {
+                execute(Command::Transaction {
+                    commands: transaction.commands,
+                })
+            }
+        }
+        Command::Discard => {
+            if state.transaction.take().is_some() {
+                CommandOutput::Ok
+            } else {
+                CommandOutput::Error("DISCARD without MULTI".to_owned())
+            }
+        }
+        command if state.transaction.is_some() => {
+            if matches!(
+                command,
+                Command::Hello { .. }
+                    | Command::ClientId
+                    | Command::ClientSetName { .. }
+                    | Command::ClientGetName
+                    | Command::ClientSetInfo { .. }
+                    | Command::Exit
+            ) {
+                if let Some(transaction) = &mut state.transaction {
+                    transaction.dirty = true;
+                }
+                CommandOutput::Error("command cannot be used inside MULTI".to_owned())
+            } else if let Some(transaction) = &mut state.transaction {
+                transaction.commands.push(command);
+                CommandOutput::SimpleString("QUEUED")
+            } else {
+                CommandOutput::Error("transaction state is unavailable".to_owned())
+            }
+        }
+        Command::Hello { protocol } => CommandOutput::Hello {
+            protocol,
+            connection_id: Some(state.id),
+        },
+        Command::ClientId => CommandOutput::Integer(state.id),
+        Command::ClientSetName { name } => {
+            state.name = (!name.is_empty()).then_some(name);
+            CommandOutput::Ok
+        }
+        Command::ClientGetName => match &state.name {
             Some(name) => CommandOutput::Value(name.clone()),
             None => CommandOutput::Nil,
-        }),
+        },
         Command::ClientSetInfo { attribute, value } => {
             match attribute {
-                ClientInfoAttribute::LibraryName => state._library_name = Some(value.clone()),
-                ClientInfoAttribute::LibraryVersion => state._library_version = Some(value.clone()),
+                ClientInfoAttribute::LibraryName => state._library_name = Some(value),
+                ClientInfoAttribute::LibraryVersion => state._library_version = Some(value),
             }
-            Some(CommandOutput::Ok)
+            CommandOutput::Ok
         }
-        _ => None,
+        command => execute(command),
     }
 }
 

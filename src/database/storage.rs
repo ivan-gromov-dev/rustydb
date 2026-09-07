@@ -92,6 +92,13 @@ impl Database {
 
     fn execute_inner(&mut self, command: Command) -> CommandOutput {
         self.metrics.commands_processed = self.metrics.commands_processed.saturating_add(1);
+        if let Command::Transaction { commands } = command {
+            let outputs = commands
+                .into_iter()
+                .map(|command| self.execute_inner(command))
+                .collect();
+            return CommandOutput::Transaction(outputs);
+        }
         if command == Command::Info {
             return CommandOutput::Value(self.info().into_bytes());
         }

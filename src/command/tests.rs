@@ -383,6 +383,21 @@ fn aof_rewrite_accepts_no_arguments() {
 }
 
 #[test]
+fn transaction_controls_accept_no_arguments() {
+    for (name, expected) in [
+        ("MULTI", Command::Multi),
+        ("EXEC", Command::Exec),
+        ("DISCARD", Command::Discard),
+    ] {
+        assert_eq!(Command::parse(name), Ok(expected));
+        assert!(matches!(
+            Command::parse(&format!("{name} extra")),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+}
+
+#[test]
 fn info_accepts_no_arguments() {
     assert_eq!(Command::parse("INFO"), Ok(Command::Info));
     assert_eq!(

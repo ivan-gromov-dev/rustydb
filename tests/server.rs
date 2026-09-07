@@ -98,6 +98,42 @@ fn public_server_api_supports_ping_and_binary_echo() {
 }
 
 #[test]
+fn public_server_executes_and_discards_connection_scoped_transactions() {
+    let (address, shutdown, server) = start_server();
+    let transaction = pipeline(&[
+        &[b"MULTI"],
+        &[b"SET", b"key", b"value"],
+        &[b"GET", b"key"],
+        &[b"EXEC"],
+        &[b"QUIT"],
+    ]);
+    assert_eq!(
+        exchange(connect(address), &transaction),
+        b"+OK\r\n+QUEUED\r\n+QUEUED\r\n*2\r\n+OK\r\n$5\r\nvalue\r\n+OK\r\n"
+    );
+
+    let mut abandoned = connect(address);
+    abandoned
+        .write_all(&pipeline(&[&[b"MULTI"], &[b"SET", b"abandoned", b"value"]]))
+        .unwrap();
+    let mut queued = [0; 14];
+    abandoned.read_exact(&mut queued).unwrap();
+    assert_eq!(&queued, b"+OK\r\n+QUEUED\r\n");
+    drop(abandoned);
+
+    assert_eq!(
+        exchange(
+            connect(address),
+            &pipeline(&[&[b"GET", b"abandoned"], &[b"QUIT"]])
+        ),
+        b"$-1\r\n+OK\r\n"
+    );
+
+    shutdown.request();
+    assert!(server.join().unwrap().is_ok());
+}
+
+#[test]
 fn public_server_api_supports_binary_hashes_in_resp2_and_resp3() {
     let (address, shutdown, server) = start_server();
     let field = b"field\0\xff";

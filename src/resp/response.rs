@@ -98,6 +98,12 @@ pub(crate) fn frame_from_output_for_protocol(
         CommandOutput::Nil => RespFrame::NullBulkString,
         CommandOutput::NullArray if protocol == ProtocolVersion::Resp3 => RespFrame::Null,
         CommandOutput::NullArray => RespFrame::NullArray,
+        CommandOutput::Transaction(outputs) => RespFrame::Array(
+            outputs
+                .into_iter()
+                .map(|output| frame_from_output_for_protocol(output, protocol))
+                .collect(),
+        ),
         CommandOutput::KeyList(values) => {
             RespFrame::Array(values.into_iter().map(RespFrame::BulkString).collect())
         }
@@ -145,6 +151,9 @@ pub(crate) fn frame_from_output_for_protocol(
                 .collect(),
         ),
         CommandOutput::Error(error) => error_frame(format_args!("ERR {error}")),
+        CommandOutput::ExecAbort => {
+            error_frame("EXECABORT Transaction discarded because of previous errors")
+        }
         CommandOutput::Help => RespFrame::BulkString(HELP_TEXT.as_bytes().to_vec()),
     }
 }

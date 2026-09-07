@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Initial 0.14 transaction support for RESP clients through per-connection
+  `MULTI`, `EXEC`, and `DISCARD` state, atomic queued execution, queue-time
+  aborts, and per-command execution results.
+
 ## [0.13.0] - 2026-09-07
 
 ### Added

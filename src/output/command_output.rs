@@ -120,6 +120,9 @@ pub(crate) const HELP_TEXT: &str = concat!(
     "  CLEAR\n",
     "  SAVE\n",
     "  AOFREWRITE\n",
+    "  MULTI\n",
+    "  EXEC\n",
+    "  DISCARD\n",
     "  INFO\n",
     "  HELP\n",
     "  EXIT\n",
@@ -149,6 +152,7 @@ pub(crate) enum CommandOutput {
     OptionalValues(Vec<Option<Vec<u8>>>),
     Nil,
     NullArray,
+    Transaction(Vec<CommandOutput>),
     KeyList(Vec<Vec<u8>>),
     HashEntries(Vec<(Vec<u8>, Vec<u8>)>),
     HashScan {
@@ -161,13 +165,14 @@ pub(crate) enum CommandOutput {
     },
     CommandMetadata(Vec<Option<CommandMetadata>>),
     Error(String),
+    ExecAbort,
     Help,
     Exit,
 }
 
 impl CommandOutput {
     pub(crate) fn is_error(&self) -> bool {
-        matches!(self, Self::Error(_))
+        matches!(self, Self::Error(_) | Self::ExecAbort)
     }
 
     pub(crate) fn write_to(&self, writer: &mut impl Write) -> io::Result<()> {
@@ -246,6 +251,12 @@ impl CommandOutput {
             }
             Self::Nil => writeln!(writer, "(nil)"),
             Self::NullArray => writeln!(writer, "(nil)"),
+            Self::Transaction(outputs) => {
+                for output in outputs {
+                    output.write_to(writer)?;
+                }
+                Ok(())
+            }
             Self::KeyList(keys) if keys.is_empty() => writeln!(writer, "(nil)"),
             Self::KeyList(keys) => {
                 for key in keys {
@@ -301,6 +312,12 @@ impl CommandOutput {
                 Ok(())
             }
             Self::Error(error) => writeln!(writer, "ERR {error}"),
+            Self::ExecAbort => {
+                writeln!(
+                    writer,
+                    "ERR Transaction discarded because of previous errors"
+                )
+            }
             Self::Help => writer.write_all(HELP_TEXT.as_bytes()),
             Self::Exit => Ok(()),
         }

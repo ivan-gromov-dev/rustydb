@@ -41,6 +41,35 @@ fn propagates_wrong_type_errors() {
 }
 
 #[test]
+fn transaction_keeps_execution_errors_and_runs_later_commands() {
+    let mut database = Database::default();
+
+    assert_eq!(
+        database.execute(Command::Transaction {
+            commands: vec![
+                Command::LPush {
+                    key: b"key".to_vec(),
+                    value: b"value".to_vec(),
+                },
+                Command::Get {
+                    key: b"key".to_vec(),
+                },
+                Command::LLen {
+                    key: b"key".to_vec(),
+                },
+            ],
+        }),
+        CommandOutput::Transaction(vec![
+            CommandOutput::Integer(1),
+            CommandOutput::Error(
+                "operation against a key holding the wrong kind of value".to_owned()
+            ),
+            CommandOutput::Integer(1),
+        ])
+    );
+}
+
+#[test]
 fn instances_have_independent_state() {
     let mut first = Database::default();
     let mut second = Database::default();

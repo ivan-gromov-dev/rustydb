@@ -227,6 +227,70 @@ fn command_errors_do_not_stop_later_pipeline_entries() {
 }
 
 #[test]
+fn multi_queues_commands_and_executes_one_transaction_batch() {
+    let input = concat!(
+        "*1\r\n$5\r\nMULTI\r\n",
+        "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+        "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n",
+        "*1\r\n$4\r\nEXEC\r\n",
+    );
+    let mut executed = Vec::new();
+
+    let output = run(input.as_bytes(), |command| {
+        executed.push(command);
+        CommandOutput::Transaction(vec![
+            CommandOutput::Ok,
+            CommandOutput::Value(b"value".to_vec()),
+        ])
+    });
+
+    assert_eq!(
+        executed,
+        vec![Command::Transaction {
+            commands: vec![
+                Command::Set {
+                    key: b"key".to_vec(),
+                    value: b"value".to_vec(),
+                },
+                Command::Get {
+                    key: b"key".to_vec(),
+                },
+            ],
+        }]
+    );
+    assert_eq!(
+        output,
+        b"+OK\r\n+QUEUED\r\n+QUEUED\r\n*2\r\n+OK\r\n$5\r\nvalue\r\n"
+    );
+}
+
+#[test]
+fn queue_time_error_aborts_exec_and_discard_clears_the_queue() {
+    let abort = concat!(
+        "*1\r\n$5\r\nMULTI\r\n",
+        "*1\r\n$3\r\nGET\r\n",
+        "*1\r\n$4\r\nEXEC\r\n",
+    );
+    let discard = concat!(
+        "*1\r\n$5\r\nMULTI\r\n",
+        "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+        "*1\r\n$7\r\nDISCARD\r\n",
+        "*1\r\n$4\r\nEXEC\r\n",
+    );
+
+    assert_eq!(
+        run(abort.as_bytes(), |_| panic!("aborted transaction executed")),
+        b"+OK\r\n-ERR usage: GET key\r\n-EXECABORT Transaction discarded because of previous errors\r\n"
+    );
+    assert_eq!(
+        run(discard.as_bytes(), |_| panic!(
+            "discarded transaction executed"
+        )),
+        b"+OK\r\n+QUEUED\r\n+OK\r\n-ERR EXEC without MULTI\r\n"
+    );
+}
+
+#[test]
 fn quit_replies_and_ignores_remaining_pipeline_entries() {
     let input = b"*1\r\n$4\r\nQUIT\r\n*1\r\n$3\r\nLEN\r\n";
     let mut calls = 0;
