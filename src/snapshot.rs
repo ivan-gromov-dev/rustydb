@@ -314,6 +314,20 @@ fn read_snapshot(
     Ok(())
 }
 
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_decode(input: &[u8]) {
+    let count_offset = MAGIC.len() + size_of::<u16>();
+    if let Some(bytes) = input.get(count_offset..count_offset + size_of::<u64>()) {
+        let mut count = [0; size_of::<u64>()];
+        count.copy_from_slice(bytes);
+        if u64::from_le_bytes(count) > input.len() as u64 {
+            return;
+        }
+    }
+    let mut store = InMemoryStore::new();
+    let _ = read_snapshot(io::Cursor::new(input), &mut store, SystemTime::UNIX_EPOCH);
+}
+
 fn validate_entries(entries: &[SnapshotEntry]) -> Result<(), SnapshotError> {
     ensure_limit(entries.len(), MAX_ENTRIES, "entry count")?;
     for entry in entries {

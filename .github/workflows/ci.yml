@@ -39,11 +39,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run all Cargo tests
         run: cargo test --all-features
-      - name: Run sorted-set examples
+      - name: Run application examples
         run: |
           cargo build --bin rustydb
           python3 examples/leaderboard.py
           python3 examples/priority_queue.py
+          python3 examples/transaction.py
+          python3 examples/pubsub.py
       - name: Smoke-test release benchmark runner
         run: >-
           cargo run --release --bin rustydb-benchmark --
@@ -80,6 +82,96 @@ jobs:
       - name: Run redis-cli smoke test
         run: python3 scripts/redis_cli_smoke.py
 
+  redis_differential:
+    name: Pinned Redis differential suite
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4.1-bookworm
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build RustyDB
+        run: cargo build --bin rustydb
+      - name: Compare supported behavior with Redis 7.4.1
+        run: >-
+          python3 scripts/redis_differential.py
+          --redis-port 6380
+          --rustydb-binary target/debug/rustydb
+
+  recovery:
+    name: Process recovery suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build RustyDB
+        run: cargo build --bin rustydb
+      - name: Exercise snapshot and AOF recovery
+        run: >-
+          python3 scripts/recovery_suite.py
+          --rustydb-binary target/debug/rustydb
+
+  randomized_recovery:
+    name: Model-based randomized AOF recovery
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build RustyDB
+        run: cargo build --bin rustydb
+      - name: Run deterministic workload and crash recovery
+        run: >-
+          python3 scripts/randomized_recovery.py
+          --rustydb-binary target/debug/rustydb
+          --operations 2000
+          --seed 1592594996
+
+  msrv_package:
+    name: Rust 1.85 and release package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install minimum supported Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Check every target with locked dependencies
+        run: cargo check --all-targets --all-features --locked
+      - name: Build and verify the publishable package
+        run: cargo package --locked
+
+  fuzz_smoke:
+    name: Parser and persistence fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Fuzz RESP request decoding
+        run: cargo fuzz run resp-request -- -max_total_time=10 -max_len=65536
+      - name: Fuzz command parsing
+        run: cargo fuzz run command -- -max_total_time=10 -max_len=65536
+      - name: Fuzz persistence decoding
+        run: cargo fuzz run persistence -- -max_total_time=10 -max_len=65536
+
   coverage:
     name: Per-module coverage
     runs-on: ubuntu-latest
@@ -112,6 +204,11 @@ jobs:
       - tests
       - ctrl_c
       - redis_cli
+      - redis_differential
+      - recovery
+      - randomized_recovery
+      - msrv_package
+      - fuzz_smoke
       - coverage
     runs-on: ubuntu-latest
     steps:
@@ -121,11 +218,21 @@ jobs:
           TESTS_RESULT: ${{ needs.tests.result }}
           CTRL_C_RESULT: ${{ needs.ctrl_c.result }}
           REDIS_CLI_RESULT: ${{ needs.redis_cli.result }}
+          REDIS_DIFFERENTIAL_RESULT: ${{ needs.redis_differential.result }}
+          RECOVERY_RESULT: ${{ needs.recovery.result }}
+          RANDOMIZED_RECOVERY_RESULT: ${{ needs.randomized_recovery.result }}
+          MSRV_PACKAGE_RESULT: ${{ needs.msrv_package.result }}
+          FUZZ_SMOKE_RESULT: ${{ needs.fuzz_smoke.result }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
         run: |
           test "$QUALITY_RESULT" = "success"
           test "$TESTS_RESULT" = "success"
           test "$CTRL_C_RESULT" = "success"
           test "$REDIS_CLI_RESULT" = "success"
+          test "$REDIS_DIFFERENTIAL_RESULT" = "success"
+          test "$RECOVERY_RESULT" = "success"
+          test "$RANDOMIZED_RECOVERY_RESULT" = "success"
+          test "$MSRV_PACKAGE_RESULT" = "success"
+          test "$FUZZ_SMOKE_RESULT" = "success"
           test "$COVERAGE_RESULT" = "success"
           echo "CI Success: true"

@@ -7,9 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-08
+
 ### Added
 
-- Initial 0.15 publish/subscribe support through binary-safe `PUBLISH`,
+- Publish/subscribe support through binary-safe `PUBLISH`,
   `SUBSCRIBE`, and `UNSUBSCRIBE`, including RESP2/RESP3 delivery and disconnect
   cleanup.
 - Binary glob subscriptions through `PSUBSCRIBE` and `PUNSUBSCRIBE`, including
@@ -19,7 +21,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   request-ordered `PUBSUB NUMSUB [channel ...]` results.
 - Multi-client fan-out coverage for ordered binary messages while unrelated
   database commands continue to execute.
-- Initial 0.14 transaction support for RESP clients through per-connection
+- Transaction support for RESP clients through per-connection
   `MULTI`, `EXEC`, and `DISCARD` state, atomic queued execution, queue-time
   aborts, and per-command execution results.
 - Optimistic transaction locking through `WATCH` and `UNWATCH`, including
@@ -28,6 +30,30 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Single-record AOF persistence for executed transactions, with binary-safe
   nested commands, downtime-adjusted expirations, all-or-nothing tail recovery,
   and replay as one logical batch.
+- A compatibility reference and a public guarantees document for the
+  1.0 command, protocol, concurrency, expiration, and persistence contracts.
+- A differential CI suite comparing representative RESP2 behavior across every
+  supported command family with a pinned Redis 7.4.1 server.
+- A process-level recovery CI suite covering snapshot and rewritten-AOF
+  restarts, every value type, TTL, key-limit eviction, complete-record checksum
+  failure, failed persistence destinations, multi-client replay, and every
+  truncation of a final transaction record.
+- A release-package CI gate that checks every target with locked dependencies
+  and verifies the publishable crate on the minimum supported Rust 1.85.0
+  toolchain.
+- Feature-gated libFuzzer targets for RESP request decoding, text and binary
+  command parsing, and snapshot/AOF decoding, with bounded smoke runs in CI.
+- A deterministic model-based workload that checks every mixed string, list,
+  set, hash, and sorted-set mutation, then crashes and restarts an AOF server
+  and verifies the complete recovered state.
+- Compile-time Clippy guards against direct panic, unwrap, expect, todo, and
+  unimplemented paths in the production library and CLI.
+- Executable transaction and Pub/Sub examples plus startup, connection,
+  shutdown, and persistence troubleshooting guidance.
+
+### Changed
+
+- Package metadata now reports version 1.0.0.
 
 ## [0.13.0] - 2026-09-07
 
@@ -329,7 +355,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Keys cannot contain whitespace, and values are Unicode strings rather than
   binary-safe byte sequences.
 
-[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/ivan-gromov-dev/rustydb/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.13.0...v1.0.0
 [0.13.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ivan-gromov-dev/rustydb/compare/v0.10.0...v0.11.0
