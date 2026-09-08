@@ -1233,10 +1233,10 @@ impl InMemoryStore {
             return Ok(None);
         };
         source_entry.list()?;
-        if source != destination
-            && let Some(destination_entry) = self.storage.get(destination)
-        {
-            destination_entry.list()?;
+        if source != destination {
+            if let Some(destination_entry) = self.storage.get(destination) {
+                destination_entry.list()?;
+            }
         }
         if source == destination {
             let list = self

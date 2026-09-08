@@ -125,18 +125,18 @@ impl Database {
                 .collect();
             if collects_aof {
                 let records = self.transaction_records.take().unwrap_or_default();
-                if !records.is_empty()
-                    && let Some(aof) = &mut self.aof
-                {
-                    if let Err(error) = aof.append_transaction(&records) {
-                        self.metrics.persistence_failures =
-                            self.metrics.persistence_failures.saturating_add(1);
-                        return CommandOutput::Error(format!(
-                            "AOF transaction append failed: {error}"
-                        ));
+                if !records.is_empty() {
+                    if let Some(aof) = &mut self.aof {
+                        if let Err(error) = aof.append_transaction(&records) {
+                            self.metrics.persistence_failures =
+                                self.metrics.persistence_failures.saturating_add(1);
+                            return CommandOutput::Error(format!(
+                                "AOF transaction append failed: {error}"
+                            ));
+                        }
+                        self.metrics.persistence_successes =
+                            self.metrics.persistence_successes.saturating_add(1);
                     }
-                    self.metrics.persistence_successes =
-                        self.metrics.persistence_successes.saturating_add(1);
                 }
             }
             return CommandOutput::Transaction(outputs);
@@ -195,14 +195,14 @@ impl Database {
                 .saturating_add((total - hits) as u64);
         }
         let evicted_keys = self.store.take_evicted_keys();
-        if !output.is_error()
-            && let Some(keys) = mutation_keys
-        {
-            if keys.is_empty() {
-                self.bump_all_key_versions();
-            } else {
-                for key in keys {
-                    self.bump_key_version(key);
+        if !output.is_error() {
+            if let Some(keys) = mutation_keys {
+                if keys.is_empty() {
+                    self.bump_all_key_versions();
+                } else {
+                    for key in keys {
+                        self.bump_key_version(key);
+                    }
                 }
             }
         }

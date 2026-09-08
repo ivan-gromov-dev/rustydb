@@ -1,9 +1,23 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
+
 mod aof;
 mod app;
 mod command;
 mod config;
 mod database;
 mod executor;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 mod line_protocol;
 mod line_session;
 mod logging;

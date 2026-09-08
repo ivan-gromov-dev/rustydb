@@ -5,11 +5,15 @@ interactive command-line interface and a concurrent TCP server inspired by a
 focused subset of Redis string, list, set, hash, and expiration operations, with
 snapshot and append-only persistence.
 
-RustyDB is a learning-oriented implementation of database internals and a
-functional engineering demonstration. It is intended to provide an
-application-ready standalone subset of Redis rather than production or complete
-Redis compatibility. Current releases remain experimental, with snapshot and
-append-only persistence available as separate operating modes.
+RustyDB 1.0 is a learning-oriented implementation of database internals and a
+functional engineering demonstration. It provides an application-ready
+standalone subset of Redis rather than production-grade or complete Redis
+compatibility. Snapshot and append-only persistence are available as separate
+operating modes.
+
+The 1.0 public contracts are collected in
+[GUARANTEES.md](GUARANTEES.md), and the supported Redis subset and intentional
+differences are listed in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Requirements
 
@@ -320,17 +324,17 @@ clients receive the corresponding protocol-specific typed value.
 | `HSCAN key cursor [MATCH pattern] [COUNT count]`                                                                 | Deterministically inspect sorted hash-field batches                                                   | Next cursor followed by field/value pairs                              |
 | `PING [message]`                                                                                                 | Test the connection, optionally echoing a binary message                                              | `PONG` or the message                                                  |
 | `PUBLISH channel message`                                                                                        | Deliver a binary message to clients directly subscribed to a channel                                  | Number of recipients                                                   |
-| `SUBSCRIBE channel [channel ...]`                                                                                | Subscribe the RESP connection to one or more direct channels                                          | One subscription acknowledgement per channel                          |
-| `UNSUBSCRIBE [channel ...]`                                                                                      | Unsubscribe from named channels, or all direct channels when none are given                            | One unsubscription acknowledgement per channel                        |
-| `PSUBSCRIBE pattern [pattern ...]`                                                                               | Subscribe the RESP connection to binary glob patterns                                                  | One pattern-subscription acknowledgement per pattern                   |
-| `PUNSUBSCRIBE [pattern ...]`                                                                                     | Unsubscribe from named patterns, or all patterns when none are given                                   | One pattern-unsubscription acknowledgement per pattern                 |
-| `PUBSUB CHANNELS [pattern]`                                                                                      | List active direct-subscription channels, optionally filtered by a binary glob                         | Channels in deterministic binary order                                |
-| `PUBSUB NUMSUB [channel ...]`                                                                                    | Count direct subscribers for each requested channel                                                    | Flat channel/count pairs in request order                              |
-| `MULTI`                                                                                                          | Start queuing commands for an atomic transaction                                                      | `OK`                                                                  |
+| `SUBSCRIBE channel [channel ...]`                                                                                | Subscribe the RESP connection to one or more direct channels                                          | One subscription acknowledgement per channel                           |
+| `UNSUBSCRIBE [channel ...]`                                                                                      | Unsubscribe from named channels, or all direct channels when none are given                           | One unsubscription acknowledgement per channel                         |
+| `PSUBSCRIBE pattern [pattern ...]`                                                                               | Subscribe the RESP connection to binary glob patterns                                                 | One pattern-subscription acknowledgement per pattern                   |
+| `PUNSUBSCRIBE [pattern ...]`                                                                                     | Unsubscribe from named patterns, or all patterns when none are given                                  | One pattern-unsubscription acknowledgement per pattern                 |
+| `PUBSUB CHANNELS [pattern]`                                                                                      | List active direct-subscription channels, optionally filtered by a binary glob                        | Channels in deterministic binary order                                 |
+| `PUBSUB NUMSUB [channel ...]`                                                                                    | Count direct subscribers for each requested channel                                                   | Flat channel/count pairs in request order                              |
+| `MULTI`                                                                                                          | Start queuing commands for an atomic transaction                                                      | `OK`                                                                   |
 | `EXEC`                                                                                                           | Execute the queued transaction                                                                        | One result per queued command, or an error                             |
-| `DISCARD`                                                                                                        | Discard the queued transaction                                                                         | `OK`                                                                  |
-| `WATCH key [key ...]`                                                                                            | Abort the next transaction when a watched key changes                                                  | `OK`                                                                  |
-| `UNWATCH`                                                                                                        | Clear all keys watched by this connection                                                              | `OK`                                                                  |
+| `DISCARD`                                                                                                        | Discard the queued transaction                                                                        | `OK`                                                                   |
+| `WATCH key [key ...]`                                                                                            | Abort the next transaction when a watched key changes                                                 | `OK`                                                                   |
+| `UNWATCH`                                                                                                        | Clear all keys watched by this connection                                                             | `OK`                                                                   |
 | `ECHO message`                                                                                                   | Return a binary message unchanged                                                                     | The message                                                            |
 | `HELLO [2\|3]`                                                                                                   | Report connection metadata and optionally select RESP2 or RESP3                                       | Server metadata                                                        |
 | `CLIENT ID`                                                                                                      | Read the connection's unique, monotonically increasing identifier                                     | Connection ID                                                          |
@@ -502,6 +506,8 @@ or newer:
 cargo build --bin rustydb
 python examples/leaderboard.py
 python examples/priority_queue.py
+python examples/transaction.py
+python examples/pubsub.py
 ```
 
 Each example starts a disposable local server in a temporary directory, verifies
@@ -511,6 +517,9 @@ standard library and accept an optional path to a RustyDB binary. The
 and iterates all players. The [priority-queue example](examples/priority_queue.py)
 uses atomic pops; equal priorities are ordered by job ID, not FIFO. A pop does
 not acknowledge job completion or provide retry delivery after consumer failure.
+The [transaction example](examples/transaction.py) transfers a value atomically
+with `WATCH`/`MULTI`/`EXEC`, while the [Pub/Sub example](examples/pubsub.py)
+delivers a binary-safe message between two clients.
 
 Hash fields and values are binary-safe for RESP clients. `HMGET` preserves
 request order and duplicate fields. `HGETALL` sorts fields by their binary
@@ -612,6 +621,14 @@ Use the opt-in profiling build and platform CPU sampling recipes in
 [PROFILING.md](PROFILING.md) to measure allocations and database-lock waiting
 without adding instrumentation overhead to normal builds.
 
+Run the deterministic model-based AOF workload with a larger operation count
+for an extended recovery check. The seed is printed on success and can be
+changed to explore another reproducible command sequence:
+
+```console
+python scripts/randomized_recovery.py --operations 20000 --seed 1592594996
+```
+
 Before submitting a change, run the complete suite:
 
 ```console
@@ -647,9 +664,8 @@ Coverage is aggregated separately for the logical modules `aof`, `app`, `command
 than 70% line coverage. Test sources and crate bootstrap files are excluded
 from the per-module calculation.
 
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for future release plans and learning milestones.
+For startup, connection, shutdown, and persistence diagnostics, see
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Continuous integration
 
@@ -657,12 +673,21 @@ The GitHub Actions workflow runs formatting and Clippy, every Cargo test target
 (including the CLI and TCP integration tests), a release-mode benchmark smoke
 test without a throughput threshold, a real-process Ctrl+C shutdown test on
 Linux, the external `redis-cli` RESP2/RESP3 smoke test, and the per-module coverage
-gate. The final `CI Success` job succeeds only when all five jobs succeed.
+gate. A differential suite also compares representative command results with a
+pinned Redis 7.4.1 server. A process-level recovery suite restarts snapshot and
+AOF instances, checks all value types and TTL, and exhaustively truncates the
+final transaction record. A release-package job checks every target and builds
+the publishable crate with locked dependencies on the minimum supported Rust
+1.85.0 toolchain. Short libFuzzer runs exercise RESP request decoding, text and
+binary command parsing, and snapshot/AOF decoding. The final `CI Success` job
+also requires a deterministic 2,000-operation model-based workload to match its
+expected state before and after an abrupt AOF-server restart. It succeeds only
+when all ten jobs succeed.
 
 ## Current limitations
 
-- RustyDB is experimental and does not yet provide production durability,
-  security, availability, or compatibility guarantees.
+- RustyDB 1.0 does not provide production-grade durability, security,
+  availability, or complete Redis compatibility.
 - Snapshot mode can lose mutations after the latest successful `SAVE` unless
   save-on-shutdown completes. AOF mode instead synchronizes each successful
   mutation before acknowledging it.
@@ -694,8 +719,7 @@ feature set. The project does not plan to implement:
 - multiple logical databases or complete Redis command, protocol, error, and
   operational compatibility.
 
-These are conscious project boundaries rather than untracked future work. See
-[ROADMAP.md](ROADMAP.md) for the complete planned feature set.
+These are conscious project boundaries rather than untracked future work.
 
 ## License
 

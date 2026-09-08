@@ -1120,10 +1120,10 @@ fn parse_copy(args: &[&[u8]]) -> Result<Command, CommandError> {
             return Err(CommandError::InvalidArguments(USAGE));
         }
     }
-    if let Some(index) = database
-        && index != 0
-    {
-        return Err(CommandError::UnsupportedDatabase(index));
+    if let Some(index) = database {
+        if index != 0 {
+            return Err(CommandError::UnsupportedDatabase(index));
+        }
     }
     Ok(Command::Copy {
         source: owned(args[1]),

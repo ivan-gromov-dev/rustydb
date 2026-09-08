@@ -1,0 +1,36 @@
+[package]
+name = "rustydb-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rustydb = { path = "..", features = ["fuzzing"] }
+
+[[bin]]
+name = "resp-request"
+path = "fuzz_targets/resp_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "command"
+path = "fuzz_targets/command.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "persistence"
+path = "fuzz_targets/persistence.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

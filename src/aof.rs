@@ -364,6 +364,9 @@ fn decode_payload(payload: &[u8], now_millis: u64) -> Result<Command, AofError> 
     if count == 0 || count > MAX_ARGUMENTS {
         return Err(AofError::LimitExceeded);
     }
+    if count > cursor.len() / size_of::<u64>() {
+        return Err(AofError::InvalidRecord);
+    }
     let mut arguments = Vec::new();
     arguments
         .try_reserve_exact(count)
@@ -388,7 +391,8 @@ fn decode_payload(payload: &[u8], now_millis: u64) -> Result<Command, AofError> 
         if arguments.len() != 2 {
             return Err(AofError::InvalidRecord);
         }
-        let commands = decode_transaction(arguments[1], now_millis.saturating_sub(timestamp))?;
+        let encoded = arguments.get(1).ok_or(AofError::InvalidRecord)?;
+        let commands = decode_transaction(encoded, now_millis.saturating_sub(timestamp))?;
         return Ok(Command::Transaction {
             commands,
             watched: Vec::new(),
@@ -398,6 +402,11 @@ fn decode_payload(payload: &[u8], now_millis: u64) -> Result<Command, AofError> 
         .map_err(|error| AofError::InvalidCommand(error.to_string()))?;
     adjust_expiration(&mut command, now_millis.saturating_sub(timestamp));
     Ok(command)
+}
+
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_decode_payload(payload: &[u8]) {
+    let _ = decode_payload(payload, 0);
 }
 
 fn encode_transaction(commands: &[Vec<Vec<u8>>]) -> Result<Vec<u8>, AofError> {
@@ -446,6 +455,9 @@ fn decode_transaction(mut encoded: &[u8], elapsed_millis: u64) -> Result<Vec<Com
     if count == 0 || count > MAX_ARGUMENTS {
         return Err(AofError::LimitExceeded);
     }
+    if count > encoded.len() / size_of::<u64>() {
+        return Err(AofError::InvalidRecord);
+    }
     let mut commands = Vec::new();
     commands
         .try_reserve_exact(count)
@@ -455,6 +467,9 @@ fn decode_transaction(mut encoded: &[u8], elapsed_millis: u64) -> Result<Vec<Com
         let argument_count =
             usize::try_from(take_u64(&mut encoded)?).map_err(|_| AofError::LimitExceeded)?;
         if argument_count == 0 {
+            return Err(AofError::InvalidRecord);
+        }
+        if argument_count > encoded.len() / size_of::<u64>() {
             return Err(AofError::InvalidRecord);
         }
         total_arguments = total_arguments
